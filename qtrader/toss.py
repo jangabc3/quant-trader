@@ -208,6 +208,22 @@ class Toss:
             out += self._call("GET", "/api/v1/stocks", "STOCK", {"symbols": ",".join(syms[i:i + 200])}) or []
         return out
 
+    def stocks_all(self, market: str) -> list[dict]:
+        """market: KOSPI | KOSDAQ | NYSE | NASDAQ | AMEX. 상장 중인 전 종목 (종목 검색용)."""
+        return self._call("GET", "/api/v1/stocks/all", "STOCK", {"market": market}) or []
+
+    def orderbook(self, symbol: str) -> dict:
+        return self._call("GET", "/api/v1/orderbook", "MARKET_DATA", {"symbol": toss_symbol(symbol)}) or {}
+
+    def trades(self, symbol: str, count: int = 30) -> list[dict]:
+        return self._call("GET", "/api/v1/trades", "MARKET_DATA", {"symbol": toss_symbol(symbol), "count": count}) or []
+
+    def warnings(self, symbol: str) -> list[dict]:
+        return self._call("GET", f"/api/v1/stocks/{toss_symbol(symbol)}/warnings", "STOCK") or []
+
+    def price_limits(self, symbol: str) -> dict:
+        return self._call("GET", "/api/v1/price-limits", "MARKET_DATA", {"symbol": toss_symbol(symbol)}) or {}
+
     def rankings(self, kind: str, market: str, duration: str = "1d", count: int = 30) -> dict:
         return self._call("GET", "/api/v1/rankings", "RANKING", {
             "type": kind, "marketCountry": market, "duration": duration, "count": count,

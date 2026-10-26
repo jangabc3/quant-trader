@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from datetime import datetime, time as dtime, timedelta
 
 from . import config as config_mod
@@ -45,6 +46,7 @@ class Scheduler:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.last_error = ""
+        self._last_exit = 0.0
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -62,6 +64,15 @@ class Scheduler:
         if ctx.store.get("auto_trading", "0") != "1":
             return []
         out = []
+        if cfg["ai"].get("auto_exit", True) and time.monotonic() - self._last_exit > 120:
+            self._last_exit = time.monotonic()
+            for m in (Market.KR, Market.US):
+                if cfg["markets"][m.value].get("enabled") and is_open(m):
+                    try:
+                        from .engine import check_exits
+                        check_exits(ctx, m)
+                    except Exception as e:
+                        ctx.store.log("error", f"exit.{m.value}", f"손절·익절 점검 실패: {e}")
         for m in (Market.KR, Market.US):
             mc = cfg["markets"].get(m.value, {})
             if mc.get("enabled") and mc.get("strategy") == "ai":

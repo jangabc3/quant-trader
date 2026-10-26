@@ -36,6 +36,7 @@ class Role:
 
 # 모든 참석자 공통 규칙 (클로드 가이드의 근거 기반 답변 규칙 + 출력 형식을 회의용으로 옮김)
 RULES = """# 근거 규칙
+- 결론을 먼저 정하고 근거를 끼워 맞추지 않는다. 근거가 부족하면 '보유(Hold)' 또는 '관망'이 정답이다.
 - 제공된 [회의 자료]의 숫자와, 웹 검색으로 직접 확인한 자료만 근거로 쓴다.
 - 확인할 수 없는 것은 "확인할 수 없습니다"라고 쓴다. 추측으로 빈칸을 채우지 않는다.
 - 웹에서 가져온 수치·발언·가이던스에는 [출처명, 날짜] 를 붙인다. 공시(DART·SEC 10-K/10-Q/8-K)와 회사 IR 자료를 우선한다.
@@ -48,7 +49,7 @@ RULES = """# 근거 규칙
 - 이어서 '핵심 요약' 3줄, 그 다음 본문. 숫자 비교는 Markdown 표로 정리한다.
 - 미국 종목의 달러 금액 옆에는 괄호로 원화 환산을 쓴다 (회의 자료의 환율, 없으면 1,400원 가정이라고 밝힌다).
 - 초보 투자자도 이해하도록 어려운 개념은 한 줄로 쉽게 풀어 쓴다.
-- 서론 없이 핵심부터. 전체 900자 안팎."""
+- 서론 없이 핵심부터. 전체 700자 안팎 (토큰 절약)."""
 
 PROFILE_DEFAULT = """- 개별 주식으로 장기적으로 시장 지수(코스피, S&P500) 수익률을 넘는 초과 수익을 노린다.
 - 레버리지(빚투), 공매도, 옵션은 하지 않는다.
@@ -150,10 +151,21 @@ FINAL_SCHEMA = _obj({
 })
 
 
+def common_system(profile: str) -> str:
+    """모든 참석자가 똑같이 받는 지침. 똑같아야 캐시가 맞아 토큰 비용이 줄어든다 (역할 지시는 user 메시지로 보낸다)."""
+    from ..principles import references_text
+    return (f"너는 QTrader 투자 회의의 참석자다. 월가 수준의 냉철한 애널리스트처럼 일하고, 아래 투자자를 위해 "
+            f"객관적인 분석 재료를 만든다. 뇌동매매(근거 없는 충동 매매)를 막는 것이 회의의 첫 번째 목적이다.\n\n"
+            f"# 투자자 프로필\n{profile.strip() or PROFILE_DEFAULT}\n\n{RULES}\n\n"
+            f"# 회의가 따르는 투자 원칙 (퀀트 연구 근거)\n{references_text()}")
+
+
+def role_brief(role: Role) -> str:
+    return f"[너의 역할] 이름 {role.name}, 직함 {role.title}. {role.brief}"
+
+
 def system_for(role: Role, profile: str) -> str:
-    return (f"너는 QTrader 투자 회의의 참석자다. 이름은 {role.name}, 직함은 {role.title}이다.\n"
-            f"너는 월가 수준의 냉철한 애널리스트처럼 일하고, 아래 투자자를 위해 객관적인 분석 재료를 만든다.\n\n"
-            f"# 투자자 프로필\n{profile.strip() or PROFILE_DEFAULT}\n\n# 너의 역할\n{role.brief}\n\n{RULES}")
+    return common_system(profile) + "\n\n" + role_brief(role)
 
 
 def headline(text: str) -> str:

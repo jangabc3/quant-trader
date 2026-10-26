@@ -154,15 +154,16 @@ class FakeLLM:
     def __init__(self, rating="Buy", confidence=0.8):
         self.rating, self.confidence, self.calls = rating, confidence, []
 
-    def run(self, system, user, web=False, schema=None, max_tokens=16000, model=None):
-        self.calls.append({"system": system, "web": web, "schema": bool(schema), "model": model})
+    def run(self, system, user, web=False, schema=None, max_tokens=16000, model=None, context=None):
+        self.calls.append({"system": system, "user": user, "web": web, "schema": bool(schema), "model": model,
+                           "context": context})
         if schema is not None and "fact_checks" in schema["properties"]:
-            return Reply(json.dumps(CHECK), data=CHECK, input_tokens=100, output_tokens=50)
+            return Reply(json.dumps(CHECK), data=CHECK, input_tokens=100, output_tokens=50, model=model or "")
         if schema:
             d = FINAL | {"rating": self.rating, "confidence": self.confidence}
-            return Reply(json.dumps(d), data=d, input_tokens=100, output_tokens=50)
+            return Reply(json.dumps(d), data=d, input_tokens=100, output_tokens=50, model=model or "")
         return Reply("한줄요약: 테스트 보고서\n- 근거 1", sources=[{"title": "s", "url": "https://example.com"}],
-                     input_tokens=100, output_tokens=50)
+                     input_tokens=100, output_tokens=50, cache_read=1000, model=model or "")
 
 
 class Bars:
@@ -175,24 +176,51 @@ class Bars:
         return 100.0
 
 
-def test_meeting_runs_tradingagents_flow(tmp_path):
+# 체크리스트를 통과하도록 느슨한 규칙 (흐름 시험용)
+LOOSE = {"require_trend": False, "require_momentum": False, "max_rsi": 101, "max_vol": 9, "min_fact_ok": 0}
+
+
+def loose_cfg():
+    cfg = config.load()
+    cfg["ai"]["rules"] = LOOSE
+    return cfg
+
+
+def test_meeting_fast_mode(tmp_path):
+    st = Store(tmp_path / "m.db")
+    llm = FakeLLM()
+    run = meeting.start("005930", Bars(), st, config.load(), llm=llm, background=False)
+    assert run["status"] == "done", run["error"]
+    assert run["mode"] == "fast" and run["final"]["rating"] == "Buy"
+    assert all(run["agents"][r.id]["status"] == "done" for r in ROLES)
+    # 분석 3 + 검증관 + 강세·약세 2 + 대표 = 7번
+    assert len(llm.calls) == 7 and sum(c["schema"] for c in llm.calls) == 2
+    assert [c["web"] for c in llm.calls].count(True) == 3
+    models = [c["model"] for c in llm.calls]
+    assert models.count("claude-opus-5-5") == 2 and models.count("claude-sonnet-5-5") == 5
+    # 모든 참석자가 같은 system 을 받아야 캐시가 맞는다 (역할은 user 에)
+    assert len({c["system"] for c in llm.calls}) == 1
+    assert "투자자 프로필" in llm.calls[0]["system"] and "Jegadeesh" in llm.calls[0]["system"]
+    assert "[너의 역할]" in llm.calls[0]["user"] and llm.calls[0]["context"].startswith("오늘은")
+    assert run["calls"] == 7 and run["cost_usd"] > 0 and run["cache_read"] > 0
+    assert run["plan"]["stop"] < run["plan"]["entry"] < run["plan"]["take"] and run["checklist"]["rules"]
+    assert run["agents"]["earn"]["status"] == "done" and "대표" not in run["agents"]["earn"]["bubble"]
+    saved = st.latest_decision("005930", run["trade_date"])
+    assert saved["plan"]["take"] == run["plan"]["take"] and saved["checklist"] is not None
+
+
+def test_meeting_precise_mode(tmp_path):
     st = Store(tmp_path / "m.db")
     cfg = config.load()
+    cfg["ai"]["mode"] = "precise"
     llm = FakeLLM()
     run = meeting.start("005930", Bars(), st, cfg, llm=llm, background=False)
     assert run["status"] == "done", run["error"]
-    assert run["final"]["rating"] == "Buy"
-    assert all(run["agents"][r.id]["status"] == "done" for r in ROLES)
     # 분석가 5 + 검증관 + 강세/약세 2 + 팀장 + 트레이더 + 리스크 3 + 대표 = 14번
-    assert len(llm.calls) == 14 and sum(c["schema"] for c in llm.calls) == 2
-    assert [c["web"] for c in llm.calls].count(True) == 5
-    models = [c["model"] for c in llm.calls]
-    assert models.count("claude-opus-5-5") == 3 and models.count("claude-sonnet-5-5") == 11
-    assert "투자자 프로필" in llm.calls[0]["system"] and "출처" in llm.calls[0]["system"]
+    assert len(llm.calls) == 14 and [c["web"] for c in llm.calls].count(True) == 5
+    assert [c["model"] for c in llm.calls].count("claude-opus-5-5") == 3
     assert run["check"]["scores"]["flow"] == 72 and run["facts"]["levels"]["sma20"]
     assert all(v == "done" for v in run["stages"].values()) and len(run["handoffs"]) >= 10
-    saved = st.latest_decision("005930", run["trade_date"])
-    assert saved["final"]["confidence"] == 0.8 and run["tokens_in"] == 1400
     hist = st.ai_runs(1)[0]
     assert hist["check"]["valuation"][0]["metric"] == "PER" and hist["name"] == "005930"
 
@@ -210,20 +238,47 @@ def test_meeting_error_is_recorded(tmp_path):
 
 def test_ai_targets_map_ratings(tmp_path):
     st = Store(tmp_path / "m.db")
-    cfg = config.load()
-    meeting.start("005930", Bars(), st, cfg, llm=FakeLLM("Buy", 0.9), background=False)
-    meeting.start("000660", Bars(), st, cfg, llm=FakeLLM("Sell", 0.9), background=False)
-    meeting.start("035420", Bars(), st, cfg, llm=FakeLLM("Hold", 0.9), background=False)
-    meeting.start("005380", Bars(), st, cfg, llm=FakeLLM("Buy", 0.3), background=False)
+    cfg = loose_cfg()
+    for sym, r, c in (("005930", "Buy", 0.9), ("000660", "Sell", 0.9), ("035420", "Hold", 0.9), ("005380", "Buy", 0.3)):
+        meeting.start(sym, Bars(), st, cfg, llm=FakeLLM(r, c), background=False)
     today = st.ai_runs(1)[0]["trade_date"]
-    target, keep, notes = ai_targets(st, cfg, ["005930", "000660", "035420", "005380", "373220"], today)
-    assert target == {"005930": pytest.approx(0.2), "000660": 0.0}
+    panel_ = {s: synthetic(s, days=300, seed=3) for s in ["005930", "000660", "035420", "005380", "373220"]}
+    target, keep, notes = ai_targets(st, cfg, panel_, today)
+    assert set(target) == {"005930", "000660"} and target["000660"] == 0.0 and 0 < target["005930"] <= 0.2
     assert keep == {"035420", "005380", "373220"}
-    assert {n["symbol"]: n["action"] for n in notes}["373220"] == "회의 결과 없음"
+    by = {n["symbol"]: n for n in notes}
+    assert by["373220"]["action"] == "회의 결과 없음" and by["005930"]["checklist"]["passed"]
+
+
+def test_checklist_blocks_impulse_buy(tmp_path):
+    """규칙을 엄격히 하면 같은 '매수' 의견도 막힌다 (하락 추세 종목)."""
+    import pandas as pd
+    from qtrader import principles
+    idx = pd.bdate_range("2025-01-01", periods=300)
+    down = pd.DataFrame({"open": 1.0, "high": 1.0, "low": 1.0, "close": [200 - i * 0.4 for i in range(300)],
+                         "volume": 1.0}, index=idx)
+    down["high"], down["low"] = down["close"] * 1.01, down["close"] * 0.99
+    cl = principles.checklist(FINAL, CHECK, down, [{"warningType": "OVERHEATED", "endDate": None}])
+    failed = {r["key"] for r in cl["rules"] if not r["ok"]}
+    assert not cl["passed"] and {"trend", "tsmom", "mom", "warnings"} <= failed
+    ok = principles.checklist(FINAL, CHECK, down, [], LOOSE)
+    assert ok["passed"] and 0 < ok["size"]["weight_factor"] <= 0.5
+    weak = principles.checklist(FINAL | {"take_profit_pct": 5}, CHECK, down, [], LOOSE)
+    assert not weak["passed"]  # 손익비 5/7 < 2
+
+
+def test_trade_plan_prices():
+    from qtrader import principles
+    p = principles.trade_plan(FINAL | {"entry_low": 70000, "entry_high": 72000, "stop_loss_pct": 7, "take_profit_pct": 15},
+                              71500, 10_000_000, 0.2, 0.25, "KR")
+    assert p["entry"] == 71000 and p["stop"] == 66030 and p["take"] == 81650
+    assert p["qty"] == 28 and p["max_loss"] == 28 * (71000 - 66030)
+    bad = principles.trade_plan(FINAL, 71500, 10_000_000, 0.2, 0.25, "KR")  # 95~100원: 단위 오류 -> 현재가 기준
+    assert bad["entry"] == 71500
 
 
 def test_engine_ai_strategy_keeps_undecided(isolated_home):
-    cfg = config.load()
+    cfg = loose_cfg()
     cfg["markets"]["KR"]["strategy"] = "ai"
     config.save(cfg)
     write_demo_csv(isolated_home / "data", cfg)
@@ -234,19 +289,25 @@ def test_engine_ai_strategy_keeps_undecided(isolated_home):
     r = run_market(ctx, Market.KR, force=True)
     assert [(o["symbol"], o["side"], o["status"]) for o in r["orders"]] == [("005930", "buy", "pending_approval")]
     assert ctx.broker.account(Market.KR).positions == {}  # 승인 전에는 주문이 나가지 않는다
-    r2 = run_market(ctx, Market.KR, force=True)
-    assert r2["orders"] == []  # 같은 날 같은 종목 승인 대기는 하나만
     pend = ctx.store.approvals("pending")
-    assert len(pend) == 1
-    from qtrader.engine import execute_approval
+    assert len(pend) == 1 and "AI 회의 Buy" in pend[0]["reason"] and "손절" in pend[0]["reason"]
+    assert run_market(ctx, Market.KR, force=True)["orders"] == []  # 같은 날 승인 대기는 하나만
+    from qtrader.engine import check_exits, execute_approval
     res = execute_approval(ctx, pend[0]["id"])
     assert res["status"] == "filled" and ctx.broker.account(Market.KR).positions["005930"].qty > 0
+    plans = ctx.store.active_plans("paper", "KR")
+    assert len(plans) == 1 and plans[0]["stop"] < plans[0]["take"]
     with pytest.raises(ValueError):
         execute_approval(ctx, pend[0]["id"])
+    # 손절가를 현재가 위로 옮기면 자동 손절
+    ctx.store.exec("update plans set stop=? where symbol='005930'", (10 ** 9,))
+    ex = check_exits(ctx, Market.KR)
+    assert ex and ex[0]["reason"] == "stop" and "005930" not in ctx.broker.account(Market.KR).positions
+    assert ctx.store.recent_stop("paper", "KR", "005930", 5)
 
 
 def test_approval_blocked_by_kill_switch(isolated_home):
-    cfg = config.load()
+    cfg = loose_cfg()
     cfg["markets"]["KR"]["strategy"] = "ai"
     config.save(cfg)
     write_demo_csv(isolated_home / "data", cfg)

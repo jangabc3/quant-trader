@@ -23,6 +23,22 @@ class Reply:
     data: dict | None = None
     input_tokens: int = 0
     output_tokens: int = 0
+    cache_read: int = 0
+    cache_write: int = 0
+    model: str = ""
+
+    def cost_usd(self) -> float:
+        return cost_usd(self.model, self.input_tokens, self.output_tokens, self.cache_read, self.cache_write)
+
+
+# 100만 토큰당 달러 (입력, 출력, 캐시 읽기, 캐시 쓰기). 웹 검색은 별도 과금
+PRICES = {"claude-opus-5-5": (4.0, 20.0, 0.20, 5.0), "claude-sonnet-5-5": (2.0, 10.0, 0.20, 2.5),
+          "claude-haiku-5-5": (0.10, 0.50, 0.01, 0.125), "claude-fable-5-1": (10.0, 50.0, 0.25, 12.5)}
+
+
+def cost_usd(model: str, inp: int, out: int, cr: int = 0, cw: int = 0) -> float:
+    a, b, c, d = PRICES.get(model, PRICES["claude-opus-5-5"])
+    return (inp * a + out * b + cr * c + cw * d) / 1e6
 
 
 def make_client() -> anthropic.Anthropic:
@@ -55,18 +71,23 @@ class LLM:
         return self._client
 
     def run(self, system: str, user: str, web: bool = False, schema: dict | None = None,
-            max_tokens: int = 16000, model: str | None = None) -> Reply:
+            max_tokens: int = 16000, model: str | None = None, context: str | None = None) -> Reply:
+        """context: 여러 참석자가 똑같이 읽는 회의 자료. 캐시 지점을 둬서 두 번째부터는 캐시 요금(입력의 1/10~1/20)만 낸다."""
         output_config: dict = {"effort": self.effort}
         if schema:
             output_config["format"] = {"type": "json_schema", "schema": schema}
-        messages: list[dict] = [{"role": "user", "content": user}]
-        tokens_in = tokens_out = 0
+        content = [{"type": "text", "text": context, "cache_control": {"type": "ephemeral"}}] if context else []
+        content.append({"type": "text", "text": user})
+        sys_blocks = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+        messages: list[dict] = [{"role": "user", "content": content}]
+        model = model or self.model
+        tokens_in = tokens_out = cr = cw = 0
         sources: list[dict] = []
         extra = {"tools": [WEB_SEARCH]} if web else {}
         for _ in range(5):  # 웹 검색이 길어지면 pause_turn 으로 끊겨 온다 -> 이어서 요청
             try:
                 resp = self.client.beta.messages.create(
-                    model=model or self.model, max_tokens=max_tokens, system=system, messages=messages,
+                    model=model, max_tokens=max_tokens, system=sys_blocks, messages=messages,
                     output_config=output_config, betas=BETAS, fallbacks="default", **extra)
             except anthropic.AuthenticationError:
                 raise LLMError("Claude API 키가 올바르지 않습니다. 설정에서 키를 확인하세요")
@@ -78,6 +99,8 @@ class LLM:
                 raise LLMError("Claude API 에 연결할 수 없습니다 (인터넷 연결 확인)")
             tokens_in += resp.usage.input_tokens
             tokens_out += resp.usage.output_tokens
+            cr += getattr(resp.usage, "cache_read_input_tokens", 0) or 0
+            cw += getattr(resp.usage, "cache_creation_input_tokens", 0) or 0
             sources += _sources(resp.content)
             if resp.stop_reason == "pause_turn":
                 messages.append({"role": "assistant", "content": resp.content})
@@ -91,5 +114,5 @@ class LLM:
                     data = json.loads(text)
                 except json.JSONDecodeError:
                     raise LLMError("구조화된 결과를 읽지 못했습니다")
-            return Reply(text, sources, data, tokens_in, tokens_out)
+            return Reply(text, sources, data, tokens_in, tokens_out, cr, cw, model)
         raise LLMError("웹 검색이 너무 길어져 중단했습니다")
