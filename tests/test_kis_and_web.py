@@ -135,3 +135,8 @@ def test_web_config_validation(client):
     assert client.put("/api/config", json=cfg, headers=h).status_code == 400
     cfg["risk"]["max_weight"] = 0.25
     assert client.put("/api/config", json=cfg, headers=h).json()["risk"]["max_weight"] == 0.25
+
+
+def test_token_survives_restart(isolated_home):
+    a, b = create_app(), create_app()
+    assert a.state.token == b.state.token and len(a.state.token) >= 32
