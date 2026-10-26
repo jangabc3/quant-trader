@@ -13,9 +13,12 @@ from .. import __version__, backtest, config as config_mod, market as market_mod
 from ..agents import meeting
 from ..agents.assistant import Assistant
 from ..agents.llm import LLMError
-from ..agents.roles import RATING_KO, ROLES
+from ..agents.roles import RATING_KO, ROLES, STAGES
 from ..data import panel
-from ..engine import build_context, run_market, toss_client
+from ..engine import build_context, execute_approval, run_market, toss_client
+from ..agents import track
+from ..agents.context import key_levels, market_of
+from .. import indicators as ind
 from ..models import Market
 from ..scheduler import Scheduler, is_open, next_run
 from ..storage import Store
@@ -50,6 +53,10 @@ class SecretIn(BaseModel):
 
 class MeetingIn(BaseModel):
     symbol: str
+
+
+class DecideIn(BaseModel):
+    approve: bool
 
 
 class ChatIn(BaseModel):
@@ -190,8 +197,8 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
     # AI 투자 회의
     @app.get("/api/ai/roles")
     def ai_roles():
-        return [{"id": r.id, "name": r.name, "title": r.title, "team": r.team, "look": r.look, "web": r.web}
-                for r in ROLES]
+        return {"roles": [{"id": r.id, "name": r.name, "title": r.title, "team": r.team, "look": r.look, "web": r.web,
+                           "deep": r.deep} for r in ROLES], "stages": [{"key": k, "name": n} for k, n in STAGES]}
 
     @app.get("/api/ai/runs")
     def ai_runs(limit: int = 30):
@@ -213,6 +220,51 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
                 raise HTTPException(404, "회의를 찾을 수 없습니다")
             r = rows[0]
         return r
+
+    @app.get("/api/ai/chart/{symbol}")
+    def ai_chart(symbol: str, days: int = 180):
+        """분석 결과 화면용: 일봉, 이동평균, 지지·저항."""
+        c = ctx()
+        s = symbol.upper()
+        try:
+            df = c.data.bars(market_of(s), s, max(days, 130))
+        except Exception as e:
+            raise HTTPException(502, f"차트 데이터를 받지 못했습니다: {e}")
+        cl = df["close"]
+        out = {"candles": [], "sma20": [], "sma60": [], "sma120": [], "levels": key_levels(df)}
+        smas = {k: ind.sma(cl, k) for k in (20, 60, 120)}
+        tail = df.tail(days)
+        for d, r in tail.iterrows():
+            t = d.strftime("%Y-%m-%d")
+            out["candles"].append({"time": t, "open": r.open, "high": r.high, "low": r.low, "close": r.close})
+            for k in (20, 60, 120):
+                v = smas[k].get(d)
+                if v == v and v is not None:
+                    out[f"sma{k}"].append({"time": t, "value": round(float(v), 2)})
+        out["rsi"] = round(float(ind.rsi(cl).iloc[-1]), 1)
+        return out
+
+    @app.get("/api/ai/track")
+    def ai_track():
+        c = ctx()
+        runs = c.store.ai_runs(300)
+        return track.evaluate(runs, lambda s: c.data.bars(market_of(s), s, 260))
+
+    @app.get("/api/approvals")
+    def approvals(status: str | None = None):
+        return ctx().store.approvals(status, 100)
+
+    @app.post("/api/approvals/{aid}", dependencies=[Depends(need_token)])
+    def decide(aid: int, body: DecideIn):
+        c = ctx()
+        if not body.approve:
+            c.store.decide_approval(aid, "rejected", "사용자 거절")
+            c.store.log("info", "approval", f"승인 #{aid} 거절")
+            return {"id": aid, "status": "rejected"}
+        try:
+            return execute_approval(c, aid)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
 
     @app.post("/api/ai/meeting", dependencies=[Depends(need_token)])
     def ai_meeting(body: MeetingIn):

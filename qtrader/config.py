@@ -56,8 +56,15 @@ DEFAULT = {
     "history_days": 400,
     # AI 투자 회의 (TradingAgents 구조). 전략을 "ai" 로 고른 시장에서 주문 근거가 된다
     "ai": {
-        "model": "claude-opus-5-5",
+        # 분석가·토론자는 빠른 모델, 검증관·팀장·대표는 깊은 모델 (TradingAgents 의 quick/deep 구분,
+        # 타민더마켓 가이드의 'Sonnet 기본 + 복잡한 분석만 Opus' 토큰 절약 팁)
+        "quick_model": "claude-sonnet-5-5",
+        "deep_model": "claude-opus-5-5",
         "effort": "medium",
+        # 모든 참석자가 읽는 투자자 프로필 (가이드 STEP 0 '프로젝트 기본 지령'). 비우면 기본 프로필
+        "profile": "",
+        # AI 회의로 정한 주문은 화면에서 승인해야 나간다 (가이드 원칙: 최종 판단은 사람이)
+        "require_approval": True,
         "debate_rounds": 1,
         "risk_rounds": 1,
         "web_research": True,  # 뉴스·재무·여론 분석가가 웹 검색을 쓴다

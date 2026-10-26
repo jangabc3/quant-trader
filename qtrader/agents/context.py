@@ -27,6 +27,7 @@ class Brief:
     facts: dict
     flows: list[dict]
     recent: list[dict]
+    levels: dict
 
     def text(self) -> str:
         f = self.facts
@@ -41,6 +42,9 @@ class Brief:
             f"거래량: 최근 5일 평균이 20일 평균의 {f['vol_ratio']}배  연 변동성 {f['vol_annual']}%",
             "최근 10거래일 종가: " + ", ".join(f"{r['date'][5:]} {r['close']:,}" for r in self.recent),
         ]
+        lv = self.levels
+        lines.append(f"가격대: 지지 {', '.join(f'{x:,}' for x in lv['support']) or '-'} / 저항 {', '.join(f'{x:,}' for x in lv['resistance']) or '-'}"
+                     f" / 20·60·120일선 {lv['sma20']:,} · {lv['sma60']:,} · {lv['sma120']:,} / 52주 고가 {lv['high52']:,} 저가 {lv['low52']:,}")
         if self.flows:
             lines.append("투자자별 순매수(주, 최신순): " + " / ".join(
                 f"{r['date'][5:]} 개인 {r['individual']} 외국인 {r['foreigner']} 기관 {r['institution']}"
@@ -77,10 +81,39 @@ def build(symbol: str, bars: pd.DataFrame, name: str = "", flows_raw: dict | Non
         "vol_ratio": _r(v.tail(5).mean() / v.tail(20).mean()) if v.tail(20).mean() else None,
         "vol_annual": _r(c.pct_change().tail(60).std() * np.sqrt(252) * 100, 1),
     }
+    levels = key_levels(bars)
     recent = [{"date": d.strftime("%Y-%m-%d"), "close": round(float(x), 2)} for d, x in c.tail(10).items()]
     flows = []
     for r in (flows_raw or {}).get("records", [])[:5]:
         g = lambda k: (r.get(k) or {}).get("netBuyVolume", "-")
         flows.append({"date": r.get("date", ""), "individual": g("individual"), "foreigner": g("foreigner"),
                       "institution": g("institution")})
-    return Brief(symbol, market_of(symbol), name or symbol, facts, flows, recent)
+    return Brief(symbol, market_of(symbol), name or symbol, facts, flows, recent, levels)
+
+
+def key_levels(bars: pd.DataFrame, window: int = 5, n: int = 3) -> dict:
+    """최근 120거래일의 스윙 고점·저점으로 저항·지지 가격대를 잡는다 (현재가 위 저항, 아래 지지)."""
+    tail = bars.tail(120)
+    h, l, c = tail["high"], tail["low"], bars["close"]
+    last = float(c.iloc[-1])
+    highs = [float(h.iloc[i]) for i in range(window, len(h) - window)
+             if h.iloc[i] == h.iloc[i - window:i + window + 1].max()]
+    lows = [float(l.iloc[i]) for i in range(window, len(l) - window)
+            if l.iloc[i] == l.iloc[i - window:i + window + 1].min()]
+
+    def merge(xs):  # 1.5% 안쪽으로 붙은 가격대는 하나로
+        out: list[float] = []
+        for x in sorted(xs):
+            if out and abs(x / out[-1] - 1) < 0.015:
+                out[-1] = (out[-1] + x) / 2
+            else:
+                out.append(x)
+        return out
+
+    rnd = (lambda v: round(v)) if last >= 1000 else (lambda v: round(v, 2))
+    res = [rnd(x) for x in merge(highs) if x > last][:n]
+    sup = [rnd(x) for x in sorted(merge(lows), reverse=True) if x < last][:n]
+    year = c.tail(252)
+    sma = lambda k: rnd(float(ind.sma(c, k).iloc[-1])) if len(c) >= k else rnd(float(c.mean()))
+    return {"support": sup, "resistance": res, "sma20": sma(20), "sma60": sma(60), "sma120": sma(120),
+            "high52": rnd(float(year.max())), "low52": rnd(float(year.min()))}

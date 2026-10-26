@@ -12,6 +12,7 @@ from .. import market as market_mod
 from . import context as ctxmod
 from . import meeting
 from .llm import BETAS, WEB_SEARCH, LLMError, make_client
+from .roles import PROFILE_DEFAULT
 
 SYSTEM = (
     "너는 QTrader 사용자의 개인 투자 비서 '비서'다. 한국어로 짧고 분명하게 답한다. "
@@ -127,7 +128,9 @@ class Assistant:
         for _ in range(8):
             try:
                 resp = self.client.beta.messages.create(
-                    model=ai["model"], max_tokens=8000, system=SYSTEM, messages=msgs, tools=tools,
+                    model=ai.get("quick_model") or ai.get("model"), max_tokens=8000,
+                    system=f"{SYSTEM}\n\n# 사용자 투자 프로필\n{ai.get('profile') or PROFILE_DEFAULT}",
+                    messages=msgs, tools=tools,
                     output_config={"effort": "low"}, betas=BETAS, fallbacks="default")
             except anthropic.AuthenticationError:
                 raise LLMError("Claude API 키가 올바르지 않습니다. 설정에서 키를 확인하세요")
