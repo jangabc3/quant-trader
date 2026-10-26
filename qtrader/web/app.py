@@ -9,15 +9,20 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .. import __version__, backtest, config as config_mod, strategies, vault
+from .. import __version__, backtest, config as config_mod, market as market_mod, strategies, vault
+from ..agents import meeting
+from ..agents.assistant import Assistant
+from ..agents.llm import LLMError
+from ..agents.roles import RATING_KO, ROLES
 from ..data import panel
-from ..engine import build_context, run_market
+from ..engine import build_context, run_market, toss_client
 from ..models import Market
 from ..scheduler import Scheduler, is_open, next_run
 from ..storage import Store
 
 STATIC = Path(__file__).parent / "static"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
+SECRET_KINDS = ("kis_demo", "kis_real", "toss", "anthropic")
 
 
 class BacktestIn(BaseModel):
@@ -37,13 +42,27 @@ class ToggleIn(BaseModel):
     on: bool
 
 
-class SecretsIn(BaseModel):
-    env: str
-    app_key: str
-    app_secret: str
+class SecretIn(BaseModel):
+    kind: str
+    key: str
+    secret: str = ""
 
 
-def create_app(scheduler: Scheduler | None = None) -> FastAPI:
+class MeetingIn(BaseModel):
+    symbol: str
+
+
+class ChatIn(BaseModel):
+    text: str
+    thread_id: str | None = None
+
+
+def key_state() -> dict:
+    return {"kis_demo": vault.has_kis("demo"), "kis_real": vault.has_kis("real"),
+            "toss": vault.get_toss() is not None, "anthropic": bool(vault.get_anthropic())}
+
+
+def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=None) -> FastAPI:
     app = FastAPI(title="QTrader", version=__version__, docs_url=None, redoc_url=None)
     token = secrets.token_urlsafe(24)
     sched = scheduler or Scheduler()
@@ -67,6 +86,11 @@ def create_app(scheduler: Scheduler | None = None) -> FastAPI:
         except RuntimeError as e:
             raise HTTPException(400, str(e))
 
+    def toss():
+        return toss_client(config_mod.load())
+
+    assistant = Assistant(ctx, toss, config_mod.load, client=assistant_client)
+
     @app.get("/", response_class=HTMLResponse)
     def index():
         html = (STATIC / "index.html").read_text(encoding="utf-8")
@@ -77,10 +101,10 @@ def create_app(scheduler: Scheduler | None = None) -> FastAPI:
     @app.get("/api/status")
     def status():
         cfg = config_mod.load()
-        store_ctx = None
+        c = None
         err = ""
         try:
-            store_ctx = build_context(cfg)
+            c = build_context(cfg)
         except RuntimeError as e:
             err = str(e)
         markets = {}
@@ -89,22 +113,20 @@ def create_app(scheduler: Scheduler | None = None) -> FastAPI:
             info = {"enabled": mc["enabled"], "strategy": mc["strategy"], "run_time": mc["run_time"],
                     "open": is_open(m), "next_run": next_run(m, mc["run_time"]).isoformat(timespec="minutes"),
                     "budget": mc["budget"]}
-            if store_ctx and mc["enabled"]:
+            if c and mc["enabled"]:
                 try:
-                    a = store_ctx.broker.account(m)
+                    a = c.broker.account(m)
                     info.update(cash=a.cash, equity=a.equity, positions=len(a.positions))
                 except Exception as e:
                     info["account_error"] = str(e)
             markets[m.value] = info
-        st = store_ctx.store if store_ctx else None
+        st = c.store if c else None
         return {
             "version": __version__, "mode": cfg["mode"], "live_confirmed": cfg.get("live_confirmed", False),
-            "broker": store_ctx.broker.name if store_ctx else None,
-            "data_source": store_ctx.data.name if store_ctx else None,
+            "broker": c.broker.name if c else None, "data_source": c.data.name if c else None,
             "kill_switch": bool(st and st.get("kill_switch", "0") == "1"),
             "auto_trading": bool(st and st.get("auto_trading", "0") == "1"),
-            "keys": {"demo": vault.has_kis("demo"), "real": vault.has_kis("real")},
-            "markets": markets, "error": err, "scheduler_error": sched.last_error,
+            "keys": key_state(), "markets": markets, "error": err, "scheduler_error": sched.last_error,
         }
 
     @app.get("/api/positions")
@@ -139,6 +161,80 @@ def create_app(scheduler: Scheduler | None = None) -> FastAPI:
         return {k: {f: v.default for f, v in cls.__dataclass_fields__.items()}
                 for k, cls in strategies.REGISTRY.items()}
 
+    # 시장 한눈에 보기
+    @app.get("/api/market/overview")
+    def market_overview():
+        try:
+            return market_mod.overview(toss())
+        except Exception as e:
+            raise HTTPException(502, f"시장 정보를 받지 못했습니다: {e}")
+
+    @app.get("/api/market/rankings")
+    def market_rankings(kind: str = "amount", market: str = "KR", duration: str = "realtime", count: int = 30):
+        if market not in ("KR", "US"):
+            raise HTTPException(400, "market 은 KR 또는 US")
+        try:
+            return market_mod.rankings(toss(), kind, market, duration, min(max(count, 1), 100))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        except Exception as e:
+            raise HTTPException(502, f"순위를 받지 못했습니다: {e}")
+
+    @app.get("/api/market/watch")
+    def market_watch():
+        try:
+            return market_mod.watch_quotes(toss(), config_mod.load().get("watchlist", []))
+        except Exception as e:
+            raise HTTPException(502, str(e))
+
+    # AI 투자 회의
+    @app.get("/api/ai/roles")
+    def ai_roles():
+        return [{"id": r.id, "name": r.name, "title": r.title, "team": r.team, "look": r.look, "web": r.web}
+                for r in ROLES]
+
+    @app.get("/api/ai/runs")
+    def ai_runs(limit: int = 30):
+        live = meeting.live_runs()
+        ids = {r["id"] for r in live}
+        hist = [r for r in ctx().store.ai_runs(limit) if r["id"] not in ids]
+        rows = live + hist
+        for r in rows:
+            f = r.get("final") or {}
+            r["rating_ko"] = RATING_KO.get(f.get("rating"), "")
+        return rows[:limit]
+
+    @app.get("/api/ai/run/{run_id}")
+    def ai_run(run_id: str):
+        r = meeting.get_run(run_id)
+        if r is None:
+            rows = [x for x in ctx().store.ai_runs(500) if x["id"] == run_id]
+            if not rows:
+                raise HTTPException(404, "회의를 찾을 수 없습니다")
+            r = rows[0]
+        return r
+
+    @app.post("/api/ai/meeting", dependencies=[Depends(need_token)])
+    def ai_meeting(body: MeetingIn):
+        c = ctx()
+        if llm is None and not vault.get_anthropic():
+            import os
+            if not os.environ.get("ANTHROPIC_API_KEY"):
+                raise HTTPException(400, "설정에서 Claude API 키를 먼저 등록하세요")
+        try:
+            return meeting.start(body.symbol, c.data, c.store, c.cfg, llm=llm, toss=toss())
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.post("/api/assistant", dependencies=[Depends(need_token)])
+    def chat(body: ChatIn):
+        if not body.text.strip():
+            raise HTTPException(400, "메시지를 입력하세요")
+        try:
+            return assistant.chat(body.thread_id, body.text.strip()[:4000])
+        except LLMError as e:
+            raise HTTPException(400, str(e))
+
     @app.post("/api/backtest", dependencies=[Depends(need_token)])
     def run_backtest(body: BacktestIn):
         c = ctx()
@@ -163,7 +259,6 @@ def create_app(scheduler: Scheduler | None = None) -> FastAPI:
     def run_once(body: RunIn):
         c = ctx()
         if c.broker.live and not body.dry_run:
-            # 실전 즉시 실행은 화면에서 한 번 더 확인한 뒤에만 오도록 프론트에서 막지만, 서버도 기록한다
             c.store.log("warn", "web", "실전 계좌 즉시 실행 요청")
         return run_market(c, Market(body.market), dry_run=body.dry_run, force=True)
 
@@ -189,6 +284,9 @@ def create_app(scheduler: Scheduler | None = None) -> FastAPI:
     def put_config(cfg: dict):
         merged = config_mod._merge(config_mod.DEFAULT, cfg)
         errs = config_mod.validate(merged)
+        for m, mc in merged["markets"].items():
+            if mc["strategy"] != "ai" and mc["strategy"] not in strategies.REGISTRY:
+                errs.append(f"{m}: 알 수 없는 전략 {mc['strategy']}")
         if errs:
             raise HTTPException(400, " / ".join(errs))
         old = config_mod.load()
@@ -201,17 +299,29 @@ def create_app(scheduler: Scheduler | None = None) -> FastAPI:
         return merged
 
     @app.put("/api/secrets", dependencies=[Depends(need_token)])
-    def put_secrets(body: SecretsIn):
-        if body.env not in ("demo", "real"):
-            raise HTTPException(400, "env 는 demo 또는 real")
-        if len(body.app_key) < 10 or len(body.app_secret) < 10:
-            raise HTTPException(400, "앱키/시크릿이 너무 짧습니다")
-        vault.set_kis(body.env, body.app_key, body.app_secret)
-        return {"ok": True}
+    def put_secret(body: SecretIn):
+        if body.kind not in SECRET_KINDS:
+            raise HTTPException(400, f"kind 는 {SECRET_KINDS} 중 하나")
+        if len(body.key.strip()) < 10 or (body.kind != "anthropic" and len(body.secret.strip()) < 10):
+            raise HTTPException(400, "키가 너무 짧습니다")
+        if body.kind.startswith("kis"):
+            vault.set_kis(body.kind[4:], body.key, body.secret)
+        elif body.kind == "toss":
+            vault.set_toss(body.key, body.secret)
+        else:
+            vault.put("anthropic_api_key", body.key)
+        return {"ok": True, "keys": key_state()}
 
-    @app.delete("/api/secrets/{env}", dependencies=[Depends(need_token)])
-    def del_secrets(env: str):
-        vault.delete_kis(env)
-        return {"ok": True}
+    @app.delete("/api/secrets/{kind}", dependencies=[Depends(need_token)])
+    def del_secret(kind: str):
+        if kind not in SECRET_KINDS:
+            raise HTTPException(400, "알 수 없는 키 종류")
+        if kind.startswith("kis"):
+            vault.delete_kis(kind[4:])
+        elif kind == "toss":
+            vault.delete_toss()
+        else:
+            vault.delete("anthropic_api_key")
+        return {"ok": True, "keys": key_state()}
 
     return app

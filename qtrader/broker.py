@@ -69,6 +69,25 @@ class PaperBroker:
         return OrderResult(True, "paper", "가상 체결", req.qty, px)
 
 
+class TossBroker:
+    """토스증권 실전 계좌. 같은 날 같은 주문이 두 번 나가지 않게 clientOrderId(멱등성 키)를 붙인다."""
+
+    live = True
+
+    def __init__(self, client, us_loc: bool = True):
+        self.client, self.us_loc = client, us_loc
+        self.name = "toss"
+
+    def account(self, market: Market) -> Account:
+        return self.client.account(market)
+
+    def order(self, req: OrderRequest) -> OrderResult:
+        from datetime import date
+
+        coid = f"qt{date.today():%y%m%d}{req.market.value}{req.side.value[0]}{req.qty}-{req.symbol.replace(':', '')}"
+        return self.client.order(req, client_order_id=coid, loc=self.us_loc)
+
+
 class KISBroker:
     def __init__(self, client: KIS):
         self.client = client

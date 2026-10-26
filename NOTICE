@@ -1,0 +1,11 @@
+QTrader
+
+AI 투자 회의의 다중 에이전트 구조(분석가 -> 강세/약세 토론 -> 리서치 매니저 -> 트레이더 ->
+리스크 토론 -> 포트폴리오 매니저, 5단계 등급)는 다음 프로젝트를 참고했습니다.
+
+TradingAgents
+Copyright (c) TauricResearch
+Licensed under the Apache License, Version 2.0
+https://github.com/TauricResearch/TradingAgents
+
+QTrader 의 코드와 프롬프트는 새로 작성했으며 TradingAgents 의 소스 코드를 포함하지 않습니다.

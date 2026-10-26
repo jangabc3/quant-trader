@@ -8,9 +8,10 @@ from zoneinfo import ZoneInfo
 
 from . import config as config_mod
 from . import strategies, vault
-from .broker import Broker, KISBroker, PaperBroker
-from .data import CSVData, DataSource, KISData, panel
+from .broker import Broker, KISBroker, PaperBroker, TossBroker
+from .data import CSVData, DataSource, KISData, TossData, panel
 from .kis import KIS
+from .toss import Toss
 from .models import Market, OrderRequest, Side
 from .risk import RiskLimits, cap_weights, check_orders, clamp_qty, loss_breached
 from .storage import Store
@@ -35,37 +36,87 @@ class Context:
 
 
 def kis_client(cfg: dict, env: str) -> KIS | None:
-    keys = vault.get_kis(env) if vault.has_kis(env) else None
+    keys = vault.get_kis(env)
     if not keys or not cfg["kis"].get("account"):
         return None
     return KIS(env, keys[0], keys[1], cfg["kis"]["account"], config_mod.home())
+
+
+def toss_client(cfg: dict) -> Toss | None:
+    keys = vault.get_toss()
+    if not keys:
+        return None
+    return Toss(keys[0], keys[1], config_mod.home(), cfg.get("toss", {}).get("account_seq"))
+
+
+def pick_data(cfg: dict, store: Store) -> DataSource:
+    want = cfg.get("data_source", "auto")
+    if want in ("auto", "toss"):
+        t = toss_client(cfg)
+        if t:
+            return TossData(t, store)
+        if want == "toss":
+            raise RuntimeError("토스증권 키를 먼저 등록하세요")
+    if want in ("auto", "kis"):
+        k = kis_client(cfg, "demo") or kis_client(cfg, "real")
+        if k:
+            return KISData(k, store)
+        if want == "kis":
+            raise RuntimeError("KIS 키를 먼저 등록하세요")
+    return CSVData(config_mod.home() / "data")
 
 
 def build_context(cfg: dict | None = None, store: Store | None = None) -> Context:
     cfg = cfg or config_mod.load()
     store = store or Store(config_mod.home() / "qtrader.db")
     mode = cfg["mode"]
+    if mode in config_mod.LIVE_MODES and not cfg.get("live_confirmed"):
+        raise RuntimeError("실전 모드는 설정에서 실전 주문 확인(live_confirmed)을 켜야 합니다")
     if mode == "paper":
-        # 가상매매도 시세는 KIS(모의 키 우선)로 받고, 키가 없으면 CSV 로
-        client = kis_client(cfg, "demo") or kis_client(cfg, "real")
-        data: DataSource = KISData(client, store) if client else CSVData(config_mod.home() / "data")
+        data = pick_data(cfg, store)
         broker: Broker = PaperBroker(store, cfg["paper"]["initial_cash"], data.price)
         return Context(cfg, store, data, broker)
+    if mode == "toss_real":
+        t = toss_client(cfg)
+        if t is None:
+            raise RuntimeError("토스증권 Client ID/Secret 을 먼저 등록하세요")
+        return Context(cfg, store, TossData(t, store), TossBroker(t, cfg["toss"].get("us_loc", True)))
     env = "real" if mode == "kis_real" else "demo"
     client = kis_client(cfg, env)
     if client is None:
         raise RuntimeError(f"{env} KIS 키와 계좌번호를 먼저 등록하세요")
-    if env == "real" and not cfg.get("live_confirmed"):
-        raise RuntimeError("실전 모드는 설정에서 실전 주문 확인(live_confirmed)을 켜야 합니다")
     return Context(cfg, store, KISData(client, store), KISBroker(client))
+
+
+def ai_targets(store: Store, cfg: dict, universe: list[str], today: str) -> tuple[dict, set, list]:
+    """오늘 AI 회의 결정으로 목표 비중을 만든다. 결정이 없거나 Hold·확신 부족이면 보유를 유지(keep)."""
+    ai = cfg["ai"]
+    mult = ai["rating_weights"]
+    base = 1.0 / max(len(universe), 1)
+    target, keep, notes = {}, set(), []
+    for s in universe:
+        d = store.latest_decision(s, today)
+        f = (d or {}).get("final") or {}
+        rating, conf = f.get("rating"), float(f.get("confidence") or 0)
+        m = mult.get(rating) if rating else None
+        if not d or m is None or conf < ai.get("min_confidence", 0.5):
+            keep.add(s)
+            why = "회의 결과 없음" if not d else ("보유 유지" if m is None else f"확신 부족 {conf:.0%}")
+        else:
+            target[s] = base * float(m)
+            why = f"{rating} {conf:.0%}"
+        notes.append({"symbol": s, "rating": rating, "confidence": conf, "action": why})
+    return target, keep, notes
 
 
 def plan_orders(target: dict[str, float], prices: dict[str, float], holdings: dict[str, int],
                 capital: float, market: Market, lim: RiskLimits, strategy: str,
-                limit_offset: float = 0.0) -> list[OrderRequest]:
-    """목표 비중과 현재 보유의 차이를 주문으로. 매도를 먼저 둔다."""
+                limit_offset: float = 0.0, keep: frozenset | set = frozenset()) -> list[OrderRequest]:
+    """목표 비중과 현재 보유의 차이를 주문으로. 매도를 먼저 둔다. keep 에 든 종목은 건드리지 않는다."""
     sells, buys = [], []
     for s in sorted(set(target) | set(holdings)):
+        if s in keep:
+            continue
         px = prices.get(s)
         if not px:
             continue
@@ -98,7 +149,9 @@ def run_market(ctx: Context, market: Market, dry_run: bool = False, force: bool 
     if not force and not dry_run and store.ran(today, acct_id, market.value):
         return {"skipped": "오늘 이미 실행했습니다"}
 
-    strat = strategies.build(mc["strategy"], mc.get("params"))
+    use_ai = mc["strategy"] == "ai"
+    strat = None if use_ai else strategies.build(mc["strategy"], mc.get("params"))
+    strat_name = "ai" if use_ai else strat.name
     errors: list[str] = []
     p = panel(ctx.data, market, mc["universe"], cfg["history_days"], errors)
     for e in errors:
@@ -108,7 +161,13 @@ def run_market(ctx: Context, market: Market, dry_run: bool = False, force: bool 
         return {"error": "데이터 없음", "data_errors": errors}
 
     lim = RiskLimits.from_config(cfg, market)
-    target = cap_weights(strat.latest(p), lim)
+    keep: set[str] = set()
+    ai_notes: list[dict] = []
+    if use_ai:
+        raw, keep, ai_notes = ai_targets(store, cfg, list(p), today)
+    else:
+        raw = strat.latest(p)
+    target = cap_weights(raw, lim)
     prices = {s: float(df["close"].iloc[-1]) for s, df in p.items()}
 
     acct = ctx.broker.account(market)
@@ -127,7 +186,8 @@ def run_market(ctx: Context, market: Market, dry_run: bool = False, force: bool 
         kill = True
         store.log("error", src, f"일일 손실 한도 도달 ({managed / start_eq - 1:.2%}). 킬 스위치를 켰습니다")
 
-    orders = plan_orders(target, prices, holdings, capital, market, lim, strat.name, mc.get("limit_offset", 0.0))
+    orders = plan_orders(target, prices, holdings, capital, market, lim, strat_name, mc.get("limit_offset", 0.0),
+                         keep)
     checked = check_orders(orders, lim, universe, kill, store.ordered_today(acct_id, market.value, today),
                            acct.cash)
     for o, why in checked.blocked:
@@ -156,7 +216,7 @@ def run_market(ctx: Context, market: Market, dry_run: bool = False, force: bool 
     store.log("info", src, f"실행 완료: 주문 {len(results)}건, 차단 {len(checked.blocked)}건"
               + (" (dry-run)" if dry_run else ""))
     return {
-        "trade_date": today, "account": acct_id, "strategy": strat.name, "capital": capital,
+        "trade_date": today, "account": acct_id, "strategy": strat_name, "ai": ai_notes, "capital": capital,
         "target": {k: round(v, 4) for k, v in target.items() if v > 0},
         "orders": results, "blocked": [{"symbol": o.symbol, "side": o.side.value, "reason": w}
                                        for o, w in checked.blocked],

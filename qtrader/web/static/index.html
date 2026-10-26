@@ -12,7 +12,9 @@
 <header class="top">
   <div class="brand">QTrader <span class="ver">v__VERSION__</span></div>
   <nav>
-    <button data-tab="dash" class="on">대시보드</button>
+    <button data-tab="mkt" class="on">시장</button>
+    <button data-tab="office">AI 사무실</button>
+    <button data-tab="dash">내 계좌</button>
     <button data-tab="bt">백테스트</button>
     <button data-tab="cfg">설정</button>
   </nav>
@@ -26,8 +28,70 @@
 <main>
   <div id="banner" class="banner hidden"></div>
 
-  <!-- 대시보드 -->
-  <section id="tab-dash" class="tab">
+  <!-- 시장 한눈에 보기 -->
+  <section id="tab-mkt" class="tab">
+    <div class="mkt-head">
+      <div><span class="live-dot"></span><b id="mkt-session">-</b> <span id="mkt-asof" class="note"></span></div>
+      <span id="mkt-demo" class="badge amber hidden">체험용 데이터 · 실제 시세 아님</span>
+    </div>
+    <div class="hero">
+      <div class="idx-cards" id="idx-cards"></div>
+      <div class="side-cards">
+        <div class="mini-card" id="fx-card"></div>
+        <div class="mini-card" id="bond-card"></div>
+        <div class="mini-card" id="us-card"></div>
+      </div>
+    </div>
+    <div class="watch" id="watch"></div>
+    <div class="panel">
+      <div class="rank-bar">
+        <div class="seg" id="rank-market"><button data-v="KR" class="on">국내</button><button data-v="US">해외</button></div>
+        <div class="seg" id="rank-kind">
+          <button data-v="amount" class="on">거래대금</button><button data-v="volume">거래량</button>
+          <button data-v="gainers">급상승</button><button data-v="losers">급하락</button>
+          <button data-v="toss_amount">토스증권 거래대금</button>
+        </div>
+        <select id="rank-duration">
+          <option value="realtime">실시간</option><option value="1d">1일</option><option value="1w">1주</option>
+          <option value="1mo">1개월</option><option value="3mo">3개월</option>
+        </select>
+        <span id="rank-time" class="note"></span>
+      </div>
+      <table class="rank"><thead><tr><th>순위</th><th></th><th>종목</th><th class="r">현재가</th><th class="r">등락률</th><th class="r">거래대금</th><th></th></tr></thead>
+        <tbody id="rank-body"></tbody></table>
+    </div>
+  </section>
+
+  <!-- AI 사무실 -->
+  <section id="tab-office" class="tab hidden">
+    <div class="office-bar">
+      <input id="meet-symbol" placeholder="종목 코드 또는 티커 (예: 005930, NVDA)">
+      <button id="meet-start" class="primary">AI 투자 회의 시작</button>
+      <select id="meet-runs"></select>
+      <span id="meet-stage" class="note"></span>
+    </div>
+    <div class="office-grid">
+      <div class="office-wrap" id="office-wrap">
+        <canvas id="office" width="480" height="300"></canvas>
+        <div id="office-overlay"></div>
+      </div>
+      <div class="office-side">
+        <div class="panel decision" id="decision"><h3>최종 결정</h3><p class="note">회의를 시작하거나 지난 회의를 고르세요.</p></div>
+        <div class="panel report" id="report"><h3>보고서</h3><p class="note">캐릭터를 누르면 그 참석자의 보고서가 보입니다.</p></div>
+      </div>
+    </div>
+    <div class="panel chat">
+      <h3>비서와 대화 <small>시세·계좌·차트를 직접 확인해서 답합니다. 주문은 내지 않습니다.</small></h3>
+      <div id="chat-log" class="chat-log"></div>
+      <form id="chat-form" class="chat-form">
+        <input id="chat-input" placeholder="예: 오늘 외국인이 많이 산 종목 알려줘 / 삼성전자 지금 어때?" autocomplete="off">
+        <button class="primary">보내기</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- 내 계좌 -->
+  <section id="tab-dash" class="tab hidden">
     <div class="controls">
       <button id="auto-btn" class="primary">자동매매 시작</button>
       <button id="kill-btn" class="danger">킬 스위치 켜기</button>
@@ -70,6 +134,7 @@
       </div>
       <div class="form-row"><label class="wide">종목 (쉼표로 구분, 비우면 설정의 종목) <input id="bt-universe" placeholder="005930, 000660"></label></div>
       <div id="bt-params" class="form-row params"></div>
+      <p class="note">AI 투자 회의 전략은 과거 시점의 뉴스를 재현할 수 없어 백테스트하지 않습니다.</p>
     </div>
     <div class="cards" id="bt-metrics"></div>
     <div class="panel">
@@ -84,40 +149,71 @@
     <div class="grid2">
       <div class="panel">
         <h3>운용 모드</h3>
-        <label class="radio"><input type="radio" name="mode" value="paper"> 가상매매 — 내 PC 안에서만 체결 (처음엔 이걸로)</label>
+        <label class="radio"><input type="radio" name="mode" value="paper"> 가상매매: 실제 시세로 내 PC 안에서만 체결 (처음엔 이걸로)</label>
+        <label class="radio"><input type="radio" name="mode" value="toss_real"> 토스증권 실전: 실제 돈으로 주문</label>
         <label class="radio"><input type="radio" name="mode" value="kis_demo"> 한국투자증권 모의투자</label>
-        <label class="radio"><input type="radio" name="mode" value="kis_real"> 한국투자증권 실전 — 실제 돈으로 주문</label>
+        <label class="radio"><input type="radio" name="mode" value="kis_real"> 한국투자증권 실전: 실제 돈으로 주문</label>
         <label class="check"><input type="checkbox" id="live-confirmed"> 실전 주문을 허용합니다. 손실 책임이 저에게 있음을 이해했습니다.</label>
-        <label>계좌번호 <input id="kis-account" placeholder="12345678-01"></label>
+        <div class="form-row">
+          <label>시세 출처 <select id="data-source"><option value="auto">자동 (토스 → KIS → CSV)</option><option value="toss">토스증권</option><option value="kis">한국투자증권</option><option value="csv">CSV 파일</option></select></label>
+          <label>KIS 계좌번호 <input id="kis-account" placeholder="12345678-01"></label>
+          <label class="check"><input type="checkbox" id="toss-loc"> 토스 미국 주문은 LOC(장 마감 지정가)</label>
+        </div>
       </div>
       <div class="panel">
-        <h3>한국투자증권 API 키</h3>
-        <p class="note">KIS Developers 에서 발급한 앱키/시크릿입니다. 이 PC의 윈도우 자격 증명 관리자에만 저장됩니다.</p>
+        <h3>API 키 <small>이 PC의 윈도우 자격 증명 관리자에만 저장됩니다</small></h3>
         <div class="form-row">
-          <label>구분 <select id="key-env"><option value="demo">모의투자</option><option value="real">실전</option></select></label>
+          <label>종류 <select id="key-kind">
+            <option value="toss">토스증권 (Client ID / Secret)</option>
+            <option value="anthropic">Claude API 키 (AI 회의·비서)</option>
+            <option value="kis_demo">한국투자증권 모의 (앱키 / 시크릿)</option>
+            <option value="kis_real">한국투자증권 실전 (앱키 / 시크릿)</option>
+          </select></label>
           <span id="key-state" class="note"></span>
         </div>
-        <label>앱키 <input id="key-app" autocomplete="off"></label>
-        <label>앱시크릿 <input id="key-secret" type="password" autocomplete="off"></label>
-        <div class="form-row"><button id="key-save" class="primary">키 저장</button><button id="key-del">이 구분의 키 삭제</button></div>
+        <label><span id="key-label1">Client ID</span> <input id="key-app" autocomplete="off"></label>
+        <label id="key-secret-wrap"><span id="key-label2">Client Secret</span> <input id="key-secret" type="password" autocomplete="off"></label>
+        <div class="form-row"><button id="key-save" class="primary">키 저장</button><button id="key-del">이 키 삭제</button></div>
+        <p class="note">토스증권은 WTS 설정 → Open API → 허용 IP 에 이 PC의 공인 IP를 등록해야 주문이 됩니다. 토스증권에는 모의투자가 없으니 연습은 가상매매 모드로 하세요.</p>
       </div>
     </div>
     <div class="grid2" id="market-cfg"></div>
-    <div class="panel">
-      <h3>리스크 관리</h3>
-      <div class="form-row">
-        <label>종목당 최대 비중 <input id="r-maxw" type="number" step="0.01" min="0.01" max="1"></label>
-        <label>총 투자 비중 상한 <input id="r-maxe" type="number" step="0.01" min="0.01" max="1"></label>
-        <label>일일 손실 한도 <input id="r-loss" type="number" step="0.005" min="0.005" max="0.5"></label>
-        <label>1회 주문 한도(원) <input id="r-ordkr" type="number" step="100000"></label>
-        <label>1회 주문 한도($) <input id="r-ordus" type="number" step="100"></label>
+    <div class="grid2">
+      <div class="panel">
+        <h3>AI 투자 회의</h3>
+        <div class="form-row">
+          <label>모델 <input id="ai-model"></label>
+          <label>추론 강도 <select id="ai-effort"><option>low</option><option>medium</option><option>high</option><option>xhigh</option><option>max</option></select></label>
+          <label>강세/약세 토론 라운드 <input id="ai-debate" type="number" min="0" max="3"></label>
+          <label>리스크 토론 라운드 <input id="ai-risk" type="number" min="0" max="3"></label>
+        </div>
+        <div class="form-row">
+          <label>실행 몇 분 전 회의 <input id="ai-before" type="number" min="10" max="180"></label>
+          <label>하루 회의 종목 상한 <input id="ai-max" type="number" min="1" max="50"></label>
+          <label>최소 확신도 <input id="ai-conf" type="number" step="0.05" min="0" max="1"></label>
+          <label class="check"><input type="checkbox" id="ai-web"> 웹 검색으로 뉴스·재무·여론 조사</label>
+        </div>
+        <p class="note">회의 1번에 Claude 호출이 12번쯤 일어납니다. 종목 수와 라운드가 늘면 비용이 늘어납니다.</p>
+      </div>
+      <div class="panel">
+        <h3>리스크 관리</h3>
+        <div class="form-row">
+          <label>종목당 최대 비중 <input id="r-maxw" type="number" step="0.01" min="0.01" max="1"></label>
+          <label>총 투자 비중 상한 <input id="r-maxe" type="number" step="0.01" min="0.01" max="1"></label>
+          <label>일일 손실 한도 <input id="r-loss" type="number" step="0.005" min="0.005" max="0.5"></label>
+          <label>1회 주문 한도(원) <input id="r-ordkr" type="number" step="100000"></label>
+          <label>1회 주문 한도($) <input id="r-ordus" type="number" step="100"></label>
+        </div>
+        <label>관심 종목 (시장 화면 상단, 쉼표로 구분) <input id="watchlist"></label>
       </div>
     </div>
     <div class="controls"><button id="cfg-save" class="primary">설정 저장</button><span id="cfg-msg" class="note"></span></div>
   </section>
 </main>
 
-<footer>이 프로그램은 투자 권유가 아니며, 모든 매매 판단과 손익은 사용자 본인의 책임입니다.</footer>
+<footer>이 프로그램은 투자 권유가 아니며, 모든 매매 판단과 손익은 사용자 본인의 책임입니다. AI 회의 구조는 TradingAgents(Apache-2.0)를 참고했습니다.</footer>
 <script src="/static/app.js"></script>
+<script src="/static/market.js"></script>
+<script src="/static/office.js"></script>
 </body>
 </html>

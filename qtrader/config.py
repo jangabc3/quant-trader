@@ -10,7 +10,9 @@ import json
 import os
 from pathlib import Path
 
-MODES = ("paper", "kis_demo", "kis_real")
+MODES = ("paper", "toss_real", "kis_demo", "kis_real")
+LIVE_MODES = ("toss_real", "kis_real")
+DATA_SOURCES = ("auto", "toss", "kis", "csv")
 
 DEFAULT = {
     "mode": "paper",
@@ -43,9 +45,29 @@ DEFAULT = {
         "max_order_value": {"KR": 3_000_000, "US": 3_000},
         "daily_loss_limit": 0.03,
     },
+    # 시세: auto 는 토스증권 키 > KIS 키 > CSV 순으로 고른다
+    "data_source": "auto",
+    "toss": {
+        "account_seq": None,  # 비우면 첫 종합매매 계좌
+        "us_loc": True,  # 미국 주문을 LOC(장 마감 지정가)로
+    },
     "kis": {"account": ""},  # "12345678-01"
     "paper": {"initial_cash": {"KR": 10_000_000, "US": 10_000}},
     "history_days": 400,
+    # AI 투자 회의 (TradingAgents 구조). 전략을 "ai" 로 고른 시장에서 주문 근거가 된다
+    "ai": {
+        "model": "claude-opus-5-5",
+        "effort": "medium",
+        "debate_rounds": 1,
+        "risk_rounds": 1,
+        "web_research": True,  # 뉴스·재무·여론 분석가가 웹 검색을 쓴다
+        "run_before_minutes": 40,  # 실행 시각보다 이만큼 먼저 회의를 돌린다
+        "max_symbols_per_day": 8,  # 비용 상한: 하루 회의 종목 수
+        # 최종 등급 -> 목표 비중 배수 (종목당 1/N 기준). Hold 는 보유 유지
+        "rating_weights": {"Buy": 1.0, "Overweight": 0.7, "Hold": None, "Underweight": 0.3, "Sell": 0.0},
+        "min_confidence": 0.5,  # 이보다 확신이 낮으면 Hold 로 본다
+    },
+    "watchlist": ["005930", "000660", "AAPL", "NVDA"],
 }
 
 
@@ -103,8 +125,15 @@ def validate(cfg: dict) -> list[str]:
             errs.append(f"{m}.run_time 은 HH:MM 형식이어야 합니다")
         if mc.get("budget", 0) <= 0:
             errs.append(f"{m}.budget 은 0보다 커야 합니다")
-    if cfg.get("mode") != "paper" and not cfg.get("kis", {}).get("account"):
+    if str(cfg.get("mode", "")).startswith("kis") and not cfg.get("kis", {}).get("account"):
         errs.append("KIS 모드에는 kis.account(예: 12345678-01)가 필요합니다")
+    if cfg.get("data_source", "auto") not in DATA_SOURCES:
+        errs.append(f"data_source 는 {DATA_SOURCES} 중 하나여야 합니다")
+    ai = cfg.get("ai", {})
+    if ai.get("effort") not in ("low", "medium", "high", "xhigh", "max"):
+        errs.append("ai.effort 는 low/medium/high/xhigh/max 중 하나여야 합니다")
+    if not 0 <= int(ai.get("debate_rounds", 1)) <= 3 or not 0 <= int(ai.get("risk_rounds", 1)) <= 3:
+        errs.append("토론 라운드는 0~3 이어야 합니다")
     return errs
 
 
