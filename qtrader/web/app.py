@@ -64,6 +64,21 @@ class ChatIn(BaseModel):
     thread_id: str | None = None
 
 
+def session_token() -> str:
+    """변경 요청용 토큰. 데이터 폴더에 한 번 만들어 두고 재사용한다.
+    서버를 다시 켜도 이미 열린 페이지의 저장 요청이 거부되지 않게 하기 위해서다."""
+    p = config_mod.home() / "session_token"
+    try:
+        t = p.read_text(encoding="utf-8").strip()
+        if len(t) >= 32:
+            return t
+    except OSError:
+        pass
+    t = secrets.token_urlsafe(32)
+    p.write_text(t, encoding="utf-8")
+    return t
+
+
 def key_state() -> dict:
     return {"kis_demo": vault.has_kis("demo"), "kis_real": vault.has_kis("real"),
             "toss": vault.get_toss() is not None, "anthropic": bool(vault.get_anthropic())}
@@ -71,7 +86,7 @@ def key_state() -> dict:
 
 def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=None) -> FastAPI:
     app = FastAPI(title="QTrader", version=__version__, docs_url=None, redoc_url=None)
-    token = secrets.token_urlsafe(24)
+    token = session_token()
     sched = scheduler or Scheduler()
     app.state.token = token
 
