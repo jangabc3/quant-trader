@@ -9,3 +9,10 @@ Licensed under the Apache License, Version 2.0
 https://github.com/TauricResearch/TradingAgents
 
 QTrader 의 코드와 프롬프트는 새로 작성했으며 TradingAgents 의 소스 코드를 포함하지 않습니다.
+
+AI 회의 지침(투자자 기본 지령, 리포트 항목, 팩트체크, 추가 질문 5가지, 딥리서치 템플릿, 근거 기반 답변 규칙,
+어닝콜 가이던스 분석, 밸류에이션 비교, 복리·양도세 계산기)은 다음 자료를 참고해 회의용으로 다시 썼습니다.
+
+타민더마켓 「AI 주식 투자 프롬프트 완벽 가이드 2탄」 (c) 2025 타민더마켓 - 출처 명시 조건으로 자유 활용 허용
+타민더마켓 「클로드로 만드는 나만의 미국 주식 리서치 시스템」 (2026.05.04)
+https://www.youtube.com/@타민더마켓

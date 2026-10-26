@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>QTrader</title>
 <link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/result.css">
 <script>window.QT_TOKEN = "__TOKEN__";</script>
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -16,6 +17,7 @@
     <button data-tab="office">AI 사무실</button>
     <button data-tab="dash">내 계좌</button>
     <button data-tab="bt">백테스트</button>
+    <button data-tab="calc">계산기</button>
     <button data-tab="cfg">설정</button>
   </nav>
   <div class="badges">
@@ -70,16 +72,17 @@
       <select id="meet-runs"></select>
       <span id="meet-stage" class="note"></span>
     </div>
-    <div class="office-grid">
-      <div class="office-wrap" id="office-wrap">
-        <canvas id="office" width="480" height="300"></canvas>
-        <div id="office-overlay"></div>
-      </div>
-      <div class="office-side">
-        <div class="panel decision" id="decision"><h3>최종 결정</h3><p class="note">회의를 시작하거나 지난 회의를 고르세요.</p></div>
-        <div class="panel report" id="report"><h3>보고서</h3><p class="note">캐릭터를 누르면 그 참석자의 보고서가 보입니다.</p></div>
-      </div>
+    <div class="stage-line" id="stage-line"></div>
+    <div class="office-wrap" id="office-wrap">
+      <canvas id="office" width="640" height="360"></canvas>
+      <div id="office-overlay"></div>
+      <div class="office-hud" id="office-hud"></div>
     </div>
+    <div class="office-grid">
+      <div class="panel report" id="report"><h3>참석자 보고서</h3><p class="note">캐릭터를 누르면 그 참석자의 보고서와 출처가 보입니다.</p></div>
+      <div class="panel track" id="track"><h3>AI 판단 기록 <small>모든 결정을 기록하고 결과를 그대로 보여줍니다</small></h3><p class="note">불러오는 중...</p></div>
+    </div>
+    <div id="result" class="result"></div>
     <div class="panel chat">
       <h3>비서와 대화 <small>시세·계좌·차트를 직접 확인해서 답합니다. 주문은 내지 않습니다.</small></h3>
       <div id="chat-log" class="chat-log"></div>
@@ -101,6 +104,10 @@
       <button id="run-btn">지금 실행</button>
     </div>
     <div class="cards" id="market-cards"></div>
+    <div class="panel" id="approvals-panel">
+      <h3>승인 대기 주문 <small>AI 회의로 정한 주문은 여기서 승인해야 나갑니다. 승인할 때 리스크 한도를 다시 확인합니다</small></h3>
+      <table id="appr-table"><thead><tr><th>#</th><th>날짜</th><th>종목</th><th>구분</th><th class="r">수량</th><th class="r">가격</th><th>근거</th><th></th></tr></thead><tbody></tbody></table>
+    </div>
     <div class="grid2">
       <div class="panel">
         <h3>보유 종목</h3>
@@ -144,6 +151,45 @@
     </div>
   </section>
 
+  <!-- 계산기 -->
+  <section id="tab-calc" class="tab hidden">
+    <div class="grid2">
+      <div class="panel">
+        <h3>목표 자산 복리 계산기 <small>은퇴 목표까지 매달 얼마를 넣어야 하나</small></h3>
+        <div class="form-row">
+          <label>현재 나이 <input id="cp-age" type="number" value="35"></label>
+          <label>목표 나이 <input id="cp-goalage" type="number" value="60"></label>
+          <label>목표 금액(오늘 가치, 만원) <input id="cp-goal" type="number" value="100000"></label>
+          <label>현재 자산(만원) <input id="cp-now" type="number" value="3000"></label>
+        </div>
+        <div class="form-row">
+          <label>기대 연수익률 % <input id="cp-ret" type="range" min="0" max="20" step="0.5" value="8"><b id="cp-ret-v"></b></label>
+          <label>물가상승률 % <input id="cp-inf" type="range" min="0" max="6" step="0.1" value="2.5"><b id="cp-inf-v"></b></label>
+        </div>
+        <div class="calc-out" id="cp-out"></div>
+        <div id="cp-chart" class="chart small"></div>
+      </div>
+      <div class="panel">
+        <h3>포지션 크기 계산기 <small>한 번 틀렸을 때 잃을 금액을 먼저 정한다</small></h3>
+        <div class="form-row">
+          <label>계좌 금액 <input id="ps-acct" type="number" value="10000000"></label>
+          <label>1회 최대 손실 % <input id="ps-risk" type="number" step="0.1" value="1"></label>
+          <label>진입가 <input id="ps-entry" type="number" value="70000"></label>
+          <label>손절가 <input id="ps-stop" type="number" value="65000"></label>
+        </div>
+        <div class="calc-out" id="ps-out"></div>
+        <p class="note">AI 회의 결과의 손절가를 넣으면, 틀려도 계좌의 몇 %만 잃는 수량이 나옵니다.</p>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>미국 주식 양도소득세 계산기 <small>한국 거주자 · 연간 손익 통산 · 기본공제 250만원 · 세율 22%(지방세 포함)</small></h3>
+      <table id="tx-table"><thead><tr><th>종목</th><th class="r">수량</th><th class="r">매수가($)</th><th class="r">매수일 환율</th><th class="r">매도가($)</th><th class="r">매도일 환율</th><th class="r">수수료(원)</th><th class="r">손익(원)</th><th></th></tr></thead><tbody></tbody></table>
+      <div class="controls"><button id="tx-add">거래 추가</button></div>
+      <div class="calc-out" id="tx-out"></div>
+      <p class="note">취득가액·양도가액은 각각 결제일 기준환율로 원화 환산합니다. 같은 해 해외주식 손익끼리 통산됩니다. 신고는 다음 해 5월. 참고용이며 정확한 신고는 세무 전문가와 확인하세요.</p>
+    </div>
+  </section>
+
   <!-- 설정 -->
   <section id="tab-cfg" class="tab hidden">
     <div class="grid2">
@@ -182,7 +228,8 @@
       <div class="panel">
         <h3>AI 투자 회의</h3>
         <div class="form-row">
-          <label>모델 <input id="ai-model"></label>
+          <label>빠른 모델 (분석가·토론) <input id="ai-quick"></label>
+          <label>깊은 모델 (검증관·팀장·대표) <input id="ai-deep"></label>
           <label>추론 강도 <select id="ai-effort"><option>low</option><option>medium</option><option>high</option><option>xhigh</option><option>max</option></select></label>
           <label>강세/약세 토론 라운드 <input id="ai-debate" type="number" min="0" max="3"></label>
           <label>리스크 토론 라운드 <input id="ai-risk" type="number" min="0" max="3"></label>
@@ -192,8 +239,11 @@
           <label>하루 회의 종목 상한 <input id="ai-max" type="number" min="1" max="50"></label>
           <label>최소 확신도 <input id="ai-conf" type="number" step="0.05" min="0" max="1"></label>
           <label class="check"><input type="checkbox" id="ai-web"> 웹 검색으로 뉴스·재무·여론 조사</label>
+          <label class="check"><input type="checkbox" id="ai-approve"> AI 주문은 내가 승인한 뒤에만 실행</label>
         </div>
-        <p class="note">회의 1번에 Claude 호출이 12번쯤 일어납니다. 종목 수와 라운드가 늘면 비용이 늘어납니다.</p>
+        <label>투자자 프로필 <small class="note">모든 참석자가 이 내용을 기준으로 판단합니다. 비우면 기본 프로필</small>
+          <textarea id="ai-profile" rows="6" placeholder="예: 3년 안에 1천만원을 3천만원으로 키우고 싶다. 빚투·공매도·옵션은 안 한다. 한 종목 손실은 -10% 이내로 끊는다."></textarea></label>
+        <p class="note">회의 1번에 Claude 호출이 14번쯤 일어납니다. 종목 수와 라운드가 늘면 비용이 늘어납니다.</p>
       </div>
       <div class="panel">
         <h3>리스크 관리</h3>
@@ -215,5 +265,7 @@
 <script src="/static/app.js"></script>
 <script src="/static/market.js"></script>
 <script src="/static/office.js"></script>
+<script src="/static/result.js"></script>
+<script src="/static/tools.js"></script>
 </body>
 </html>

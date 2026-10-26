@@ -64,6 +64,7 @@ async function refresh() {
     if (!s.error && state.tab === "dash") {
       const [pos, ords, evs] = await Promise.all([api("/api/positions"), api("/api/orders?limit=50"), api("/api/events?limit=80")]);
       renderPositions(pos); renderOrders(ords); renderEvents(evs);
+      renderApprovals(await api("/api/approvals?status=pending"));
     }
   } catch (e) { banner("서버 응답 오류: " + e.message); }
 }
@@ -111,6 +112,25 @@ function renderOrders(rows) {
     <td>${st[o.status] || o.status}</td></tr>`).join("")
     : `<tr><td colspan="6" class="note">주문이 없습니다.</td></tr>`;
 }
+
+function renderApprovals(rows) {
+  $("#approvals-panel").classList.toggle("hidden", !rows.length);
+  $("#appr-table tbody").innerHTML = rows.map((a) => `<tr><td>${a.id}</td><td>${esc(a.trade_date)}</td><td>${esc(a.symbol)}</td>
+    <td class="${a.side === "buy" ? "up" : "down"}">${a.side === "buy" ? "매수" : "매도"}</td><td class="r">${a.qty.toLocaleString()}</td>
+    <td class="r">${money(a.price, a.market)}</td><td class="note">${esc(a.reason)}</td>
+    <td class="r"><button class="primary" data-appr="${a.id}" data-ok="1">승인</button> <button data-appr="${a.id}" data-ok="0">거절</button></td></tr>`).join("");
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-appr]");
+  if (!b) return;
+  const ok = b.dataset.ok === "1";
+  if (ok && LIVE.has(state.status?.mode) && prompt("실제 돈으로 주문합니다. 진행하려면 '실전주문' 이라고 입력하세요.") !== "실전주문") return;
+  try {
+    const r = await api(`/api/approvals/${b.dataset.appr}`, { method: "POST", body: { approve: ok } });
+    alert(ok ? `주문 결과: ${r.status} ${r.message || ""}` : "거절했습니다.");
+  } catch (err) { alert(err.message); }
+  refresh();
+});
 
 function renderEvents(rows) {
   $("#events").innerHTML = rows.map((e) => `<li class="${e.level}"><span class="t">${esc(e.ts.replace("T", " ").slice(5, 19))}</span>${esc(e.message)}</li>`).join("")
@@ -226,7 +246,9 @@ async function loadConfig() {
   $("#r-loss").value = c.risk.daily_loss_limit;
   $("#r-ordkr").value = c.risk.max_order_value.KR; $("#r-ordus").value = c.risk.max_order_value.US;
   $("#watchlist").value = (c.watchlist || []).join(", ");
-  $("#ai-model").value = c.ai.model; $("#ai-effort").value = c.ai.effort;
+  $("#ai-quick").value = c.ai.quick_model || ""; $("#ai-deep").value = c.ai.deep_model || c.ai.model || "";
+  $("#ai-effort").value = c.ai.effort; $("#ai-profile").value = c.ai.profile || "";
+  $("#ai-approve").checked = c.ai.require_approval !== false;
   $("#ai-debate").value = c.ai.debate_rounds; $("#ai-risk").value = c.ai.risk_rounds;
   $("#ai-before").value = c.ai.run_before_minutes; $("#ai-max").value = c.ai.max_symbols_per_day;
   $("#ai-conf").value = c.ai.min_confidence; $("#ai-web").checked = !!c.ai.web_research;
@@ -288,7 +310,8 @@ $("#cfg-save").onclick = async () => {
   c.risk.max_order_value = { KR: Number($("#r-ordkr").value), US: Number($("#r-ordus").value) };
   c.watchlist = $("#watchlist").value.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
   Object.assign(c.ai, {
-    model: $("#ai-model").value.trim(), effort: $("#ai-effort").value,
+    quick_model: $("#ai-quick").value.trim(), deep_model: $("#ai-deep").value.trim(), effort: $("#ai-effort").value,
+    profile: $("#ai-profile").value.trim(), require_approval: $("#ai-approve").checked,
     debate_rounds: Number($("#ai-debate").value), risk_rounds: Number($("#ai-risk").value),
     run_before_minutes: Number($("#ai-before").value), max_symbols_per_day: Number($("#ai-max").value),
     min_confidence: Number($("#ai-conf").value), web_research: $("#ai-web").checked,

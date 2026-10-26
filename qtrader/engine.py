@@ -139,6 +139,39 @@ def plan_orders(target: dict[str, float], prices: dict[str, float], holdings: di
     return sells + buys
 
 
+def execute_approval(ctx: Context, aid: int) -> dict:
+    """승인된 주문을 다시 리스크 확인한 뒤 낸다 (킬 스위치·당일 중복·현금)."""
+    store = ctx.store
+    rows = [r for r in store.approvals("pending", 500) if r["id"] == aid]
+    if not rows:
+        raise ValueError("대기 중인 주문이 아닙니다")
+    a = rows[0]
+    market = Market(a["market"])
+    if a["account"] != ctx.broker.name:
+        raise ValueError(f"다른 계좌({a['account']})의 주문입니다. 지금 모드는 {ctx.broker.name}")
+    if a["trade_date"] != trade_date(market):
+        store.decide_approval(aid, "expired", "다른 날 만든 주문")
+        raise ValueError("오늘 만든 주문만 승인할 수 있습니다")
+    req = OrderRequest(market, a["symbol"], Side(a["side"]), int(a["qty"]), float(a["price"]), a["strategy"] or "",
+                       a["reason"] or "")
+    lim = RiskLimits.from_config(ctx.cfg, market)
+    acct = ctx.broker.account(market)
+    chk = check_orders([req], lim, set(ctx.cfg["markets"][market.value]["universe"]), ctx.kill,
+                       store.ordered_today(ctx.broker.name, market.value, a["trade_date"]), acct.cash)
+    if chk.blocked:
+        why = chk.blocked[0][1]
+        store.decide_approval(aid, "rejected", f"리스크 차단: {why}")
+        raise ValueError(f"리스크 관리에서 막혔습니다: {why}")
+    r = ctx.broker.order(req)
+    status = ("filled" if r.filled_qty else "submitted") if r.ok else "rejected"
+    store.add_order(trade_date=a["trade_date"], account=ctx.broker.name, market=market.value, symbol=req.symbol,
+                    side=req.side.value, qty=req.qty, price=req.price, status=status, broker_order_id=r.broker_order_id,
+                    strategy=req.strategy, message=f"승인 #{aid} | {req.reason} | {r.message}")
+    store.decide_approval(aid, "approved", f"{status} {r.message}")
+    store.log("info" if r.ok else "error", "approval", f"승인 #{aid} {status} {req.side.value} {req.symbol} x{req.qty} {r.message}")
+    return {"id": aid, "status": status, "message": r.message}
+
+
 def run_market(ctx: Context, market: Market, dry_run: bool = False, force: bool = False) -> dict:
     cfg, store = ctx.cfg, ctx.store
     mc = cfg["markets"][market.value]
@@ -194,7 +227,20 @@ def run_market(ctx: Context, market: Market, dry_run: bool = False, force: bool 
         store.log("warn", src, f"차단 {o.side.value} {o.symbol} x{o.qty}: {why}")
 
     results = []
+    need_ok = use_ai and cfg["ai"].get("require_approval", True) and not dry_run
+    if need_ok:
+        store.expire_approvals(market.value, today)
+        waiting = store.pending_symbols(acct_id, market.value, today)
     for o in checked.allowed:
+        if need_ok:
+            if o.symbol in waiting:
+                continue
+            aid = store.add_approval(trade_date=today, account=acct_id, market=market.value, symbol=o.symbol,
+                                     side=o.side.value, qty=o.qty, price=o.price, strategy=o.strategy, reason=o.reason)
+            store.log("info", src, f"승인 대기 #{aid} {o.side.value} {o.symbol} x{o.qty}")
+            results.append({"symbol": o.symbol, "side": o.side.value, "qty": o.qty, "price": o.price,
+                            "status": "pending_approval", "message": f"승인 대기 #{aid}"})
+            continue
         if dry_run:
             status, res_msg, oid = "dry_run", "모의 실행(주문 안 함)", ""
         else:

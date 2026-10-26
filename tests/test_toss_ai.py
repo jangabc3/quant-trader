@@ -134,16 +134,32 @@ def test_toss_holiday(toss):
 
 
 # AI 회의
+FINAL = {"rating": "Buy", "confidence": 0.8, "headline": "추세 살아있음", "summary": ["a", "b", "c"],
+         "thesis": "실적 개선", "reasons": ["외국인 순매수", "실적", "수주"],
+         "short_args": [{"claim": "고평가", "rebuttal": "성장률 감안"}] * 3,
+         "scenarios": {"bear": {"price": 80, "probability": 0.2, "condition": "수요 둔화"},
+                       "base": {"price": 110, "probability": 0.5, "condition": "예상대로"},
+                       "bull": {"price": 140, "probability": 0.3, "condition": "수주 확대"}},
+         "entry_low": 95, "entry_high": 100, "stop_loss_pct": 7, "take_profit_pct": 15, "horizon_days": 20,
+         "trust": ["t1", "t2", "t3"], "worry": ["w1", "w2", "w3"], "watch": ["m1", "m2", "m3"],
+         "risk_votes": {"aggr": "확대", "neut": "유지", "cons": "축소"}, "bull_score": 64}
+CHECK = {"fact_checks": [{"claim": "영업이익 증가", "status": "확인됨", "detail": "2분기 보고서", "source": "DART"}],
+         "key_questions": [{"question": "q", "answer": "a", "source": "s"}] * 5,
+         "valuation": [{"metric": "PER", "current": 12.0, "hist_avg": 15.0, "peer_avg": None, "unit": "배", "note": ""}],
+         "scores": {"technical": 70, "fundamental": 60, "valuation": 65, "earnings": 55, "news": 50, "flow": 72},
+         "summary": "대체로 확인"}
+
+
 class FakeLLM:
     def __init__(self, rating="Buy", confidence=0.8):
         self.rating, self.confidence, self.calls = rating, confidence, []
 
-    def run(self, system, user, web=False, schema=None, max_tokens=16000):
-        self.calls.append({"system": system, "web": web, "schema": bool(schema)})
+    def run(self, system, user, web=False, schema=None, max_tokens=16000, model=None):
+        self.calls.append({"system": system, "web": web, "schema": bool(schema), "model": model})
+        if schema is not None and "fact_checks" in schema["properties"]:
+            return Reply(json.dumps(CHECK), data=CHECK, input_tokens=100, output_tokens=50)
         if schema:
-            d = {"rating": self.rating, "confidence": self.confidence, "headline": "추세 살아있음",
-                 "reasons": ["외국인 순매수"], "risks": ["환율"], "stop_loss_pct": 7, "take_profit_pct": 15,
-                 "horizon_days": 20}
+            d = FINAL | {"rating": self.rating, "confidence": self.confidence}
             return Reply(json.dumps(d), data=d, input_tokens=100, output_tokens=50)
         return Reply("한줄요약: 테스트 보고서\n- 근거 1", sources=[{"title": "s", "url": "https://example.com"}],
                      input_tokens=100, output_tokens=50)
@@ -167,11 +183,18 @@ def test_meeting_runs_tradingagents_flow(tmp_path):
     assert run["status"] == "done", run["error"]
     assert run["final"]["rating"] == "Buy"
     assert all(run["agents"][r.id]["status"] == "done" for r in ROLES)
-    # 분석가 4 + 강세/약세 2 + 팀장 + 트레이더 + 리스크 3 + 대표 = 12번
-    assert len(llm.calls) == 12 and sum(c["schema"] for c in llm.calls) == 1
-    assert [c["web"] for c in llm.calls].count(True) == 3
+    # 분석가 5 + 검증관 + 강세/약세 2 + 팀장 + 트레이더 + 리스크 3 + 대표 = 14번
+    assert len(llm.calls) == 14 and sum(c["schema"] for c in llm.calls) == 2
+    assert [c["web"] for c in llm.calls].count(True) == 5
+    models = [c["model"] for c in llm.calls]
+    assert models.count("claude-opus-5-5") == 3 and models.count("claude-sonnet-5-5") == 11
+    assert "투자자 프로필" in llm.calls[0]["system"] and "출처" in llm.calls[0]["system"]
+    assert run["check"]["scores"]["flow"] == 72 and run["facts"]["levels"]["sma20"]
+    assert all(v == "done" for v in run["stages"].values()) and len(run["handoffs"]) >= 10
     saved = st.latest_decision("005930", run["trade_date"])
-    assert saved["final"]["confidence"] == 0.8 and run["tokens_in"] == 1200
+    assert saved["final"]["confidence"] == 0.8 and run["tokens_in"] == 1400
+    hist = st.ai_runs(1)[0]
+    assert hist["check"]["valuation"][0]["metric"] == "PER" and hist["name"] == "005930"
 
 
 def test_meeting_error_is_recorded(tmp_path):
@@ -209,7 +232,60 @@ def test_engine_ai_strategy_keeps_undecided(isolated_home):
     assert r["strategy"] == "ai" and r["orders"] == []  # 회의가 없으면 아무것도 사고팔지 않는다
     meeting.start("005930", ctx.data, ctx.store, ctx.cfg, llm=FakeLLM("Buy", 0.9), background=False)
     r = run_market(ctx, Market.KR, force=True)
-    assert [(o["symbol"], o["side"]) for o in r["orders"]] == [("005930", "buy")]
+    assert [(o["symbol"], o["side"], o["status"]) for o in r["orders"]] == [("005930", "buy", "pending_approval")]
+    assert ctx.broker.account(Market.KR).positions == {}  # 승인 전에는 주문이 나가지 않는다
+    r2 = run_market(ctx, Market.KR, force=True)
+    assert r2["orders"] == []  # 같은 날 같은 종목 승인 대기는 하나만
+    pend = ctx.store.approvals("pending")
+    assert len(pend) == 1
+    from qtrader.engine import execute_approval
+    res = execute_approval(ctx, pend[0]["id"])
+    assert res["status"] == "filled" and ctx.broker.account(Market.KR).positions["005930"].qty > 0
+    with pytest.raises(ValueError):
+        execute_approval(ctx, pend[0]["id"])
+
+
+def test_approval_blocked_by_kill_switch(isolated_home):
+    cfg = config.load()
+    cfg["markets"]["KR"]["strategy"] = "ai"
+    config.save(cfg)
+    write_demo_csv(isolated_home / "data", cfg)
+    ctx = build_context()
+    meeting.start("005930", ctx.data, ctx.store, ctx.cfg, llm=FakeLLM("Buy", 0.9), background=False)
+    run_market(ctx, Market.KR)
+    aid = ctx.store.approvals("pending")[0]["id"]
+    ctx.store.set("kill_switch", "1")
+    from qtrader.engine import execute_approval
+    with pytest.raises(ValueError, match="킬 스위치"):
+        execute_approval(ctx, aid)
+    assert ctx.store.approvals()[0]["status"] == "rejected"
+
+
+def test_track_counts_hits():
+    from qtrader.agents import track
+    import pandas as pd
+    idx = pd.bdate_range("2026-01-01", periods=40)
+    up = pd.DataFrame({"open": 100.0, "high": [100 + i for i in range(40)], "low": [99.0 + i for i in range(40)],
+                       "close": [100.0 + i for i in range(40)], "volume": 1.0}, index=idx)
+    d = idx[10].strftime("%Y-%m-%d")
+    runs = [{"id": "a", "symbol": "005930", "status": "done", "trade_date": d, "final": {"rating": "Buy", "horizon_days": 5,
+             "take_profit_pct": 5, "stop_loss_pct": 5}},
+            {"id": "b", "symbol": "005930", "status": "done", "trade_date": d, "final": {"rating": "Sell"}},
+            {"id": "c", "symbol": "005930", "status": "done", "trade_date": d, "final": {"rating": "Hold"}},
+            {"id": "d", "symbol": "005930", "status": "error", "trade_date": d, "final": None}]
+    out = track.evaluate(runs, lambda s: up)
+    assert out["summary"]["decisions"] == 3 and out["summary"]["judged"] == 2 and out["summary"]["hit_rate"] == 0.5
+    a = out["rows"][0]
+    assert a["correct"] and a["hit_take"] and not a["hit_stop"] and a["matured"]
+
+
+def test_key_levels():
+    from qtrader.agents.context import key_levels
+    df = synthetic("X", days=300, start_price=50000, seed=5)
+    lv = key_levels(df)
+    last = df["close"].iloc[-1]
+    assert all(x < last for x in lv["support"]) and all(x > last for x in lv["resistance"])
+    assert lv["low52"] <= last <= lv["high52"]
 
 
 def test_toss_real_mode_needs_keys_and_confirmation(fake_vault):
@@ -257,7 +333,12 @@ def test_ai_meeting_endpoint(client):
     assert run["status"] == "done" and run["final"]["rating"] == "Buy"
     runs = client.get("/api/ai/runs").json()
     assert runs[0]["rating_ko"] == "매수"
-    assert len(client.get("/api/ai/roles").json()) == 12
+    roles = client.get("/api/ai/roles").json()
+    assert len(roles["roles"]) == 14 and len(roles["stages"]) == 7
+    ch = client.get("/api/ai/chart/005930").json()
+    assert len(ch["candles"]) == 180 and ch["sma20"] and "support" in ch["levels"]
+    tr = client.get("/api/ai/track").json()
+    assert tr["summary"]["decisions"] == 1
 
 
 def test_secrets_endpoint(client, fake_vault):

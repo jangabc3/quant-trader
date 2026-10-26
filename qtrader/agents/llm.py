@@ -55,7 +55,7 @@ class LLM:
         return self._client
 
     def run(self, system: str, user: str, web: bool = False, schema: dict | None = None,
-            max_tokens: int = 16000) -> Reply:
+            max_tokens: int = 16000, model: str | None = None) -> Reply:
         output_config: dict = {"effort": self.effort}
         if schema:
             output_config["format"] = {"type": "json_schema", "schema": schema}
@@ -66,7 +66,7 @@ class LLM:
         for _ in range(5):  # 웹 검색이 길어지면 pause_turn 으로 끊겨 온다 -> 이어서 요청
             try:
                 resp = self.client.beta.messages.create(
-                    model=self.model, max_tokens=max_tokens, system=system, messages=messages,
+                    model=model or self.model, max_tokens=max_tokens, system=system, messages=messages,
                     output_config=output_config, betas=BETAS, fallbacks="default", **extra)
             except anthropic.AuthenticationError:
                 raise LLMError("Claude API 키가 올바르지 않습니다. 설정에서 키를 확인하세요")

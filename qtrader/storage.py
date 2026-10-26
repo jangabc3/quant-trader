@@ -94,6 +94,24 @@ create table if not exists ai_runs (
 );
 create index if not exists ai_runs_symbol on ai_runs (symbol, trade_date);
 
+create table if not exists approvals (
+  id integer primary key autoincrement,
+  created_at text not null,
+  trade_date text not null,
+  account text not null,
+  market text not null,
+  symbol text not null,
+  side text not null,
+  qty integer not null,
+  price real not null,
+  strategy text,
+  reason text,
+  status text not null default 'pending' check (status in ('pending','approved','rejected','expired')),
+  decided_at text,
+  result text
+);
+create index if not exists approvals_status on approvals (status, trade_date);
+
 create table if not exists state (
   key text primary key,
   value text not null
@@ -176,6 +194,29 @@ class Store:
         return self.rows("select trade_date, max(ts) ts, equity, cash from equity where account=? and market=? "
                          "group by trade_date order by trade_date", (account, market))
 
+    # 승인 대기 주문
+    def add_approval(self, **a) -> int:
+        cols = ",".join(a)
+        return self.exec(f"insert into approvals (created_at,{cols}) values (?,{','.join('?' * len(a))})",
+                         (now(), *a.values())).lastrowid
+
+    def approvals(self, status: str | None = None, limit: int = 100) -> list[dict]:
+        if status:
+            return self.rows("select * from approvals where status=? order by id desc limit ?", (status, limit))
+        return self.rows("select * from approvals order by id desc limit ?", (limit,))
+
+    def decide_approval(self, aid: int, status: str, result: str = "") -> None:
+        self.exec("update approvals set status=?, decided_at=?, result=? where id=?", (status, now(), result, aid))
+
+    def expire_approvals(self, market: str, today: str) -> int:
+        return self.exec("update approvals set status='expired', decided_at=? where status='pending' and market=? "
+                         "and trade_date<?", (now(), market, today)).rowcount
+
+    def pending_symbols(self, account: str, market: str, today: str) -> set[str]:
+        r = self.rows("select distinct symbol from approvals where account=? and market=? and trade_date=? "
+                      "and status='pending'", (account, market, today))
+        return {x["symbol"] for x in r}
+
     # AI 회의
     def save_ai_run(self, run: dict) -> None:
         import json
@@ -187,7 +228,9 @@ class Store:
             " tokens_in=excluded.tokens_in, tokens_out=excluded.tokens_out, error=excluded.error",
             (run["id"], run["symbol"], run["market"], run["trade_date"], run["started_at"], run.get("finished_at"),
              run["status"], (run.get("final") or {}).get("rating"), (run.get("final") or {}).get("confidence"),
-             json.dumps(run.get("final"), ensure_ascii=False), json.dumps(run.get("agents"), ensure_ascii=False),
+             json.dumps(run.get("final"), ensure_ascii=False),
+             json.dumps({k: run.get(k) for k in ("agents", "check", "facts", "stages", "name", "debate", "risk_debate")},
+                        ensure_ascii=False),
              run.get("tokens_in", 0), run.get("tokens_out", 0), run.get("error")))
 
     def ai_runs(self, limit: int = 50, symbol: str | None = None) -> list[dict]:
@@ -196,7 +239,12 @@ class Store:
         rows = self.rows(q, ((symbol, limit) if symbol else (limit,)))
         for r in rows:
             r["final"] = json.loads(r["final"]) if r.get("final") else None
-            r["agents"] = json.loads(r.pop("reports")) if r.get("reports") else {}
+            extra = json.loads(r.pop("reports")) if r.get("reports") else {}
+            if extra and "agents" not in extra:  # 예전 형식: 참석자 보고서만 저장
+                extra = {"agents": extra}
+            r.update({k: v for k, v in extra.items() if v is not None})
+            r.setdefault("agents", {})
+            r.setdefault("name", r["symbol"])
         return rows
 
     def latest_decision(self, symbol: str, since_date: str) -> dict | None:
