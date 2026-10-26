@@ -112,6 +112,20 @@ create table if not exists approvals (
 );
 create index if not exists approvals_status on approvals (status, trade_date);
 
+create table if not exists plans (
+  account text not null,
+  market text not null,
+  symbol text not null,
+  run_id text,
+  entry real not null,
+  stop real not null,
+  take real not null,
+  created_at text not null,
+  closed_at text,
+  close_reason text
+);
+create index if not exists plans_open on plans (account, market, closed_at);
+
 create table if not exists state (
   key text primary key,
   value text not null
@@ -217,6 +231,32 @@ class Store:
                       "and status='pending'", (account, market, today))
         return {x["symbol"] for x in r}
 
+    # 포지션 계획 (손절·익절)
+    def save_plan(self, account, market, symbol, run_id, entry, stop, take) -> None:
+        self.close_plan(account, market, symbol, "replaced")
+        self.exec("insert into plans (account, market, symbol, run_id, entry, stop, take, created_at) "
+                  "values (?,?,?,?,?,?,?,?)", (account, market, symbol, run_id, entry, stop, take, now()))
+
+    def close_plan(self, account, market, symbol, reason) -> None:
+        self.exec("update plans set closed_at=?, close_reason=? where account=? and market=? and symbol=? "
+                  "and closed_at is null", (now(), reason, account, market, symbol))
+
+    def active_plans(self, account, market=None) -> list[dict]:
+        if market:
+            return self.rows("select * from plans where account=? and market=? and closed_at is null", (account, market))
+        return self.rows("select * from plans where account=? and closed_at is null", (account,))
+
+    def recent_stop(self, account, market, symbol, days: int) -> bool:
+        from datetime import datetime, timedelta, timezone
+        since = (datetime.now(timezone.utc) - timedelta(days=days * 7 / 5)).isoformat(timespec="seconds")
+        return bool(self.rows("select 1 from plans where account=? and market=? and symbol=? and close_reason='stop' "
+                              "and closed_at>=?", (account, market, symbol, since)))
+
+    def new_buys_today(self, account, market, today) -> int:
+        r = self.rows("select count(distinct symbol) n from orders where account=? and market=? and trade_date=? "
+                      "and side='buy' and status in ('submitted','filled')", (account, market, today))
+        return r[0]["n"] if r else 0
+
     # AI 회의
     def save_ai_run(self, run: dict) -> None:
         import json
@@ -229,7 +269,8 @@ class Store:
             (run["id"], run["symbol"], run["market"], run["trade_date"], run["started_at"], run.get("finished_at"),
              run["status"], (run.get("final") or {}).get("rating"), (run.get("final") or {}).get("confidence"),
              json.dumps(run.get("final"), ensure_ascii=False),
-             json.dumps({k: run.get(k) for k in ("agents", "check", "facts", "stages", "name", "debate", "risk_debate")},
+             json.dumps({k: run.get(k) for k in ("agents", "check", "facts", "stages", "name", "debate", "risk_debate",
+                                                 "plan", "checklist", "mode", "cost_usd", "calls", "cache_read")},
                         ensure_ascii=False),
              run.get("tokens_in", 0), run.get("tokens_out", 0), run.get("error")))
 
@@ -255,6 +296,9 @@ class Store:
             return None
         d = r[0]
         d["final"] = json.loads(d["final"]) if d.get("final") else None
+        extra = json.loads(d.pop("reports")) if d.get("reports") else {}
+        if isinstance(extra, dict) and "agents" in extra:
+            d.update({k: extra.get(k) for k in ("check", "plan", "checklist")})
         return d
 
     # 일봉 캐시

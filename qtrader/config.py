@@ -61,6 +61,12 @@ DEFAULT = {
         "quick_model": "claude-sonnet-5-5",
         "deep_model": "claude-opus-5-5",
         "effort": "medium",
+        # fast: Claude 호출 7번 (분석 묶음 + 대표가 팀장·트레이더·리스크 역할 통합), precise: 14번
+        "mode": "fast",
+        # 매수 체크리스트 기준 (principles.DEFAULT_RULES 를 덮어쓴다)
+        "rules": {},
+        # AI 로 산 종목은 손절가·익절가에 닿으면 장중에 자동으로 판다
+        "auto_exit": True,
         # 모든 참석자가 읽는 투자자 프로필 (가이드 STEP 0 '프로젝트 기본 지령'). 비우면 기본 프로필
         "profile": "",
         # AI 회의로 정한 주문은 화면에서 승인해야 나간다 (가이드 원칙: 최종 판단은 사람이)
@@ -75,6 +81,12 @@ DEFAULT = {
         "min_confidence": 0.5,  # 이보다 확신이 낮으면 Hold 로 본다
     },
     "watchlist": ["005930", "000660", "AAPL", "NVDA"],
+    "news": {"feeds": [
+        {"name": "인베스팅닷컴 · 주식시장", "url": "https://kr.investing.com/rss/news_25.rss"},
+        {"name": "인베스팅닷컴 · 전체", "url": "https://kr.investing.com/rss/news.rss"},
+    ]},
+    # 미국 재무제표(SEC EDGAR)는 요청에 연락처가 필요하다
+    "sec_contact": "",
 }
 
 
@@ -139,6 +151,8 @@ def validate(cfg: dict) -> list[str]:
     ai = cfg.get("ai", {})
     if ai.get("effort") not in ("low", "medium", "high", "xhigh", "max"):
         errs.append("ai.effort 는 low/medium/high/xhigh/max 중 하나여야 합니다")
+    if ai.get("mode", "fast") not in ("fast", "precise"):
+        errs.append("ai.mode 는 fast 또는 precise")
     if not 0 <= int(ai.get("debate_rounds", 1)) <= 3 or not 0 <= int(ai.get("risk_rounds", 1)) <= 3:
         errs.append("토론 라운드는 0~3 이어야 합니다")
     return errs

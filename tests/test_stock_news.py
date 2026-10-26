@@ -1,0 +1,147 @@
+"""종목 화면 데이터·뉴스·재무제표. 실제 외부 서버에 접속하지 않는다."""
+import io
+import json
+import zipfile
+
+import pandas as pd
+import pytest
+from fastapi.testclient import TestClient
+
+from qtrader import config, fundamentals, news, stockdata
+from qtrader.web.app import create_app
+
+RSS = """<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>t</title>
+<item><title>코스피, 외국인 매수에 상승 &amp; 마감</title><link>https://kr.investing.com/news/stock-market-news/a-1</link>
+<pubDate>Mon, 26 Oct 2026 07:10:00 GMT</pubDate><description>&lt;p&gt;요약 본문&lt;/p&gt;</description></item>
+<item><title>나스닥 하락</title><link>https://kr.investing.com/news/stock-market-news/b-2</link>
+<pubDate>Mon, 26 Oct 2026 09:00:00 GMT</pubDate></item>
+<item><title>나쁜 링크</title><link>javascript:alert(1)</link></item>
+</channel></rss>""".encode()
+
+
+class Resp:
+    def __init__(self, content=b"", body=None, status=200):
+        self.content, self.body, self.status_code = content, body, status
+
+    def json(self):
+        return self.body
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(self.status_code)
+
+
+def test_rss_parse_safe_and_sorted():
+    items = news.parse(RSS, "테스트")
+    assert [x["title"] for x in items] == ["코스피, 외국인 매수에 상승 & 마감", "나스닥 하락"]  # javascript: 링크 제외
+    assert items[0]["summary"] == "요약 본문" and items[0]["time"].startswith("2026-10-26")
+
+    class S:
+        def get(self, url, headers=None, timeout=None):
+            return Resp(RSS)
+    out = news.feeds([{"name": "a", "url": "https://x.test/1"}, {"name": "b", "url": "https://x.test/2"}], session=S())
+    assert [x["title"] for x in out["items"]] == ["나스닥 하락", "코스피, 외국인 매수에 상승 & 마감"]  # 중복 링크 제거, 최신순
+
+
+def test_rss_rejects_entities_bomb():
+    bomb = b'<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY lol "lol"><!ENTITY lol2 "&lol;&lol;">]><rss><channel><item><title>&lol2;</title></item></channel></rss>'
+    with pytest.raises(Exception):
+        news.parse(bomb, "x")
+
+
+def test_search_and_resample():
+    rows = [{"symbol": "005930", "name": "삼성전자", "market": "KOSPI"}, {"symbol": "005935", "name": "삼성전자우", "market": "KOSPI"},
+            {"symbol": "028260", "name": "삼성물산", "market": "KOSPI"}, {"symbol": "AAPL", "name": "애플", "market": "NASDAQ"}]
+    assert [r["symbol"] for r in stockdata.search(rows, "삼성전자")] == ["005930", "005935"]
+    assert stockdata.search(rows, "aapl")[0]["name"] == "애플" and stockdata.search(rows, "") == []
+    idx = pd.date_range("2026-10-26 09:00", periods=10, freq="min")
+    df = pd.DataFrame({"open": range(10), "high": range(1, 11), "low": range(10), "close": range(10), "volume": 1.0}, index=idx)
+    r = stockdata._resample(df, "5min")
+    assert len(r) == 2 and r["open"].iloc[1] == 5 and r["high"].iloc[1] == 10 and r["volume"].iloc[0] == 5
+
+
+@pytest.mark.parametrize("iv", list(stockdata.INTERVALS))
+def test_demo_candles_all_intervals(iv):
+    c = stockdata.candles(None, "005930", iv)
+    assert c["demo"] and len(c["candles"]) > 10
+    times = [x["time"] for x in c["candles"]]
+    assert times == sorted(times) and c["intraday"] == iv.endswith("m")
+
+
+def test_dart_parsing(tmp_path):
+    corp = '<?xml version="1.0" encoding="UTF-8"?><result><list><corp_code>00126380</corp_code><stock_code>005930</stock_code></list></result>'
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("CORPCODE.xml", corp)
+    rows = [
+        {"sj_div": "IS", "account_nm": "매출액", "thstrm_amount": "300", "frmtrm_amount": "250", "bfefrmtrm_amount": "200"},
+        {"sj_div": "IS", "account_nm": "영업이익", "thstrm_amount": "30", "frmtrm_amount": "20", "bfefrmtrm_amount": "10"},
+        {"sj_div": "IS", "account_nm": "당기순이익", "thstrm_amount": "24", "frmtrm_amount": "15", "bfefrmtrm_amount": "8"},
+        {"sj_div": "BS", "account_nm": "부채총계", "thstrm_amount": "100", "frmtrm_amount": "90", "bfefrmtrm_amount": "80"},
+        {"sj_div": "BS", "account_nm": "자본총계", "thstrm_amount": "200", "frmtrm_amount": "180", "bfefrmtrm_amount": "160"},
+    ]
+    calls = []
+
+    class S:
+        def get(self, url, params=None, timeout=None):
+            calls.append((url, params))
+            if url.endswith("corpCode.xml"):
+                return Resp(buf.getvalue())
+            return Resp(body={"status": "000", "list": rows})
+    fin = fundamentals.dart_financials("005930", "k" * 40, tmp_path, session=S())
+    assert fin["series"]["revenue"] == [200, 250, 300] and fin["currency"] == "KRW"
+    assert calls[1][1]["corp_code"] == "00126380" and calls[1][1]["reprt_code"] == "11011"
+    r = fundamentals.ratios(fin, price=100, shares=3)
+    assert r["operating_margin"] == pytest.approx(0.1) and r["roe"] == pytest.approx(0.12)
+    assert r["revenue_growth"] == pytest.approx(0.2) and r["per"] == pytest.approx(12.5) and r["pbr"] == pytest.approx(1.5)
+
+
+def test_sec_needs_contact_and_parses():
+    with pytest.raises(fundamentals.FundamentalsError):
+        fundamentals.sec_financials("AAPL", "")
+    facts = {"facts": {"us-gaap": {
+        "Revenues": {"units": {"USD": [{"form": "10-K", "fp": "FY", "fy": 2024, "val": 100}, {"form": "10-K", "fp": "FY", "fy": 2025, "val": 120},
+                                       {"form": "10-Q", "fp": "Q1", "fy": 2026, "val": 40}]}},
+        "EarningsPerShareDiluted": {"units": {"USD/shares": [{"form": "10-K", "fp": "FY", "fy": 2025, "val": 6.0}]}}}}}
+    seen = []
+
+    class S:
+        def get(self, url, headers=None, timeout=None):
+            seen.append(headers["User-Agent"])
+            if "company_tickers" in url:
+                return Resp(body={"0": {"ticker": "AAPL", "cik_str": 320193}})
+            assert "CIK0000320193" in url
+            return Resp(body=facts)
+    fin = fundamentals.sec_financials("AAPL", "me@example.com", session=S())
+    assert fin["years"] == [2024, 2025] and fin["series"]["revenue"] == [100, 120] and fin["series"]["eps"] == [None, 6.0]
+    assert "me@example.com" in seen[0]
+    assert fundamentals.ratios(fin, price=180)["per"] == pytest.approx(30)
+
+
+@pytest.fixture
+def client(isolated_home):
+    app = create_app()
+    c = TestClient(app)
+    c.h = {"x-qtrader-token": app.state.token}
+    return c
+
+
+def test_stock_endpoints_demo(client):
+    assert client.get("/api/stocks/search?q=삼성").json()[0]["symbol"] == "005930"
+    s = client.get("/api/stock/005930/summary").json()
+    assert s["demo"] and s["price"] > 0 and s["name"] == "삼성전자"
+    c = client.get("/api/stock/005930/candles?interval=1w").json()
+    assert c["interval"] == "1w" and c["candles"]
+    assert client.get("/api/stock/005930/candles?interval=3h").status_code == 400
+    ob = client.get("/api/stock/005930/orderbook").json()
+    assert len(ob["asks"]) == 10 and ob["asks"][0]["price"] > ob["bids"][0]["price"]
+    assert client.get("/api/stock/005930/trades").json()["items"]
+    assert "DART" in client.get("/api/stock/005930/financials").json()["error"]
+    assert "연락처" in client.get("/api/stock/AAPL/financials").json()["error"]
+    p = client.get("/api/principles").json()
+    assert len(p["references"]) >= 15 and p["rules"]["min_reward_risk"] == 2.0
+
+
+def test_dart_key_endpoint(client, fake_vault):
+    r = client.put("/api/secrets", json={"kind": "dart", "key": "d" * 40}, headers=client.h).json()
+    assert r["keys"]["dart"] and fake_vault["dart_api_key"] == "d" * 40

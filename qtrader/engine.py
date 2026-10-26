@@ -88,25 +88,64 @@ def build_context(cfg: dict | None = None, store: Store | None = None) -> Contex
     return Context(cfg, store, KISData(client, store), KISBroker(client))
 
 
-def ai_targets(store: Store, cfg: dict, universe: list[str], today: str) -> tuple[dict, set, list]:
-    """오늘 AI 회의 결정으로 목표 비중을 만든다. 결정이 없거나 Hold·확신 부족이면 보유를 유지(keep)."""
+def ai_targets(store: Store, cfg: dict, panel_: dict, today: str, account: str = "", market: str = "KR",
+               warnings_for=None) -> tuple[dict, set, list]:
+    """오늘 AI 회의 결정으로 목표 비중을 만든다.
+    - 결정이 없거나 Hold·확신 부족: 보유 유지(keep)
+    - 매수 계열인데 체크리스트(뇌동매매 방지 규칙)를 하나라도 못 넘으면: 신규 매수 없이 보유 유지
+    - 매도 계열: 위험을 줄이는 쪽이라 그대로 반영"""
+    from . import principles
     ai = cfg["ai"]
     mult = ai["rating_weights"]
+    rules = ai.get("rules") or {}
+    cooldown = int(rules.get("cooldown_days", principles.DEFAULT_RULES["cooldown_days"]))
+    universe = list(panel_)
     base = 1.0 / max(len(universe), 1)
+    new_buys = store.new_buys_today(account, market, today) if account else 0
     target, keep, notes = {}, set(), []
     for s in universe:
         d = store.latest_decision(s, today)
         f = (d or {}).get("final") or {}
         rating, conf = f.get("rating"), float(f.get("confidence") or 0)
         m = mult.get(rating) if rating else None
+        note = {"symbol": s, "rating": rating, "confidence": conf, "run_id": (d or {}).get("id"),
+                "headline": f.get("headline", ""), "checklist": None}
         if not d or m is None or conf < ai.get("min_confidence", 0.5):
             keep.add(s)
-            why = "회의 결과 없음" if not d else ("보유 유지" if m is None else f"확신 부족 {conf:.0%}")
+            note["action"] = "회의 결과 없음" if not d else ("보유 유지" if m is None else f"확신 부족 {conf:.0%}")
+        elif rating in ("Buy", "Overweight"):
+            check = d.get("check") if isinstance(d.get("check"), dict) else None
+            warns = warnings_for(s) if warnings_for else []
+            stopped = store.recent_stop(account, market, s, cooldown) if account else False
+            cl = principles.checklist(f, check, panel_[s], warns, rules, new_buys, stopped)
+            note["checklist"] = cl
+            if cl["passed"]:
+                target[s] = base * float(m) * min(1.0, cl["size"]["weight_factor"] * 4)
+                note["action"] = f"{rating} {conf:.0%} · 체크리스트 통과"
+                new_buys += 1
+            else:
+                keep.add(s)
+                failed = [r["name"] for r in cl["rules"] if not r["ok"]]
+                note["action"] = "매수 보류(규칙 미통과): " + ", ".join(failed)
         else:
             target[s] = base * float(m)
-            why = f"{rating} {conf:.0%}"
-        notes.append({"symbol": s, "rating": rating, "confidence": conf, "action": why})
+            note["action"] = f"{rating} {conf:.0%} · 비중 축소"
+        notes.append(note)
     return target, keep, notes
+
+
+def order_reason(note: dict, plan: dict | None, base_reason: str) -> str:
+    """주문 근거 문장: 왜 사는지/파는지 사람이 읽을 수 있게."""
+    parts = [f"AI 회의 {note.get('rating')} (확신도 {note.get('confidence', 0):.0%})"]
+    if note.get("headline"):
+        parts.append(note["headline"])
+    cl = note.get("checklist")
+    if cl:
+        ok = sum(1 for r in cl["rules"] if r["ok"])
+        parts.append(f"체크리스트 {ok}/{len(cl['rules'])} 통과")
+    if plan:
+        parts.append(f"손절 {plan['stop']:,} (-{plan['stop_pct']}%) · 익절 {plan['take']:,} (+{plan['take_pct']}%)")
+    return " | ".join(parts + [base_reason])
 
 
 def plan_orders(target: dict[str, float], prices: dict[str, float], holdings: dict[str, int],
@@ -139,6 +178,51 @@ def plan_orders(target: dict[str, float], prices: dict[str, float], holdings: di
     return sells + buys
 
 
+def remember_plan(store: Store, account: str, market: str, o: OrderRequest, today: str) -> None:
+    """AI 매수가 나가면 그 회의의 손절·익절 가격을 포지션 계획으로 저장한다. 매도면 계획을 닫는다."""
+    if o.side == Side.SELL:
+        store.close_plan(account, market, o.symbol, "sold")
+        return
+    d = store.latest_decision(o.symbol, today) or {}
+    plan = d.get("plan")
+    if plan:
+        store.save_plan(account, market, o.symbol, d.get("id"), plan["entry"], plan["stop"], plan["take"])
+
+
+def check_exits(ctx: Context, market: Market) -> list[dict]:
+    """손절가·익절가에 닿은 AI 포지션을 판다. 장중에 스케줄러가 몇 분마다 부른다."""
+    store, out = ctx.store, []
+    plans = store.active_plans(ctx.broker.name, market.value)
+    if not plans:
+        return out
+    acct = ctx.broker.account(market)
+    today = trade_date(market)
+    for pl in plans:
+        pos = acct.positions.get(pl["symbol"])
+        if not pos or pos.qty <= 0:
+            store.close_plan(ctx.broker.name, market.value, pl["symbol"], "no_position")
+            continue
+        px = pos.last_price or ctx.data.price(market, pl["symbol"])
+        why = "stop" if px <= pl["stop"] else "take" if px >= pl["take"] else None
+        if not why:
+            continue
+        # 국내는 시장가, 미국은 지정가만 되므로 현재가보다 0.3% 낮게
+        price = round(px * 0.997, 2) if market == Market.US else 0
+        label = "손절" if why == "stop" else "익절"
+        req = OrderRequest(market, pl["symbol"], Side.SELL, pos.qty, price, "ai-exit",
+                           f"{label}: 현재가 {px:,} / 손절가 {pl['stop']:,} / 익절가 {pl['take']:,}")
+        r = ctx.broker.order(req)
+        status = ("filled" if r.filled_qty else "submitted") if r.ok else "rejected"
+        store.add_order(trade_date=today, account=ctx.broker.name, market=market.value, symbol=req.symbol, side="sell",
+                        qty=req.qty, price=req.price or px, status=status, broker_order_id=r.broker_order_id,
+                        strategy="ai-exit", message=f"{req.reason} | {r.message}")
+        if r.ok:
+            store.close_plan(ctx.broker.name, market.value, pl["symbol"], why)
+        store.log("warn" if why == "stop" else "info", "exit", f"{req.reason} -> {status} {r.message}")
+        out.append({"symbol": req.symbol, "reason": why, "status": status, "price": px})
+    return out
+
+
 def execute_approval(ctx: Context, aid: int) -> dict:
     """승인된 주문을 다시 리스크 확인한 뒤 낸다 (킬 스위치·당일 중복·현금)."""
     store = ctx.store
@@ -168,6 +252,8 @@ def execute_approval(ctx: Context, aid: int) -> dict:
                     side=req.side.value, qty=req.qty, price=req.price, status=status, broker_order_id=r.broker_order_id,
                     strategy=req.strategy, message=f"승인 #{aid} | {req.reason} | {r.message}")
     store.decide_approval(aid, "approved", f"{status} {r.message}")
+    if r.ok and req.strategy == "ai":
+        remember_plan(store, ctx.broker.name, market.value, req, a["trade_date"])
     store.log("info" if r.ok else "error", "approval", f"승인 #{aid} {status} {req.side.value} {req.symbol} x{req.qty} {r.message}")
     return {"id": aid, "status": status, "message": r.message}
 
@@ -197,7 +283,14 @@ def run_market(ctx: Context, market: Market, dry_run: bool = False, force: bool 
     keep: set[str] = set()
     ai_notes: list[dict] = []
     if use_ai:
-        raw, keep, ai_notes = ai_targets(store, cfg, list(p), today)
+        tc = getattr(ctx.data, "client", None) if getattr(ctx.data, "name", "") == "toss" else None
+
+        def warns(sym):
+            try:
+                return tc.warnings(sym) if tc else []
+            except Exception:
+                return []
+        raw, keep, ai_notes = ai_targets(store, cfg, p, today, acct_id, market.value, warns)
     else:
         raw = strat.latest(p)
     target = cap_weights(raw, lim)
@@ -221,6 +314,13 @@ def run_market(ctx: Context, market: Market, dry_run: bool = False, force: bool 
 
     orders = plan_orders(target, prices, holdings, capital, market, lim, strat_name, mc.get("limit_offset", 0.0),
                          keep)
+    if use_ai:
+        by = {n["symbol"]: n for n in ai_notes}
+        for o in orders:
+            n = by.get(o.symbol)
+            if n:
+                d = store.latest_decision(o.symbol, today) or {}
+                o.reason = order_reason(n, d.get("plan") if o.side == Side.BUY else None, o.reason)
     checked = check_orders(orders, lim, universe, kill, store.ordered_today(acct_id, market.value, today),
                            acct.cash)
     for o, why in checked.blocked:
@@ -250,6 +350,8 @@ def run_market(ctx: Context, market: Market, dry_run: bool = False, force: bool 
         store.add_order(trade_date=today, account=acct_id, market=market.value, symbol=o.symbol,
                         side=o.side.value, qty=o.qty, price=o.price, status=status, broker_order_id=oid,
                         strategy=o.strategy, message=f"{o.reason} | {res_msg}")
+        if use_ai and status in ("filled", "submitted"):
+            remember_plan(store, acct_id, market.value, o, today)
         store.log("info" if status != "rejected" else "error", src,
                   f"{status} {o.side.value} {o.symbol} x{o.qty} @ {o.price:,.2f} {res_msg}")
         results.append({"symbol": o.symbol, "side": o.side.value, "qty": o.qty, "price": o.price,

@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .. import __version__, backtest, config as config_mod, market as market_mod, strategies, vault
+from .. import __version__, backtest, config as config_mod, fundamentals, market as market_mod, news as news_mod, principles, stockdata, strategies, vault
 from ..agents import meeting
 from ..agents.assistant import Assistant
 from ..agents.llm import LLMError
@@ -25,7 +25,7 @@ from ..storage import Store
 
 STATIC = Path(__file__).parent / "static"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
-SECRET_KINDS = ("kis_demo", "kis_real", "toss", "anthropic")
+SECRET_KINDS = ("kis_demo", "kis_real", "toss", "anthropic", "dart")
 
 
 class BacktestIn(BaseModel):
@@ -81,7 +81,8 @@ def session_token() -> str:
 
 def key_state() -> dict:
     return {"kis_demo": vault.has_kis("demo"), "kis_real": vault.has_kis("real"),
-            "toss": vault.get_toss() is not None, "anthropic": bool(vault.get_anthropic())}
+            "toss": vault.get_toss() is not None, "anthropic": bool(vault.get_anthropic()),
+            "dart": bool(vault.get("dart_api_key"))}
 
 
 def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=None) -> FastAPI:
@@ -208,6 +209,85 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             return market_mod.watch_quotes(toss(), config_mod.load().get("watchlist", []))
         except Exception as e:
             raise HTTPException(502, str(e))
+
+    # 종목 화면
+    @app.get("/api/stocks/search")
+    def stock_search(q: str = "", limit: int = 20):
+        rows = stockdata.master(toss(), config_mod.home())
+        return stockdata.search(rows, q, min(max(limit, 1), 50))
+
+    def guard(fn):
+        try:
+            return fn()
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        except Exception as e:
+            raise HTTPException(502, f"데이터를 받지 못했습니다: {e}")
+
+    @app.get("/api/stock/{symbol}/summary")
+    def stock_summary(symbol: str):
+        return guard(lambda: stockdata.summary(toss(), symbol))
+
+    @app.get("/api/stock/{symbol}/candles")
+    def stock_candles(symbol: str, interval: str = "1d", count: int | None = None):
+        return guard(lambda: stockdata.candles(toss(), symbol.upper(), interval, count))
+
+    @app.get("/api/stock/{symbol}/orderbook")
+    def stock_orderbook(symbol: str):
+        return guard(lambda: stockdata.orderbook(toss(), symbol.upper()))
+
+    @app.get("/api/stock/{symbol}/trades")
+    def stock_trades(symbol: str):
+        return guard(lambda: stockdata.trades(toss(), symbol.upper()))
+
+    @app.get("/api/stock/{symbol}/flows")
+    def stock_flows(symbol: str):
+        t = toss()
+        if t is None or not symbol[:1].isdigit():
+            return {"records": []}
+        return guard(lambda: t.stock_investor_trading(symbol.upper(), 20))
+
+    @app.get("/api/stock/{symbol}/financials")
+    def stock_financials(symbol: str):
+        s = symbol.upper().split(":")[-1]
+        cfg = config_mod.load()
+        try:
+            if s[:1].isdigit():
+                key = vault.get("dart_api_key")
+                if not key:
+                    raise fundamentals.FundamentalsError("국내 재무제표는 설정에서 DART 오픈API 인증키(무료)를 등록하면 볼 수 있습니다")
+                fin = fundamentals.dart_financials(s, key, config_mod.home())
+            else:
+                fin = fundamentals.sec_financials(s, cfg.get("sec_contact", ""))
+        except fundamentals.FundamentalsError as e:
+            return {"error": str(e)}
+        except Exception as e:
+            return {"error": f"재무제표를 받지 못했습니다: {e}"}
+        sm = stockdata.summary(toss(), symbol)
+        return fin | {"ratios": fundamentals.ratios(fin, sm["price"], sm["shares"])}
+
+    @app.get("/api/stock/{symbol}/news")
+    def stock_news(symbol: str, name: str = ""):
+        q = name or symbol
+        try:
+            return {"items": news_mod.stock_news(f"{q} 주가")}
+        except Exception as e:
+            return {"items": [], "error": str(e)}
+
+    @app.get("/api/news")
+    def news_feed():
+        return news_mod.feeds(config_mod.load().get("news", {}).get("feeds"))
+
+    @app.get("/api/principles")
+    def principle_list():
+        return {"references": [{"key": k, "author": a, "title": t, "venue": v, "finding": f, "applied": u}
+                               for k, a, t, v, f, u in principles.REFERENCES],
+                "rules": principles.DEFAULT_RULES | (config_mod.load()["ai"].get("rules") or {})}
+
+    @app.get("/api/plans")
+    def plans():
+        c = ctx()
+        return c.store.active_plans(c.broker.name)
 
     # AI 투자 회의
     @app.get("/api/ai/roles")
@@ -369,12 +449,14 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
     def put_secret(body: SecretIn):
         if body.kind not in SECRET_KINDS:
             raise HTTPException(400, f"kind 는 {SECRET_KINDS} 중 하나")
-        if len(body.key.strip()) < 10 or (body.kind != "anthropic" and len(body.secret.strip()) < 10):
+        if len(body.key.strip()) < 10 or (body.kind not in ("anthropic", "dart") and len(body.secret.strip()) < 10):
             raise HTTPException(400, "키가 너무 짧습니다")
         if body.kind.startswith("kis"):
             vault.set_kis(body.kind[4:], body.key, body.secret)
         elif body.kind == "toss":
             vault.set_toss(body.key, body.secret)
+        elif body.kind == "dart":
+            vault.put("dart_api_key", body.key)
         else:
             vault.put("anthropic_api_key", body.key)
         return {"ok": True, "keys": key_state()}
@@ -387,6 +469,8 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             vault.delete_kis(kind[4:])
         elif kind == "toss":
             vault.delete_toss()
+        elif kind == "dart":
+            vault.delete("dart_api_key")
         else:
             vault.delete("anthropic_api_key")
         return {"ok": True, "keys": key_state()}
