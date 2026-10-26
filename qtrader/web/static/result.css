@@ -102,3 +102,35 @@ input[type=range] { padding: 0; }
   .stage-line { grid-template-columns: repeat(4, 1fr); }
   .track-top { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* 회의 결과 팝업 (사무실 위) */
+.plan-pop { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(560px, 86%);
+  background: rgba(14,18,24,.94); border: 2px solid #c9a227; border-radius: 14px; padding: 1.4cqw 1.8cqw; color: #e6edf3;
+  box-shadow: 0 0 0 4px rgba(0,0,0,.4), 0 20px 40px rgba(0,0,0,.5); animation: pop .35s ease-out; }
+@keyframes pop { from { transform: translate(-50%, -40%); opacity: 0; } }
+.pp-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.pp-head b { font-size: clamp(18px, 3cqw, 30px); color: var(--c); }
+.pp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 6px; }
+.pp-grid div { background: rgba(255,255,255,.05); border-radius: 8px; padding: .6cqw .8cqw; }
+.pp-grid span { display: block; font-size: clamp(9px, 1.3cqw, 12px); color: var(--muted); }
+.pp-grid b { font-size: clamp(12px, 2cqw, 19px); }
+.pp-grid em { font-style: normal; font-size: 12px; margin-left: 4px; }
+.pp-grid .down b, .pp-grid .down em { color: var(--blue); }
+.pp-grid .up b, .pp-grid .up em { color: var(--red); }
+.plan-pop.hidden { display: none; }
+
+/* 실행 계획 카드 */
+.plan-card .step { display: grid; grid-template-columns: 28px 50px 1fr; gap: 8px; align-items: center; padding: 9px 10px; background: var(--bg); border-radius: 8px; margin-bottom: 6px; font-size: 14px; }
+.plan-card .num { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--line); font-weight: 800; }
+.plan-card .step.down b { color: var(--blue); } .plan-card .step.up b { color: var(--red); }
+.gauge { position: relative; height: 54px; margin: 14px 8px 4px; }
+.g-bar { position: absolute; left: 0; right: 0; top: 8px; height: 12px; background: var(--line); border-radius: 99px; }
+.g-bar i { position: absolute; top: 0; bottom: 0; }
+.g-loss { background: linear-gradient(90deg, #2f5fb8, #6aa0ff); border-radius: 99px 0 0 99px; }
+.g-gain { background: linear-gradient(90deg, #f08a5e, #c0393b); border-radius: 0 99px 99px 0; }
+.g-m { position: absolute; top: 26px; transform: translateX(-50%); font-size: 12px; white-space: nowrap; font-weight: 700; }
+.g-m.mid { top: -12px; }
+table.cl td { white-space: normal; font-size: 13px; vertical-align: top; }
+table.refs td { white-space: normal; font-size: 13px; vertical-align: top; }
+.pp-x { position: absolute; right: 8px; top: 4px; background: none; border: 0; color: #c7d0d9; font-size: 20px; padding: 0 6px; }
+.plan-pop { cursor: pointer; }

@@ -107,6 +107,32 @@ async function drawChart(run, f) {
   RES.chart = chart;
 }
 
+function planBlock(run) {
+  const p = run.plan, cl = run.checklist;
+  if (!p) return "";
+  const m = p.currency === "USD" ? "US" : "KR";
+  const steps = [
+    ["1", "매수", `${fmtPx(p.entry_low, m)} ~ ${fmtPx(p.entry_high, m)} 사이에서 ${p.qty.toLocaleString()}주 (${fmtPx(p.amount, m)})`, ""],
+    ["2", "손절", `${fmtPx(p.stop, m)} 이하로 내려가면 전량 매도 (-${p.stop_pct}%, 최대 손실 ${fmtPx(p.max_loss, m)})`, "down"],
+    ["3", "익절", `${fmtPx(p.take, m)} 이상 오르면 전량 매도 (+${p.take_pct}%, 예상 이익 ${fmtPx(p.max_gain, m)})`, "up"],
+    ["4", "기한", `${p.horizon_days}거래일 안에 둘 다 닿지 않으면 다시 회의해서 판단`, ""],
+  ];
+  const ok = cl ? cl.rules.filter((r) => r.ok).length : 0;
+  return `<div class="res-grid">
+    <div class="panel plan-card"><h3>실행 계획 <small>이대로 사고, 이 가격에서 판다</small></h3>
+      ${steps.map(([n, k, v, c]) => `<div class="step ${c}"><span class="num">${n}</span><b>${k}</b><span>${esc(v)}</span></div>`).join("")}
+      <div class="gauge">${(() => {
+        const lo = p.stop * 0.98, hi = p.take * 1.02, pos = (v) => ((v - lo) / (hi - lo) * 100).toFixed(1);
+        return `<div class="g-bar"><i class="g-loss" style="left:${pos(p.stop)}%;width:${pos(p.entry) - pos(p.stop)}%"></i><i class="g-gain" style="left:${pos(p.entry)}%;width:${pos(p.take) - pos(p.entry)}%"></i></div>
+          <span class="g-m" style="left:${pos(p.stop)}%">손절 ${fmtPx(p.stop, m)}</span><span class="g-m mid" style="left:${pos(p.entry)}%">매수 ${fmtPx(p.entry, m)}</span><span class="g-m" style="left:${pos(p.take)}%">익절 ${fmtPx(p.take, m)}</span>`;
+      })()}</div>
+      <p class="note">수량은 운용 한도 × 종목당 최대 비중 × (절반 켈리·변동성 목표 중 작은 값)으로 정했습니다.</p></div>
+    <div class="panel"><h3>매수 체크리스트 <small>${cl ? `${ok}/${cl.rules.length} 통과 · ${cl.passed ? "<b class='up'>매수 가능</b>" : "<b class='down'>매수 보류</b>"}` : ""} · 뇌동매매 방지</small></h3>
+      ${cl ? `<table class="cl"><tbody>${cl.rules.map((r) => `<tr><td>${r.ok ? "<span class='chipst ok'>통과</span>" : "<span class='chipst bad'>미통과</span>"}</td>
+        <td><b>${esc(r.name)}</b><div class="note">${esc(r.ref)}</div></td><td class="r">${esc(r.value)}</td><td class="note">${esc(r.need)}</td></tr>`).join("")}</tbody></table>` : ""}
+    </div></div>`;
+}
+
 function list(arr) { return (arr || []).map((x) => `<li>${esc(x)}</li>`).join(""); }
 
 window.renderResult = (run) => {
@@ -126,6 +152,7 @@ window.renderResult = (run) => {
   RES.chartFor = key;
   const color = f ? R_COLOR[f.rating] : "#8b98a5";
   const entryOk = f && sane(f.entry_low, last) && sane(f.entry_high, last);
+  const P = run.plan;
   const mid = entryOk ? (f.entry_low + f.entry_high) / 2 : last;
   const votes = f?.risk_votes || {};
   const bull = f?.bull_score ?? 50;
@@ -143,8 +170,8 @@ window.renderResult = (run) => {
       ${f ? `<div class="plan">
         <div><span class="k">현재가</span><b>${fmtPx(last, m)}</b></div>
         <div><span class="k">진입 가격대</span><b>${entryOk ? `${fmtPx(f.entry_low, m)} ~ ${fmtPx(f.entry_high, m)}` : "확인 필요"}</b></div>
-        <div><span class="k">손절</span><b class="down">${fmtPx(mid * (1 - f.stop_loss_pct / 100), m)} (-${f.stop_loss_pct}%)</b></div>
-        <div><span class="k">익절</span><b class="up">${fmtPx(mid * (1 + f.take_profit_pct / 100), m)} (+${f.take_profit_pct}%)</b></div>
+        <div><span class="k">손절가</span><b class="down">${fmtPx(P ? P.stop : mid * (1 - f.stop_loss_pct / 100), m)} (-${f.stop_loss_pct}%)</b></div>
+        <div><span class="k">익절가</span><b class="up">${fmtPx(P ? P.take : mid * (1 + f.take_profit_pct / 100), m)} (+${f.take_profit_pct}%)</b></div>
         <div><span class="k">손익비</span><b>${(f.take_profit_pct / Math.max(f.stop_loss_pct, 0.1)).toFixed(1)} : 1</b></div>
       </div>` : ""}
     </div>
@@ -164,6 +191,8 @@ window.renderResult = (run) => {
         .map(([k, v]) => `<div><span>${k}</span><b>${v ?? "-"}</b></div>`).join("")}</div></div>
     <div class="panel"><h3>분야별 점수 <small>검증관 정리 · 0~100</small></h3>${ck?.scores ? radar(ck.scores) : "<p class='note'>점수 없음</p>"}</div>
   </div>
+
+  ${planBlock(run)}
 
   ${f ? `<div class="panel"><h3>시나리오와 기대값</h3>${scenarioBlock(f, last, m)}</div>` : ""}
 

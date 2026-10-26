@@ -129,7 +129,8 @@ def candles(t: Toss | None, symbol: str, interval: str = "1d", count: int | None
         intraday = src == "1m"
         rows = []
         for ts, r in df.iterrows():
-            tm = int(pd.Timestamp(ts).tz_localize("Asia/Seoul").timestamp()) if intraday else pd.Timestamp(ts).strftime("%Y-%m-%d")
+            # 한국 시각을 그대로 차트 시각으로 쓴다 (차트는 UTC 로 그리므로 KST 벽시계 값을 UTC 처럼 넘김)
+            tm = int(pd.Timestamp(ts).timestamp()) if intraday else pd.Timestamp(ts).strftime("%Y-%m-%d")
             rows.append({"time": tm, "open": round(float(r.open), 4), "high": round(float(r.high), 4),
                          "low": round(float(r.low), 4), "close": round(float(r.close), 4), "volume": float(r.volume)})
         return {"symbol": symbol, "interval": interval, "intraday": intraday, "demo": t is None, "candles": rows}
@@ -141,8 +142,9 @@ def candles(t: Toss | None, symbol: str, interval: str = "1d", count: int | None
 def orderbook(t: Toss | None, symbol: str) -> dict:
     if t is None:
         rng = np.random.default_rng(int(time.time() / 3))
-        mid = 72000.0 if symbol[:1].isdigit() else 180.0
-        tick = 100 if symbol[:1].isdigit() else 0.01
+        mid = candles(None, symbol, "1d")["candles"][-1]["close"]
+        tick = (100 if mid >= 50000 else 10) if symbol[:1].isdigit() else 0.01
+        mid = round(mid / tick) * tick
         asks = [{"price": round(mid + tick * (i + 1), 2), "volume": int(rng.integers(100, 9000))} for i in range(10)][::-1]
         bids = [{"price": round(mid - tick * i, 2), "volume": int(rng.integers(100, 9000))} for i in range(10)]
         return {"demo": True, "asks": asks, "bids": bids, "timestamp": None}
@@ -156,7 +158,7 @@ def orderbook(t: Toss | None, symbol: str) -> dict:
 def trades(t: Toss | None, symbol: str) -> dict:
     if t is None:
         rng = np.random.default_rng(int(time.time() / 3))
-        mid = 72000.0 if symbol[:1].isdigit() else 180.0
+        mid = candles(None, symbol, "1d")["candles"][-1]["close"]
         now = pd.Timestamp.now()
         return {"demo": True, "items": [{"price": round(mid * (1 + rng.normal(0, 0.001)), 2), "volume": int(rng.integers(1, 500)),
                                          "time": (now - pd.Timedelta(seconds=i * 7)).isoformat()} for i in range(20)]}

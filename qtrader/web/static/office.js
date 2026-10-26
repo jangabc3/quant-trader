@@ -106,33 +106,68 @@ function bigScreen(x, y, w, h, t, live) {
 
 function table(x, y, w, h, c = "#7a4a2a") { px(x, y, w, h, c); px(x, y + h, w, 4, "#3a2418"); px(x + 1, y + 1, w - 2, 1, "rgba(255,255,255,.18)"); }
 
-// 사람
+// 사람: 2등신 귀여운 픽셀 캐릭터 (큰 머리, 반짝이는 눈, 볼터치, 역할별 머리 모양과 소품)
+const STYLE = {
+  chart: ["spiky", "glasses"], fund: ["bob", "glasses"], earn: ["pony", ""], news: ["bun", ""], flow: ["spiky", "cap"],
+  checker: ["bob", "glasses"], bull: ["spiky", ""], bear: ["bob", ""], lead: ["bun", "glasses"], trader: ["spiky", "tie"],
+  aggr: ["spiky", "band"], neut: ["bob", ""], cons: ["pony", "glasses"], pm: ["bob", "tie"], assistant: ["pony", "headset"],
+};
+const OUT = "#1d1410";
+
 function person(e, t) {
   const [shirt, hair] = LOOKS[e.look] || LOOKS.gray;
+  const [hs, acc] = STYLE[e.id] || ["bob", ""];
   const x = e.x, y = e.y;
-  const walk = e.moving ? t % 2 : 0;
   const working = e.status === "working";
-  const bob = working && !e.moving ? (t % 2) : 0;
-  const top = y - 22 * S + bob;
+  const walk = e.moving ? t % 2 : 0;
+  const bob = (working && !e.moving) ? (t % 2) : (e.moving ? walk : 0);
+  const top = y - 22 * S - bob;
   const p = (dx, dy, w, h, c) => px(x + dx * S, top + dy * S, w * S, h * S, c);
-  px(x - 6 * S, y - 2, 12 * S, 3, "rgba(0,0,0,.25)");
-  p(-4, 18, 3, walk ? 2 : 3, "#2a2a35"); p(1, 18, 3, walk ? 3 : 2, "#2a2a35");
-  p(-5, 9, 10, 9, shirt); p(-5, 9, 10, 1, "rgba(255,255,255,.15)");
-  const armL = e.moving ? walk : (working ? t % 2 : 0);
-  const armR = e.moving ? 1 - walk : (working ? (t + 1) % 2 : 0);
-  p(-7, 10 + armL, 2, 6, shirt); p(5, 10 + armR, 2, 6, shirt);
-  p(-7, 16, 2, 1, SKIN); p(5, 16, 2, 1, SKIN);
-  if (e.carry) { p(5, 12, 4, 5, "#f4efe2"); p(6, 13, 2, 1, "#888"); }
-  p(-4, 2, 8, 7, SKIN);
-  p(-5, 0, 10, 3, hair); p(-5, 3, 1, 3, hair); p(4, 3, 1, 3, hair);
-  const f = e.face < 0 ? -1 : 0;
-  if (t % 23 !== 0) { p(-2 + f, 5, 1, 1, "#222"); p(1 + f, 5, 1, 1, "#222"); }
-  p(-3, 6, 1, 1, "#f0a0a0"); p(2, 6, 1, 1, "#f0a0a0"); p(-1, 7, 2, 1, "#c0785a");
-  if (working && !e.moving && (e.id === "bull" || e.id === "bear") && t % 6 < 3) {
-    px(x + 10, top - 6, 3, 8, "#ffd34d"); px(x + 10, top + 4, 3, 3, "#ffd34d"); // 느낌표
+  px(x - 6 * S, y - 2, 12 * S, 3, "rgba(0,0,0,.28)");
+  // 다리·신발
+  const l1 = e.moving && walk ? 1 : 0, l2 = e.moving && !walk ? 1 : 0;
+  p(-3, 19, 3, 3 - l1, OUT); p(1, 19, 3, 3 - l2, OUT);
+  p(-3, 19, 2, 2 - l1, "#3a3a4a"); p(1, 19, 2, 2 - l2, "#3a3a4a");
+  // 몸 (테두리 -> 옷)
+  p(-5, 12, 10, 8, OUT); p(-4, 12, 8, 7, shirt); p(-4, 12, 8, 1, "rgba(255,255,255,.18)");
+  p(-1, 12, 2, 1, "#fff");
+  if (acc === "tie") { p(-1, 13, 2, 4, "#c0392b"); }
+  // 팔 (일할 때 타자 치듯, 걸을 때 흔들기)
+  const aL = e.moving ? walk : (working ? t % 2 : 0), aR = e.moving ? 1 - walk : (working ? (t + 1) % 2 : 0);
+  p(-7, 13 + aL, 2, 5, OUT); p(-6, 13 + aL, 1, 4, shirt); p(-7, 17 + aL, 2, 1, SKIN);
+  p(5, 13 + aR, 2, 5, OUT); p(5, 13 + aR, 1, 4, shirt); p(5, 17 + aR, 2, 1, SKIN);
+  if (e.carry) { p(4, 13, 5, 6, OUT); p(5, 14, 3, 4, "#f4efe2"); p(5, 15, 3, 1, "#9aa"); }
+  // 머리 (테두리 -> 피부)
+  p(-6, 1, 12, 11, OUT); p(-5, 2, 10, 9, SKIN);
+  // 머리카락
+  p(-6, 0, 12, 4, hair); p(-5, -1, 10, 1, hair);
+  if (hs === "bob") { p(-6, 4, 2, 6, hair); p(4, 4, 2, 6, hair); }
+  if (hs === "spiky") { p(-5, -2, 2, 1, hair); p(-1, -2, 2, 1, hair); p(3, -2, 2, 1, hair); p(-6, 4, 1, 3, hair); p(5, 4, 1, 3, hair); }
+  if (hs === "pony") { p(-6, 4, 1, 4, hair); p(5, 4, 1, 3, hair); p(6, 3, 2, 6, hair); }
+  if (hs === "bun") { p(-2, -3, 4, 3, hair); p(-6, 4, 1, 4, hair); p(5, 4, 1, 4, hair); }
+  p(-3, 4, 6, 1, hair); // 앞머리
+  if (acc === "cap") { p(-6, -1, 12, 3, "#2f6fd0"); p(-7, 2, 6, 1, "#2f6fd0"); }
+  if (acc === "band") { p(-6, 3, 12, 1, "#e0302a"); }
+  // 눈 (깜빡임) + 하이라이트
+  const blink = (t + e.id.length * 7) % 31 === 0;
+  if (blink) { p(-4, 8, 3, 1, OUT); p(1, 8, 3, 1, OUT); }
+  else {
+    p(-4, 6, 2, 3, OUT); p(2, 6, 2, 3, OUT);
+    p(-4, 6, 1, 1, "#fff"); p(2, 6, 1, 1, "#fff");
   }
-  if (e.status === "done") px(x + 12, top + 2, 6, 6, "#3fe07a");
-  if (e.status === "error") px(x + 12, top + 2, 6, 6, "#f0534e");
+  if (acc === "glasses") { p(-5, 5, 4, 1, "#333"); p(1, 5, 4, 1, "#333"); p(-1, 6, 2, 1, "#333"); p(-5, 9, 4, 1, "rgba(51,51,51,.6)"); p(1, 9, 4, 1, "rgba(51,51,51,.6)"); }
+  p(-5, 9, 2, 1, "#f59ab0"); p(3, 9, 2, 1, "#f59ab0"); // 볼터치
+  if (working && t % 4 < 2) p(-1, 10, 2, 1, "#a0402a"); else p(-1, 10, 2, 1, "#c0785a"); // 입
+  if (acc === "headset") { p(-6, -1, 12, 1, "#222"); p(-7, 5, 2, 4, "#222"); p(5, 5, 2, 4, "#222"); p(-7, 9, 4, 1, "#222"); }
+  // 상태 표시
+  if (working && !e.moving && (e.id === "bull" || e.id === "bear") && t % 6 < 3) {
+    px(x + 14, top - 8, 3, 9, "#ffd34d"); px(x + 14, top + 3, 3, 3, "#ffd34d");
+  }
+  if (working && !e.moving && e.id !== "bull" && e.id !== "bear" && t % 8 < 4) { // 생각 중 점점점
+    for (let i = 0; i < 3; i++) px(x + 10 + i * 4, top - 4 - ((t + i) % 3), 2, 2, "#fff");
+  }
+  if (e.status === "done") { px(x + 12, top + 2, 7, 7, OUT); px(x + 13, top + 3, 5, 5, "#3fe07a"); }
+  if (e.status === "error") { px(x + 12, top + 2, 7, 7, OUT); px(x + 13, top + 3, 5, 5, "#f0534e"); }
 }
 
 function deskFor(id, t, on) {
@@ -163,17 +198,17 @@ function think(e, t) {
     // 일하는 중: 자료실·동료 책상과 내 자리를 번갈아 오간다
     const going = atHome ? seat.visits[Math.floor(Math.random() * seat.visits.length)] : seat.home;
     e.tx = going[0]; e.ty = going[1]; e.carry = !atHome;
-    e.next = t + 14 + Math.floor(Math.random() * 16);
+    e.next = t + 8 + Math.floor(Math.random() * 10);
   } else if (e.status !== "working" && !atHome && !e.moving) {
     e.tx = seat.home[0]; e.ty = seat.home[1]; e.carry = e.status === "done";
   }
   const dx = e.tx - e.x, dy = e.ty - e.y, d = Math.hypot(dx, dy);
   if (d > 1) {
-    const sp = Math.min(d, 4.5);
+    const sp = Math.min(d, 8);
     e.x += dx / d * sp; e.y += dy / d * sp; e.moving = true; e.face = dx < 0 ? -1 : 1;
   } else {
     e.x = e.tx; e.y = e.ty;
-    if (e.moving) e.next = Math.max(e.next, t + 10);
+    if (e.moving) e.next = Math.max(e.next, t + 6);
     e.moving = false;
     if (Math.abs(e.x - seat.home[0]) < 1 && Math.abs(e.y - seat.home[1]) < 1) e.carry = false;
   }
@@ -192,7 +227,7 @@ function drawPapers() {
   office.papers = office.papers.filter((p) => p.k <= 1);
   for (const p of office.papers) {
     if (p.delay > 0) { p.delay--; continue; }
-    p.k += 0.06;
+    p.k += 0.09;
     const x = p.x0 + (p.x1 - p.x0) * p.k, y = p.y0 + (p.y1 - p.y0) * p.k - Math.sin(p.k * Math.PI) * 40;
     px(x - 5, y - 6, 10, 12, "#f4efe2"); px(x - 3, y - 3, 6, 1, "#999"); px(x - 3, y, 6, 1, "#999"); px(x - 3, y + 3, 4, 1, "#999");
   }
@@ -274,16 +309,53 @@ function renderStages() {
   const sec = Math.max(0, Math.round((end - Date.parse(r.started_at)) / 1000));
   const state = r.status === "running" ? `<b class="blink">● 회의 중</b> ${esc(r.stage)}` : r.status === "done" ? "<b>회의 완료</b>" : `<b class="down">오류</b> ${esc(r.error || "")}`;
   hud.innerHTML = `<div>${esc(r.name || r.symbol)} <small>${esc(r.symbol)}</small></div><div>${state}</div>
-    <div class="note">${Math.floor(sec / 60)}분 ${sec % 60}초 · 토큰 ${Number((r.tokens_in || 0) + (r.tokens_out || 0)).toLocaleString()}</div>`;
+    <div class="note">${r.mode === "precise" ? "정밀" : "빠른"} 회의 · ${Math.floor(sec / 60)}분 ${sec % 60}초 · Claude ${r.calls || 0}회 · 약 ${Math.round((r.cost_usd || 0) * 1400).toLocaleString()}원</div>`;
+  renderPlanPop(r);
+}
+
+function renderPlanPop(r) {
+  const el = $("#plan-pop");
+  const f = r.final, p = r.plan;
+  if (r.status !== "done" || !f || !p || office.popClosed === r.id) { el.classList.add("hidden"); return; }
+  const cur = p.currency === "USD" ? "US" : "KR";
+  const color = RATING_COLOR[f.rating];
+  const passed = r.checklist?.passed;
+  el.innerHTML = `<button class="pp-x" title="닫기">×</button><div class="pp-head" style="--c:${color}"><b>${RATING_KO[f.rating]}</b><span>${esc(r.name || r.symbol)} · 확신도 ${Math.round(f.confidence * 100)}%</span>
+      <span class="badge ${passed ? "green" : "red"}">${passed ? "매수 체크리스트 통과" : "매수 체크리스트 미통과"}</span></div>
+    <div class="pp-grid">
+      <div><span>사는 가격</span><b>${money(p.entry_low, cur)} ~ ${money(p.entry_high, cur)}</b></div>
+      <div class="down"><span>손절 (여기서 판다)</span><b>${money(p.stop, cur)}</b><em>-${p.stop_pct}%</em></div>
+      <div class="up"><span>익절 (여기서 판다)</span><b>${money(p.take, cur)}</b><em>+${p.take_pct}%</em></div>
+      <div><span>추천 수량</span><b>${p.qty.toLocaleString()}주</b><em>${money(p.amount, cur)}</em></div>
+      <div class="down"><span>틀리면 최대 손실</span><b>${money(p.max_loss, cur)}</b></div>
+      <div class="up"><span>맞으면 예상 이익</span><b>${money(p.max_gain, cur)}</b></div>
+    </div><div class="note">보유 기간 ${p.horizon_days}거래일 · 손절·익절가에 닿으면 자동매도(설정) · 아래로 내리면 근거 전체</div>`;
+  el.classList.remove("hidden");
+}
+
+$("#plan-pop").addEventListener("click", (e) => {
+  if (e.target.closest(".pp-x")) { office.popClosed = office.run?.id; $("#plan-pop").classList.add("hidden"); }
+  else $("#result").scrollIntoView({ behavior: "smooth" });
+});
+
+window.showRunById = (id) => { office.run = null; showRun(id); };
+
+async function loadRefs() {
+  try {
+    const d = await api("/api/principles");
+    $("#refs-body").innerHTML = `<table class="refs"><thead><tr><th>연구·서적</th><th>핵심 발견</th><th>QTrader 적용</th></tr></thead><tbody>
+      ${d.references.map((r) => `<tr><td><b>${esc(r.author)}</b><div class="note">${esc(r.title)} · ${esc(r.venue)}</div></td><td>${esc(r.finding)}</td><td>${esc(r.applied)}</td></tr>`).join("")}</tbody></table>
+      <p class="note">이 원칙들은 '이기는 확률을 조금 높이고 질 때 작게 지는' 방법입니다. 승률 100%를 보장하는 방법은 학계·업계 어디에도 없습니다.</p>`;
+  } catch (e) { $("#refs-body").textContent = e.message; }
 }
 
 let lastTs = 0;
 function loop(ts) {
-  if (ts - lastTs > 120) {
+  if (ts - lastTs > 70) {
     lastTs = ts;
     office.frame = (office.frame + 1) % 100000;
     draw(); placeOverlay();
-    if (office.frame % 8 === 0) renderStages();
+    if (office.frame % 10 === 0) renderStages();
   }
   requestAnimationFrame(loop);
 }
@@ -427,4 +499,4 @@ $("#chat-form").addEventListener("submit", async (e) => {
   buildOverlay(); updateOverlay(); renderStages(); requestAnimationFrame(loop);
   chatLine("bot", "안녕하세요, 비서입니다. 시장 상황, 내 계좌, 종목 차트를 물어보시거나 \"삼성전자 회의 열어줘\"라고 해 보세요.");
 })();
-document.addEventListener("tab", (e) => { if (e.detail === "office") { loadRuns(); loadTrack(); } });
+document.addEventListener("tab", (e) => { if (e.detail === "office") { loadRuns(); loadTrack(); loadRefs(); } });
