@@ -13,7 +13,7 @@ const PARAM_NAME = {
   rsi_n: "RSI 기간", entry_rsi: "진입 RSI", exit_rsi: "청산 RSI", bb_n: "볼린저 기간", bb_k: "볼린저 배수",
   max_hold: "최대 보유일",
 };
-const state = { status: null, config: null, strategies: {}, tab: "mkt" };
+const state = { status: null, config: null, strategies: {}, tab: "mkt", plans: {} };
 
 async function api(path, opts = {}) {
   const res = await fetch(path, {
@@ -27,9 +27,10 @@ async function api(path, opts = {}) {
 }
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const money = (v, m) => v == null ? "-" : (m === "US" || m === "USD" ? "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 })
+const isUS = (m) => m === "US" || m === "USD";
+const money = (v, m) => v == null || isNaN(v) ? "-" : (isUS(m) ? "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 })
   : Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 0 }) + "원");
-const pct = (v) => v == null ? "-" : (v > 0 ? "+" : "") + (v * 100).toFixed(2) + "%";
+const pct = (v) => v == null || isNaN(v) ? "-" : (v > 0 ? "+" : "") + (v * 100).toFixed(2) + "%";
 const cls = (v) => v > 0 ? "up" : v < 0 ? "down" : "";
 const bigKRW = (v) => {
   const a = Math.abs(v);
@@ -39,11 +40,27 @@ const bigKRW = (v) => {
   return Math.round(v).toLocaleString();
 };
 
+// 종목 로고 대신 쓰는 이니셜 아이콘 (실제 로고 이미지는 쓰지 않는다)
+const LOGO_COLORS = ["#3182f6", "#f04452", "#00b386", "#ff8a00", "#8b5cf6", "#0ea5e9", "#e11d74", "#14b8a6", "#f59e0b", "#6366f1"];
+function logo(symbol, name, size = 28) {
+  let h = 0;
+  for (const c of String(symbol)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const ch = String(name || symbol).replace(/^(KODEX|TIGER|KBSTAR|ACE|SOL|RISE)\s*/i, "").trim().charAt(0).toUpperCase();
+  return `<span class="logo" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.46)}px;background:${LOGO_COLORS[h % LOGO_COLORS.length]}">${esc(ch)}</span>`;
+}
+
 function banner(msg, kind = "") {
   const b = $("#banner");
   b.className = "banner " + kind + (msg ? "" : " hidden");
   b.textContent = msg || "";
 }
+
+function modal(html) {
+  $("#modal-body").innerHTML = html;
+  $("#modal").classList.remove("hidden");
+}
+$("#modal-x").onclick = () => $("#modal").classList.add("hidden");
+$("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") $("#modal").classList.add("hidden"); });
 
 // 탭
 function openTab(name) {
@@ -55,6 +72,52 @@ function openTab(name) {
 }
 $$("nav button").forEach((b) => b.addEventListener("click", () => openTab(b.dataset.tab)));
 
+// 전체 종목 검색 (위쪽 검색창)
+let searchTimer;
+$("#gsearch").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(async () => {
+    const q = $("#gsearch").value.trim();
+    const box = $("#gsearch-list");
+    if (!q) { box.classList.add("hidden"); return; }
+    try {
+      const rows = await api("/api/stocks/search?q=" + encodeURIComponent(q));
+      box.innerHTML = rows.map((r) => `<div class="gs-item" data-open="${esc(r.symbol)}">${logo(r.symbol, r.name, 24)}<b>${esc(r.name)}</b><span class="note">${esc(r.symbol)} · ${esc(r.market || "")}</span></div>`).join("")
+        || `<div class="gs-item note">검색 결과가 없습니다</div>`;
+      box.classList.remove("hidden");
+    } catch (e) { box.innerHTML = `<div class="gs-item note">${esc(e.message)}</div>`; box.classList.remove("hidden"); }
+  }, 180);
+});
+$("#gsearch").addEventListener("keydown", async (e) => {
+  if (e.key === "Enter") {
+    // 검색 결과가 아직 바뀌기 전에 Enter 를 누르면 이전 결과가 열리지 않도록 지금 입력으로 다시 찾는다
+    clearTimeout(searchTimer);
+    const q = $("#gsearch").value.trim();
+    if (!q) return;
+    try {
+      const rows = await api("/api/stocks/search?q=" + encodeURIComponent(q));
+      if (rows.length) {
+        $("#gsearch-list").classList.add("hidden");
+        $("#gsearch").value = "";
+        openTab("stock");
+        window.openStock(rows[0].symbol);
+      }
+    } catch {}
+  }
+  if (e.key === "Escape") $("#gsearch-list").classList.add("hidden");
+});
+document.addEventListener("click", (e) => {
+  const o = e.target.closest("[data-open]");
+  if (o) {
+    $("#gsearch-list").classList.add("hidden");
+    $("#gsearch").value = "";
+    openTab("stock");
+    window.openStock && window.openStock(o.dataset.open);
+    return;
+  }
+  if (!e.target.closest(".gsearch")) $("#gsearch-list").classList.add("hidden");
+});
+
 // 상태 · 내 계좌
 async function refresh() {
   try {
@@ -62,9 +125,10 @@ async function refresh() {
     state.status = s;
     renderStatus(s);
     if (!s.error && state.tab === "dash") {
-      const [pos, ords, evs] = await Promise.all([api("/api/positions"), api("/api/orders?limit=50"), api("/api/events?limit=80")]);
-      renderPositions(pos); renderOrders(ords); renderEvents(evs);
-      renderApprovals(await api("/api/approvals?status=pending"));
+      const [pos, ords, evs, plans, appr] = await Promise.all([api("/api/positions"), api("/api/orders?limit=50"),
+        api("/api/events?limit=80"), api("/api/plans"), api("/api/approvals?status=pending")]);
+      state.plans = Object.fromEntries(plans.map((p) => [p.symbol, p]));
+      renderPositions(pos); renderOrders(ords); renderEvents(evs); renderApprovals(appr);
     }
   } catch (e) { banner("서버 응답 오류: " + e.message); }
 }
@@ -82,7 +146,7 @@ function renderStatus(s) {
   $("#kill-btn").classList.toggle("on", s.kill_switch);
   const msgs = [s.error, s.scheduler_error && "스케줄러: " + s.scheduler_error].filter(Boolean);
   if (msgs.length) banner(msgs.join(" / "));
-  else if (!s.keys.toss && state.tab === "mkt") banner("토스증권 키가 없어 체험용 시장 데이터를 보여줍니다. 설정에서 토스증권 Client ID/Secret 을 등록하면 실제 시세로 바뀝니다.", "info");
+  else if (!s.keys.toss && ["mkt", "stock"].includes(state.tab)) banner("토스증권 키가 없어 체험용 데이터를 보여줍니다. 설정에서 토스증권 Client ID/Secret 을 등록하면 실제 시세로 바뀝니다.", "info");
   else if (!s.keys.anthropic && state.tab === "office") banner("AI 회의와 비서를 쓰려면 설정에서 Claude API 키를 등록하세요.", "info");
   else banner("");
 
@@ -96,29 +160,45 @@ function renderStatus(s) {
 }
 
 function renderPositions(rows) {
-  $("#pos-table tbody").innerHTML = rows.length ? rows.map((p) => `<tr>
-    <td>${MARKET_NAME[p.market]}</td><td>${esc(p.symbol)}</td><td class="r">${p.qty.toLocaleString()}</td>
+  $("#pos-table tbody").innerHTML = rows.length ? rows.map((p) => {
+    const pl = state.plans[p.symbol];
+    return `<tr data-open="${esc(p.symbol)}" class="clickable">
+    <td>${MARKET_NAME[p.market]}</td><td>${logo(p.symbol, p.symbol, 20)} ${esc(p.symbol)}</td><td class="r">${p.qty.toLocaleString()}</td>
     <td class="r">${money(p.avg_price, p.market)}</td><td class="r">${money(p.last_price, p.market)}</td>
-    <td class="r">${money(p.value, p.market)}</td><td class="r ${cls(p.pnl)}">${pct(p.pnl)}</td></tr>`).join("")
-    : `<tr><td colspan="7" class="note">보유 종목이 없습니다.</td></tr>`;
+    <td class="r ${cls(p.pnl)}">${pct(p.pnl)}</td>
+    <td class="r down">${pl ? money(pl.stop, p.market) : "-"}</td><td class="r up">${pl ? money(pl.take, p.market) : "-"}</td></tr>`;
+  }).join("") : `<tr><td colspan="8" class="note">보유 종목이 없습니다.</td></tr>`;
+}
+
+function reasonHtml(text) {
+  return String(text || "").split(" | ").map((x) => `<li>${esc(x)}</li>`).join("");
 }
 
 function renderOrders(rows) {
   const st = { submitted: "접수", filled: "체결", rejected: "거부", dry_run: "계산만" };
-  $("#ord-table tbody").innerHTML = rows.length ? rows.map((o) => `<tr title="${esc(o.message)}">
+  state.orders = rows;
+  $("#ord-table tbody").innerHTML = rows.length ? rows.map((o, i) => `<tr class="clickable" data-ord="${i}">
     <td>${esc(o.trade_date)}</td><td>${esc(o.symbol)}</td>
-    <td class="${o.side === "buy" ? "up" : "down"}">${o.side === "buy" ? "매수" : "매도"}</td>
+    <td class="${o.side === "buy" ? "up" : "down"}">${o.side === "buy" ? "매수" : "매도"}${o.strategy === "ai-exit" ? " (자동)" : ""}</td>
     <td class="r">${o.qty.toLocaleString()}</td><td class="r">${money(o.price, o.market)}</td>
     <td>${st[o.status] || o.status}</td></tr>`).join("")
     : `<tr><td colspan="6" class="note">주문이 없습니다.</td></tr>`;
 }
+$("#ord-table").addEventListener("click", (e) => {
+  const tr = e.target.closest("[data-ord]");
+  if (!tr) return;
+  const o = state.orders[tr.dataset.ord];
+  modal(`<h3>${o.side === "buy" ? "매수" : "매도"} ${esc(o.symbol)} ${o.qty}주 · ${money(o.price, o.market)}</h3>
+    <p class="note">${esc(o.ts)} · ${esc(o.strategy || "")} · ${esc(o.status)}</p><h4>이 주문의 근거</h4><ul class="why">${reasonHtml(o.message)}</ul>`);
+});
 
 function renderApprovals(rows) {
   $("#approvals-panel").classList.toggle("hidden", !rows.length);
-  $("#appr-table tbody").innerHTML = rows.map((a) => `<tr><td>${a.id}</td><td>${esc(a.trade_date)}</td><td>${esc(a.symbol)}</td>
-    <td class="${a.side === "buy" ? "up" : "down"}">${a.side === "buy" ? "매수" : "매도"}</td><td class="r">${a.qty.toLocaleString()}</td>
-    <td class="r">${money(a.price, a.market)}</td><td class="note">${esc(a.reason)}</td>
-    <td class="r"><button class="primary" data-appr="${a.id}" data-ok="1">승인</button> <button data-appr="${a.id}" data-ok="0">거절</button></td></tr>`).join("");
+  $("#appr-list").innerHTML = rows.map((a) => `<div class="appr ${a.side}">
+    <div class="appr-head">${logo(a.symbol, a.symbol, 32)}<div><b>${a.side === "buy" ? "매수" : "매도"} ${esc(a.symbol)} ${a.qty.toLocaleString()}주</b>
+      <div class="note">${esc(a.trade_date)} · 주문가 ${money(a.price, a.market)} · 약 ${money(a.price * a.qty, a.market)}</div></div>
+      <div class="appr-btns"><button class="primary" data-appr="${a.id}" data-ok="1">근거 확인했고 승인</button><button data-appr="${a.id}" data-ok="0">거절</button></div></div>
+    <ul class="why">${reasonHtml(a.reason)}</ul></div>`).join("");
 }
 document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-appr]");
@@ -170,8 +250,16 @@ $("#run-btn").onclick = () => runNow(false);
 $("#auto-btn").onclick = async () => {
   const s = state.status;
   const on = !s.auto_trading;
-  if (on && s.mode !== "paper" && !confirm(`${MODE_NAME[s.mode]} 계좌로 자동매매를 시작합니다. 매 거래일 설정한 시각에 주문이 나갑니다. 계속할까요?`)) return;
-  if (on && LIVE.has(s.mode) && prompt("실전 자동매매입니다. 진행하려면 '실전주문' 이라고 입력하세요.") !== "실전주문") return;
+  if (on) {
+    const c = state.config || await api("/api/config");
+    const lines = Object.entries(c.markets).filter(([, mc]) => mc.enabled).map(([m, mc]) =>
+      `· ${MARKET_NAME[m]}: ${STRAT_NAME[mc.strategy]} 전략, 매 거래일 ${mc.run_time}(${m === "KR" ? "한국" : "뉴욕"} 시간), 한도 ${money(mc.budget, m)}`);
+    const rules = c.markets.KR.strategy === "ai" || c.markets.US.strategy === "ai"
+      ? "\n· AI 회의 결과가 매수여도 체크리스트(추세·모멘텀·과열·변동성·손익비·팩트체크)를 모두 넘어야 삽니다.\n· 산 종목은 손절가·익절가에 닿으면 자동으로 팝니다." + (c.ai.require_approval ? "\n· 주문은 승인 대기에 먼저 올라오고, 근거를 보고 승인해야 나갑니다." : "")
+      : "";
+    if (!confirm(`${MODE_NAME[s.mode]} 계좌로 자동매매를 시작합니다.\n\n${lines.join("\n")}${rules}\n\n종목당 최대 ${Math.round(c.risk.max_weight * 100)}%, 하루 손실 ${Math.round(c.risk.daily_loss_limit * 100)}% 에 닿으면 킬 스위치가 켜집니다. 계속할까요?`)) return;
+    if (LIVE.has(s.mode) && prompt("실전 자동매매입니다. 진행하려면 '실전주문' 이라고 입력하세요.") !== "실전주문") return;
+  }
   await api("/api/auto", { method: "POST", body: { on } }).catch((e) => alert(e.message));
   refresh();
 };
@@ -179,79 +267,42 @@ $("#kill-btn").onclick = async () => {
   await api("/api/kill-switch", { method: "POST", body: { on: !state.status.kill_switch } }).catch((e) => alert(e.message));
   refresh();
 };
-document.addEventListener("tab", (e) => { if (e.detail === "dash" || e.detail === "mkt" || e.detail === "office") refresh(); });
+document.addEventListener("tab", (e) => refresh());
 
-// 백테스트
-let chart, eqSeries, bmSeries;
-function strategyParamsForm(name, values = {}) {
-  const defs = state.strategies[name] || {};
-  $("#bt-params").innerHTML = Object.entries(defs).map(([k, v]) =>
-    `<label>${PARAM_NAME[k] || k}<input data-param="${k}" type="number" step="any" value="${values[k] ?? v}"></label>`).join("");
-}
 function readParams(root) {
   const out = {};
   root.querySelectorAll("[data-param]").forEach((i) => { if (i.value !== "") out[i.dataset.param] = Number(i.value); });
   return out;
 }
-$("#bt-strategy").onchange = () => strategyParamsForm($("#bt-strategy").value);
-$("#bt-run").onclick = async () => {
-  const btn = $("#bt-run");
-  btn.disabled = true; btn.textContent = "계산 중...";
-  const uni = $("#bt-universe").value.split(",").map((x) => x.trim()).filter(Boolean);
-  try {
-    const r = await api("/api/backtest", { method: "POST", body: {
-      market: $("#bt-market").value, strategy: $("#bt-strategy").value, params: readParams($("#bt-params")),
-      universe: uni.length ? uni : null, days: Number($("#bt-days").value) } });
-    renderBacktest(r);
-  } catch (e) { alert("백테스트 실패: " + e.message); }
-  btn.disabled = false; btn.textContent = "백테스트 실행";
-};
-
-function renderBacktest(r) {
-  const m = r.metrics;
-  const card = (k, v, s = "", c = "") => `<div class="card"><div class="k">${k}</div><div class="v ${c}">${v}</div><div class="s">${s}</div></div>`;
-  $("#bt-metrics").innerHTML = [
-    card("누적 수익률", pct(m.total_return), `${m.days}거래일`, cls(m.total_return)),
-    card("연평균 수익률(CAGR)", pct(m.cagr), `동일비중 보유 ${pct(m.benchmark_cagr)}`, cls(m.cagr)),
-    card("최대 낙폭(MDD)", pct(m.max_drawdown), `동일비중 보유 ${pct(m.benchmark_max_drawdown)}`),
-    card("샤프 지수", m.sharpe, `소르티노 ${m.sortino}`),
-    card("연 변동성", pct(m.volatility), `연 회전율 ${m.annual_turnover}배`),
-    card("현재 목표 비중", Object.keys(r.last_weights).length + "종목",
-      Object.entries(r.last_weights).map(([k, v]) => `${k} ${(v * 100).toFixed(0)}%`).join(", ") || "전부 현금"),
-  ].join("") + (r.data_errors.length ? card("데이터 오류", r.data_errors.length + "건", esc(r.data_errors.join(" / "))) : "");
-
-  if (!window.LightweightCharts) { $("#bt-chart").textContent = "차트 라이브러리를 불러오지 못했습니다(인터넷 연결 확인)."; return; }
-  if (!chart) {
-    chart = LightweightCharts.createChart($("#bt-chart"), {
-      layout: { background: { color: "transparent" }, textColor: "#8b98a5" },
-      grid: { vertLines: { color: "#1e262f" }, horzLines: { color: "#1e262f" } },
-      rightPriceScale: { borderColor: "#26303b" }, timeScale: { borderColor: "#26303b" }, autoSize: true,
-    });
-    bmSeries = chart.addLineSeries({ color: "#6b7785", lineWidth: 1 });
-    eqSeries = chart.addLineSeries({ color: "#4c8dff", lineWidth: 2 });
-  }
-  eqSeries.setData(r.equity); bmSeries.setData(r.benchmark); chart.timeScale().fitContent();
-}
 
 // 설정
 async function loadConfig() {
   const c = await api("/api/config");
+  const pr = await api("/api/principles");
   state.config = c;
   $$("input[name=mode]").forEach((i) => (i.checked = i.value === c.mode));
   $("#live-confirmed").checked = !!c.live_confirmed;
   $("#data-source").value = c.data_source || "auto";
   $("#kis-account").value = c.kis.account || "";
   $("#toss-loc").checked = !!c.toss.us_loc;
+  $("#sec-contact").value = c.sec_contact || "";
   $("#r-maxw").value = c.risk.max_weight; $("#r-maxe").value = c.risk.max_exposure;
   $("#r-loss").value = c.risk.daily_loss_limit;
   $("#r-ordkr").value = c.risk.max_order_value.KR; $("#r-ordus").value = c.risk.max_order_value.US;
   $("#watchlist").value = (c.watchlist || []).join(", ");
+  $("#news-feeds").value = (c.news?.feeds || []).map((f) => `${f.name}|${f.url}`).join("\n");
+  $("#ai-mode").value = c.ai.mode || "fast";
   $("#ai-quick").value = c.ai.quick_model || ""; $("#ai-deep").value = c.ai.deep_model || c.ai.model || "";
   $("#ai-effort").value = c.ai.effort; $("#ai-profile").value = c.ai.profile || "";
   $("#ai-approve").checked = c.ai.require_approval !== false;
-  $("#ai-debate").value = c.ai.debate_rounds; $("#ai-risk").value = c.ai.risk_rounds;
+  $("#ai-exit").checked = c.ai.auto_exit !== false;
+  $("#ai-debate").value = c.ai.debate_rounds;
   $("#ai-before").value = c.ai.run_before_minutes; $("#ai-max").value = c.ai.max_symbols_per_day;
   $("#ai-conf").value = c.ai.min_confidence; $("#ai-web").checked = !!c.ai.web_research;
+  const R = pr.rules;
+  $("#rl-conf").value = R.min_confidence; $("#rl-rr").value = R.min_reward_risk; $("#rl-rsi").value = R.max_rsi;
+  $("#rl-vol").value = R.max_vol; $("#rl-fact").value = R.min_fact_ok; $("#rl-buys").value = R.max_new_buys_per_day;
+  $("#rl-cool").value = R.cooldown_days; $("#rl-trend").checked = R.require_trend; $("#rl-mom").checked = R.require_momentum;
   const stratOptions = [...Object.keys(state.strategies), "ai"];
   $("#market-cfg").innerHTML = Object.entries(c.markets).map(([m, mc]) => `
     <div class="panel" data-market="${m}">
@@ -271,7 +322,7 @@ async function loadConfig() {
       const name = el.querySelector("[data-f=strategy]").value;
       const vals = name === c.markets[m].strategy ? c.markets[m].params : {};
       el.querySelector("[data-params]").innerHTML = name === "ai"
-        ? `<p class="note">실행 시각 ${c.ai.run_before_minutes}분 전부터 종목마다 AI 투자 회의를 열고, 최종 등급으로 비중을 정합니다. 보유·확신 부족이면 그대로 둡니다.</p>`
+        ? `<p class="note">실행 시각 ${c.ai.run_before_minutes}분 전부터 종목마다 AI 투자 회의를 열고, 최종 등급과 매수 체크리스트로 비중을 정합니다. 보유·확신 부족·규칙 미통과면 그대로 둡니다.</p>`
         : Object.entries(state.strategies[name] || {}).map(([k, v]) =>
           `<label>${PARAM_NAME[k] || k}<input data-param="${k}" type="number" step="any" value="${vals[k] ?? v}"></label>`).join("");
     };
@@ -282,7 +333,7 @@ async function loadConfig() {
 }
 
 const KEY_LABELS = {
-  toss: ["Client ID", "Client Secret"], anthropic: ["API 키", null],
+  toss: ["Client ID", "Client Secret"], anthropic: ["API 키", null], dart: ["인증키 (40자리)", null],
   kis_demo: ["앱키", "앱시크릿"], kis_real: ["앱키", "앱시크릿"],
 };
 function refreshKeyState() {
@@ -292,7 +343,7 @@ function refreshKeyState() {
   $("#key-secret-wrap").classList.toggle("hidden", !b);
   if (b) $("#key-label2").textContent = b;
   const s = state.status;
-  if (s) $("#key-state").textContent = s.keys[kind] ? "저장된 키 있음" : "저장된 키 없음";
+  if (s) $("#key-state").innerHTML = s.keys[kind] ? "<b class='up'>저장된 키 있음</b>" : "저장된 키 없음";
 }
 $("#key-kind").onchange = refreshKeyState;
 
@@ -305,16 +356,23 @@ $("#cfg-save").onclick = async () => {
   c.data_source = $("#data-source").value;
   c.kis.account = $("#kis-account").value.trim();
   c.toss.us_loc = $("#toss-loc").checked;
+  c.sec_contact = $("#sec-contact").value.trim();
   c.risk.max_weight = Number($("#r-maxw").value); c.risk.max_exposure = Number($("#r-maxe").value);
   c.risk.daily_loss_limit = Number($("#r-loss").value);
   c.risk.max_order_value = { KR: Number($("#r-ordkr").value), US: Number($("#r-ordus").value) };
   c.watchlist = $("#watchlist").value.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
+  c.news = { feeds: $("#news-feeds").value.split("\n").map((l) => l.split("|")).filter((p) => p.length === 2 && /^https?:\/\//.test(p[1].trim()))
+    .map(([n, u]) => ({ name: n.trim(), url: u.trim() })) };
   Object.assign(c.ai, {
-    quick_model: $("#ai-quick").value.trim(), deep_model: $("#ai-deep").value.trim(), effort: $("#ai-effort").value,
-    profile: $("#ai-profile").value.trim(), require_approval: $("#ai-approve").checked,
-    debate_rounds: Number($("#ai-debate").value), risk_rounds: Number($("#ai-risk").value),
+    mode: $("#ai-mode").value, quick_model: $("#ai-quick").value.trim(), deep_model: $("#ai-deep").value.trim(),
+    effort: $("#ai-effort").value, profile: $("#ai-profile").value.trim(), require_approval: $("#ai-approve").checked,
+    auto_exit: $("#ai-exit").checked, debate_rounds: Number($("#ai-debate").value),
     run_before_minutes: Number($("#ai-before").value), max_symbols_per_day: Number($("#ai-max").value),
     min_confidence: Number($("#ai-conf").value), web_research: $("#ai-web").checked,
+    rules: { min_confidence: Number($("#rl-conf").value), min_reward_risk: Number($("#rl-rr").value),
+      max_rsi: Number($("#rl-rsi").value), max_vol: Number($("#rl-vol").value), min_fact_ok: Number($("#rl-fact").value),
+      max_new_buys_per_day: Number($("#rl-buys").value), cooldown_days: Number($("#rl-cool").value),
+      require_trend: $("#rl-trend").checked, require_momentum: $("#rl-mom").checked },
   });
   $$("#market-cfg [data-market]").forEach((el) => {
     const mc = c.markets[el.dataset.market];
@@ -334,11 +392,11 @@ $("#cfg-save").onclick = async () => {
 
 $("#key-save").onclick = async () => {
   try {
-    await api("/api/secrets", { method: "PUT", body: { kind: $("#key-kind").value, key: $("#key-app").value, secret: $("#key-secret").value } });
+    const r = await api("/api/secrets", { method: "PUT", body: { kind: $("#key-kind").value, key: $("#key-app").value, secret: $("#key-secret").value } });
     $("#key-app").value = ""; $("#key-secret").value = "";
     await refresh(); refreshKeyState();
-    alert("키를 저장했습니다.");
-  } catch (e) { alert("저장 실패: " + e.message); }
+    alert(r.keys[$("#key-kind").value] ? "키를 저장했습니다." : "저장이 확인되지 않았습니다. 다시 시도하세요.");
+  } catch (e) { alert("저장 실패: " + e.message + (e.message.includes("토큰") ? "\n페이지를 새로고침(F5)한 뒤 다시 저장하세요." : "")); }
 };
 $("#key-del").onclick = async () => {
   if (!confirm("이 키를 삭제할까요?")) return;
@@ -349,9 +407,6 @@ $("#key-del").onclick = async () => {
 // 시작
 (async () => {
   state.strategies = await api("/api/strategies");
-  $("#bt-strategy").innerHTML = Object.keys(state.strategies).map((k) => `<option value="${k}">${STRAT_NAME[k]}</option>`).join("");
-  $("#bt-strategy").value = "momentum";
-  strategyParamsForm("momentum");
   await refresh();
   setInterval(refresh, 15000);
 })();
