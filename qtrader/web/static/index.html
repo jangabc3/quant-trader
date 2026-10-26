@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QTrader</title>
+<link rel="stylesheet" href="/static/style.css">
+<script>window.QT_TOKEN = "__TOKEN__";</script>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">QTrader <span class="ver">v__VERSION__</span></div>
+  <nav>
+    <button data-tab="dash" class="on">대시보드</button>
+    <button data-tab="bt">백테스트</button>
+    <button data-tab="cfg">설정</button>
+  </nav>
+  <div class="badges">
+    <span id="mode-badge" class="badge">-</span>
+    <span id="auto-badge" class="badge">-</span>
+    <span id="kill-badge" class="badge">-</span>
+  </div>
+</header>
+
+<main>
+  <div id="banner" class="banner hidden"></div>
+
+  <!-- 대시보드 -->
+  <section id="tab-dash" class="tab">
+    <div class="controls">
+      <button id="auto-btn" class="primary">자동매매 시작</button>
+      <button id="kill-btn" class="danger">킬 스위치 켜기</button>
+      <span class="sep"></span>
+      <select id="run-market"><option value="KR">국내</option><option value="US">미국</option></select>
+      <button id="dry-btn">지금 계산만 (주문 안 함)</button>
+      <button id="run-btn">지금 실행</button>
+    </div>
+    <div class="cards" id="market-cards"></div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>보유 종목</h3>
+        <table id="pos-table"><thead><tr><th>시장</th><th>종목</th><th class="r">수량</th><th class="r">평균가</th><th class="r">현재가</th><th class="r">평가액</th><th class="r">수익률</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="panel">
+        <h3>최근 실행 결과</h3>
+        <pre id="run-out" class="out">아직 실행하지 않았습니다.</pre>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="panel">
+        <h3>주문 내역</h3>
+        <table id="ord-table"><thead><tr><th>날짜</th><th>종목</th><th>구분</th><th class="r">수량</th><th class="r">가격</th><th>상태</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="panel">
+        <h3>로그</h3>
+        <ul id="events" class="events"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 백테스트 -->
+  <section id="tab-bt" class="tab hidden">
+    <div class="panel">
+      <div class="form-row">
+        <label>시장 <select id="bt-market"><option value="KR">국내</option><option value="US">미국</option></select></label>
+        <label>전략 <select id="bt-strategy"></select></label>
+        <label>기간(거래일) <input id="bt-days" type="number" value="750" min="120" step="10"></label>
+        <button id="bt-run" class="primary">백테스트 실행</button>
+      </div>
+      <div class="form-row"><label class="wide">종목 (쉼표로 구분, 비우면 설정의 종목) <input id="bt-universe" placeholder="005930, 000660"></label></div>
+      <div id="bt-params" class="form-row params"></div>
+    </div>
+    <div class="cards" id="bt-metrics"></div>
+    <div class="panel">
+      <h3>자산 곡선 <small>파랑: 전략 · 회색: 동일비중 보유</small></h3>
+      <div id="bt-chart" class="chart"></div>
+      <p class="note">과거 성과는 미래 수익을 보장하지 않습니다. 비용(수수료·세금·슬리피지)을 반영한 추정치입니다.</p>
+    </div>
+  </section>
+
+  <!-- 설정 -->
+  <section id="tab-cfg" class="tab hidden">
+    <div class="grid2">
+      <div class="panel">
+        <h3>운용 모드</h3>
+        <label class="radio"><input type="radio" name="mode" value="paper"> 가상매매 — 내 PC 안에서만 체결 (처음엔 이걸로)</label>
+        <label class="radio"><input type="radio" name="mode" value="kis_demo"> 한국투자증권 모의투자</label>
+        <label class="radio"><input type="radio" name="mode" value="kis_real"> 한국투자증권 실전 — 실제 돈으로 주문</label>
+        <label class="check"><input type="checkbox" id="live-confirmed"> 실전 주문을 허용합니다. 손실 책임이 저에게 있음을 이해했습니다.</label>
+        <label>계좌번호 <input id="kis-account" placeholder="12345678-01"></label>
+      </div>
+      <div class="panel">
+        <h3>한국투자증권 API 키</h3>
+        <p class="note">KIS Developers 에서 발급한 앱키/시크릿입니다. 이 PC의 윈도우 자격 증명 관리자에만 저장됩니다.</p>
+        <div class="form-row">
+          <label>구분 <select id="key-env"><option value="demo">모의투자</option><option value="real">실전</option></select></label>
+          <span id="key-state" class="note"></span>
+        </div>
+        <label>앱키 <input id="key-app" autocomplete="off"></label>
+        <label>앱시크릿 <input id="key-secret" type="password" autocomplete="off"></label>
+        <div class="form-row"><button id="key-save" class="primary">키 저장</button><button id="key-del">이 구분의 키 삭제</button></div>
+      </div>
+    </div>
+    <div class="grid2" id="market-cfg"></div>
+    <div class="panel">
+      <h3>리스크 관리</h3>
+      <div class="form-row">
+        <label>종목당 최대 비중 <input id="r-maxw" type="number" step="0.01" min="0.01" max="1"></label>
+        <label>총 투자 비중 상한 <input id="r-maxe" type="number" step="0.01" min="0.01" max="1"></label>
+        <label>일일 손실 한도 <input id="r-loss" type="number" step="0.005" min="0.005" max="0.5"></label>
+        <label>1회 주문 한도(원) <input id="r-ordkr" type="number" step="100000"></label>
+        <label>1회 주문 한도($) <input id="r-ordus" type="number" step="100"></label>
+      </div>
+    </div>
+    <div class="controls"><button id="cfg-save" class="primary">설정 저장</button><span id="cfg-msg" class="note"></span></div>
+  </section>
+</main>
+
+<footer>이 프로그램은 투자 권유가 아니며, 모든 매매 판단과 손익은 사용자 본인의 책임입니다.</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>
