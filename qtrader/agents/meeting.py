@@ -119,8 +119,15 @@ class Meeting:
             self.run["calls"] += 1
         text = rep.text
         if schema is FINAL_SCHEMA:
-            self.run["final"] = rep.data
-            bubble = f"{RATING_KO.get(rep.data['rating'], rep.data['rating'])} · {rep.data['headline']}"
+            d = rep.data
+            self.run["final"] = d
+            bubble = f"{RATING_KO.get(d['rating'], d['rating'])} · {d['headline']}"
+            # 보고서 칸에는 JSON 대신 읽을 수 있는 문장으로
+            text = (f"한줄요약: {d['headline']}\n\n**최종 의견** {RATING_KO.get(d['rating'], d['rating'])} "
+                    f"(확신도 {d['confidence']:.0%})\n\n**투자 논문** {d['thesis']}\n\n**핵심 근거**\n"
+                    + "\n".join(f"- {x}" for x in d["reasons"]) + "\n\n**위험**\n"
+                    + "\n".join(f"- {x}" for x in d["worry"])
+                    + f"\n\n**손절** -{d['stop_loss_pct']}% · **익절** +{d['take_profit_pct']}% · **보유 기간** {d['horizon_days']}거래일")
         elif schema is CHECK_SCHEMA:
             self.run["check"] = rep.data
             fc = rep.data.get("fact_checks", [])

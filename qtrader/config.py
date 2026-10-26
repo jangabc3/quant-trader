@@ -82,8 +82,15 @@ DEFAULT = {
     },
     "watchlist": ["005930", "000660", "AAPL", "NVDA"],
     "news": {"feeds": [
-        {"name": "인베스팅닷컴 · 주식시장", "url": "https://kr.investing.com/rss/news_25.rss"},
-        {"name": "인베스팅닷컴 · 전체", "url": "https://kr.investing.com/rss/news.rss"},
+        {"name": "인베스팅닷컴", "url": "https://kr.investing.com/rss/news_25.rss"},
+        {"name": "한국경제 증권", "url": "https://www.hankyung.com/feed/finance"},
+        {"name": "매일경제 증권", "url": "https://www.mk.co.kr/rss/50200011/"},
+        {"name": "연합뉴스 마켓", "url": "https://www.yna.co.kr/rss/market.xml"},
+        {"name": "머니투데이 증권", "url": "https://rss.mt.co.kr/mt_news_stock.xml"},
+        {"name": "조선비즈 증권", "url": "https://biz.chosun.com/arc/outboundfeeds/rss/category/stock/?outputType=xml"},
+        {"name": "파이낸셜뉴스 증권", "url": "https://www.fnnews.com/rss/r20/fn_realnews_stock.xml"},
+        {"name": "CNBC", "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html"},
+        {"name": "MarketWatch", "url": "https://feeds.content.dowjones.io/public/rss/mw_topstories"},
     ]},
     # 미국 재무제표(SEC EDGAR)는 요청에 연락처가 필요하다
     "sec_contact": "",

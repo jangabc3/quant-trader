@@ -65,7 +65,7 @@ def fetch(url: str, source: str, ttl: float = 300, session=None) -> list[dict]:
     return items
 
 
-def feeds(cfg_feeds: list[dict] | None = None, limit: int = 60, session=None) -> dict:
+def feeds(cfg_feeds: list[dict] | None = None, limit: int = 300, session=None) -> dict:
     items, errors = [], []
     for f in cfg_feeds or DEFAULT_FEEDS:
         try:
