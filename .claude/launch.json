@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "qtrader-dev",
+      "runtimeExecutable": "D:/AI-Workspace/Projects/ClaudeCode/quant-trader/.venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "qtrader", "serve", "--no-browser"],
+      "env": {"QTRADER_HOME": "D:/AI-Workspace/Projects/ClaudeCode/quant-trader/.devhome"},
+      "port": 8765
+    }
+  ]
+}
