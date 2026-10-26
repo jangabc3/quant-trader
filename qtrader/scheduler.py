@@ -64,7 +64,13 @@ class Scheduler:
         out = []
         for m in (Market.KR, Market.US):
             mc = cfg["markets"].get(m.value, {})
+            if mc.get("enabled") and mc.get("strategy") == "ai":
+                self._ai_meetings(ctx, m, mc)
             if not mc.get("enabled") or not due(m, mc["run_time"]):
+                continue
+            if not self._session_open(ctx, m):
+                ctx.store.log("info", f"scheduler.{m.value}", "휴장일이라 실행하지 않습니다")
+                ctx.store.mark_run(trade_date(m), ctx.broker.name, m.value)
                 continue
             if ctx.store.ran(trade_date(m), ctx.broker.name, m.value):
                 continue
@@ -75,6 +81,40 @@ class Scheduler:
                 # 같은 날 계속 재시도하며 주문이 쌓이지 않도록 실패도 실행으로 기록
                 ctx.store.mark_run(trade_date(m), ctx.broker.name, m.value)
         return out
+
+    @staticmethod
+    def _session_open(ctx, m: Market) -> bool:
+        """토스증권 장 운영 정보로 휴장일을 거른다. 조회할 수 없으면 요일 기준(due)을 믿는다."""
+        client = getattr(ctx.data, "client", None)
+        if client is None or not hasattr(client, "in_regular_session"):
+            return True
+        try:
+            return client.in_regular_session(m)
+        except Exception:
+            return True
+
+    def _ai_meetings(self, ctx, m: Market, mc: dict) -> None:
+        """실행 시각 전에 오늘 회의가 없는 종목부터 하나씩 회의를 연다 (하루 상한까지)."""
+        from .agents import meeting
+
+        ai = ctx.cfg["ai"]
+        hh, mm = (int(x) for x in mc["run_time"].split(":"))
+        t = datetime.now(TZ[m])
+        start = t.replace(hour=hh, minute=mm, second=0, microsecond=0) - timedelta(minutes=int(ai["run_before_minutes"]))
+        if t.weekday() >= 5 or not (start <= t < start + timedelta(minutes=int(ai["run_before_minutes"]))):
+            return
+        if any(r["status"] == "running" for r in meeting.live_runs()):
+            return
+        today = trade_date(m)
+        done = {r["symbol"] for r in ctx.store.ai_runs(200) if r["trade_date"] == today}
+        if len(done) >= int(ai["max_symbols_per_day"]):
+            return
+        for s in mc["universe"]:
+            if s not in done:
+                ctx.store.log("info", f"ai.{m.value}", f"{s} AI 회의 시작")
+                meeting.start(s, ctx.data, ctx.store, ctx.cfg, toss=getattr(ctx.data, "client", None)
+                              if getattr(ctx.data, "name", "") == "toss" else None)
+                return
 
     def _loop(self) -> None:
         while not self._stop.is_set():

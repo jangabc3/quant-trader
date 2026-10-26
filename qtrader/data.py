@@ -47,6 +47,21 @@ class CSVData:
         return float(self.bars(market, symbol, 1)["close"].iloc[-1])
 
 
+class TossData:
+    name = "toss"
+
+    def __init__(self, client, store: Store):
+        self.client, self.store = client, store
+
+    def bars(self, market, symbol, days):
+        df = self.client.daily_bars(market, symbol, days)
+        self.store.save_bars(market.value, symbol, df)
+        return df
+
+    def price(self, market, symbol):
+        return self.client.price(market, symbol)
+
+
 class KISData:
     name = "kis"
 

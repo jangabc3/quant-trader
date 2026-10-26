@@ -76,6 +76,24 @@ create table if not exists bars (
   primary key (market, symbol, date)
 );
 
+create table if not exists ai_runs (
+  id text primary key,
+  symbol text not null,
+  market text not null,
+  trade_date text not null,
+  started_at text not null,
+  finished_at text,
+  status text not null check (status in ('running','done','error')),
+  rating text,
+  confidence real,
+  final text,
+  reports text,
+  tokens_in integer default 0,
+  tokens_out integer default 0,
+  error text
+);
+create index if not exists ai_runs_symbol on ai_runs (symbol, trade_date);
+
 create table if not exists state (
   key text primary key,
   value text not null
@@ -157,6 +175,39 @@ class Store:
     def equity_history(self, account: str, market: str) -> list[dict]:
         return self.rows("select trade_date, max(ts) ts, equity, cash from equity where account=? and market=? "
                          "group by trade_date order by trade_date", (account, market))
+
+    # AI 회의
+    def save_ai_run(self, run: dict) -> None:
+        import json
+        self.exec(
+            "insert into ai_runs (id, symbol, market, trade_date, started_at, finished_at, status, rating, confidence,"
+            " final, reports, tokens_in, tokens_out, error) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+            " on conflict(id) do update set finished_at=excluded.finished_at, status=excluded.status,"
+            " rating=excluded.rating, confidence=excluded.confidence, final=excluded.final, reports=excluded.reports,"
+            " tokens_in=excluded.tokens_in, tokens_out=excluded.tokens_out, error=excluded.error",
+            (run["id"], run["symbol"], run["market"], run["trade_date"], run["started_at"], run.get("finished_at"),
+             run["status"], (run.get("final") or {}).get("rating"), (run.get("final") or {}).get("confidence"),
+             json.dumps(run.get("final"), ensure_ascii=False), json.dumps(run.get("agents"), ensure_ascii=False),
+             run.get("tokens_in", 0), run.get("tokens_out", 0), run.get("error")))
+
+    def ai_runs(self, limit: int = 50, symbol: str | None = None) -> list[dict]:
+        import json
+        q = "select * from ai_runs" + (" where symbol=?" if symbol else "") + " order by started_at desc limit ?"
+        rows = self.rows(q, ((symbol, limit) if symbol else (limit,)))
+        for r in rows:
+            r["final"] = json.loads(r["final"]) if r.get("final") else None
+            r["agents"] = json.loads(r.pop("reports")) if r.get("reports") else {}
+        return rows
+
+    def latest_decision(self, symbol: str, since_date: str) -> dict | None:
+        import json
+        r = self.rows("select * from ai_runs where symbol=? and status='done' and trade_date>=? "
+                      "order by finished_at desc limit 1", (symbol, since_date))
+        if not r:
+            return None
+        d = r[0]
+        d["final"] = json.loads(d["final"]) if d.get("final") else None
+        return d
 
     # 일봉 캐시
     def save_bars(self, market: str, symbol: str, df: pd.DataFrame) -> None:
