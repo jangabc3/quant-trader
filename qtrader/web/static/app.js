@@ -127,28 +127,36 @@ function logo(symbol, name, size = 28) {
   return initial;
 }
 
-// 숫자가 부드럽게 바뀌는 효과 (CountUp.js)
+// 숫자가 부드럽게 바뀌는 효과 (CountUp.js) — 토스처럼 짧게(0.5초), 움직임 줄이기 설정이면 바로 바꾼다
 function countTo(el, value, opts = {}) {
   if (!el) return;
   const prev = Number(el.dataset.v || 0);
   el.dataset.v = value;
-  if (!window.countUp || !isFinite(value)) { el.textContent = opts.format ? opts.format(value) : value; return; }
-  const cu = new countUp.CountUp(el, value, { startVal: prev, duration: 0.8, decimalPlaces: opts.decimals ?? 0,
+  if (!window.countUp || !isFinite(value) || REDUCED) { el.textContent = opts.format ? opts.format(value) : value; return; }
+  const cu = new countUp.CountUp(el, value, { startVal: prev, duration: 0.5, decimalPlaces: opts.decimals ?? 0,
     formattingFn: opts.format, separator: "," });
   cu.error ? (el.textContent = opts.format ? opts.format(value) : value) : cu.start();
 }
 function icons() { window.lucide && lucide.createIcons(); }
 
 // 모션: 목록이 아래에서 차례로 떠오르게 (움직임 줄이기 설정이면 생략)
+// 토스처럼 차분하게: 짧은 거리(최대 8px)·짧은 시간(최대 0.3초), 차례 간격은 전부 합쳐 0.24초를 넘지 않는다
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 function animateIn(sel, opts = {}) {
   if (REDUCED || document.hidden) return;
-  const els = (typeof sel === "string" ? [...document.querySelectorAll(sel)] : [...sel]).slice(0, opts.max || 24);
+  const els = (typeof sel === "string" ? [...document.querySelectorAll(sel)] : [...sel]).slice(0, opts.max || 16);
+  const y = Math.max(-8, Math.min(8, opts.y ?? 6)), dur = Math.min(opts.duration || 240, 300);
+  const step = Math.min(opts.step || 18, els.length > 1 ? 240 / (els.length - 1) : 0);
   // 브라우저 내장 애니메이션: 끝나면 원래 모습으로 돌아가서, 중간에 멈춰도 내용이 숨겨진 채 남지 않는다
-  els.forEach((el, i) => el.animate?.([{ opacity: 0, transform: `translateY(${opts.y ?? 8}px)` }, { opacity: 1, transform: "none" }],
-    { duration: opts.duration || 360, delay: i * (opts.step || 22), easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" }));
+  els.forEach((el, i) => el.animate?.([{ opacity: 0, transform: `translateY(${y}px)` }, { opacity: 1, transform: "none" }],
+    { duration: dur, delay: i * step, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" }));
 }
 window.animateIn = animateIn;
+// anime.js 로 만든 움직임(막대 채우기·하트 날리기 등)도 길지 않게: 한 번에 최대 0.4초, 움직임 줄이기면 끝 모습으로 바로
+if (window.anime) {
+  const rawAnime = window.anime;
+  window.anime = Object.assign((p) => rawAnime(REDUCED ? { ...p, duration: 0, delay: 0 } : { ...p, duration: Math.min(p.duration ?? 400, 400) }), rawAnime);
+}
 
 // 값이 바뀐 칸을 잠깐 빨강/파랑으로 깜빡 (토스증권 시세처럼)
 const lastVals = new Map();
@@ -249,7 +257,7 @@ function openTab(name) {
   // 화면 전환 애니메이션 (anime.js)
   const sec = $("#tab-" + name);
   moveInk();
-  if (sec) animateIn(sec.querySelectorAll(":scope > .panel, :scope > div > .panel, :scope .idx-card"), { y: 10, step: 30, duration: 380 });
+  if (sec) animateIn(sec.querySelectorAll(":scope > .panel, :scope > div > .panel, :scope .idx-card"), { y: 6, step: 20, duration: 240 });
   setTimeout(icons, 0);
 }
 $$("nav button").forEach((b) => b.addEventListener("click", () => openTab(b.dataset.tab)));
