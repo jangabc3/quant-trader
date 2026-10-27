@@ -523,3 +523,10 @@ nav { scrollbar-width: none; } nav::-webkit-scrollbar { display: none; }
 @keyframes qbi-pulse { 50% { opacity: .55; } }
 .msg.bot.live .report-text::after { content: "▍"; color: var(--blue); animation: qbi-pulse .8s steps(2) infinite; margin-left: 1px; }
 .qbi-tools:empty { display: none; }
+
+/* 가상 계좌 처음부터 다시 */
+.paper-bar { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 10px; padding: 8px 12px;
+  border: 1px dashed var(--line); border-radius: 10px; font-size: 13px; color: var(--muted, #8a97a6); }
+.paper-bar > span:first-child { display: inline-flex; gap: 6px; align-items: center; } .paper-bar svg { width: 15px; height: 15px; }
+.paper-acts { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.paper-acts button { display: inline-flex; gap: 6px; align-items: center; }

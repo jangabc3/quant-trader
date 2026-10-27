@@ -155,8 +155,10 @@ async function loadPicks(refresh = false) {
   const box = $("#picks");
   if (!box) return;
   box.innerHTML = `<div class="skeleton" style="height:44px"></div>`;
-  const rows = await api(`/api/picks?market=${pk.market}${refresh ? "&refresh=true" : ""}`).catch((e) => ({ error: e.message }));
-  if (rows.error) { box.innerHTML = `<p class="note">${esc(rows.error)}</p>`; return; }
+  const res = await api(`/api/picks?market=${pk.market}&stats=true${refresh ? "&refresh=true" : ""}`).catch((e) => ({ error: e.message }));
+  if (res.error) { box.innerHTML = `<p class="note">${esc(res.error)}</p>`; renderPicksWhy(null); return; }
+  const rows = res.items || [];
+  renderPicksWhy(res.excluded);
   const origin = (r) => (r.reason || "").split(" · ")[0];
   box.innerHTML = rows.length ? `<div class="pk-list">${rows.map((p, i) => {
     const sc = Math.round((p.score || 0) * 100);
@@ -172,6 +174,34 @@ async function loadPicks(refresh = false) {
   if (!REDUCED && window.anime) anime({ targets: "#picks .pk-sc b", scaleX: [0, 1], duration: 700, delay: anime.stagger(30), easing: "easeOutCubic" });
   icons();
 }
+// 왜 후보가 적은지: 규칙마다 몇 종목이 빠졌는지 (한 종목이 여러 규칙에 걸리면 각각 센다)
+function renderPicksWhy(st) {
+  const line = $("#picks-why"), detail = $("#picks-why-detail");
+  if (!line || !detail) return;
+  if (!st || !st.pool) { line.innerHTML = ""; detail.innerHTML = ""; return; }
+  const rules = [
+    ["trend", "200일선 아래", "1년 가까이 내리막인 종목"],
+    ["momentum", "모멘텀 음수", "최근 1년 수익률이 마이너스"],
+    ["rsi", "과열 (RSI)", "짧은 기간에 너무 많이 올라 되돌림이 걱정되는 종목"],
+    ["vol", "변동성", "하루하루 오르내림이 너무 큰 종목"],
+    ["disclosure", "공시·재무", "유상증자·전환사채·횡령 같은 나쁜 공시가 있는 종목"],
+    ["basic", "종목 기본 정보", "거래정지·레버리지·인버스·우선주·새로 상장한 종목"],
+  ];
+  const out = st.rules_out + (st.basic || 0) + (st.disclosure || 0);
+  line.innerHTML = `<p class="note pk-why">모은 ${st.pool}종목 중 ${out}종목이 규칙에 걸려 빠졌어요${st.no_data ? ` · 자료가 모자라 못 본 종목 ${st.no_data}개` : ""}.
+    <button class="link" id="picks-why-btn">왜 적은지 보기</button></p>`;
+  detail.innerHTML = `<div class="pk-why-box"><b>오늘 빠진 종목 (규칙별)</b>
+    <ul>${rules.map(([k, n, d]) => `<li class="${st[k] ? "" : "zero"}"><span>${n}<em>${d}</em></span><strong>${st[k] || 0}종목</strong></li>`).join("")}</ul>
+    <p class="note">모은 ${st.pool}종목 → 차트 자료로 본 ${st.checked}종목 → 규칙 통과 ${st.passed}종목 → 오늘 회의 후보 ${st.picked}종목.
+      한 종목이 규칙 여러 개에 걸리면 각각 세요.${st.weak_finance ? ` 적자이면서 매출이 줄어 점수를 깎은 종목 ${st.weak_finance}개.` : ""}
+      ${st.no_data ? `자료가 모자란 ${st.no_data}종목은 아직 볼 수 없었어요 (키 없이 체험 중이면 일부 종목 자료만 있어요).` : ""}</p>
+    <p class="note">기준은 <b>설정 → 고급 설정 → 사기 전 확인 규칙</b>에서 풀 수 있어요. 풀면 후보는 늘지만 위험한 종목도 같이 들어와요.</p></div>`;
+}
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#picks-why-btn")) return;
+  e.stopPropagation();
+  $("#picks-how")?.classList.remove("hidden");
+}, true);
 // 기준 보기 (작은 팝오버)
 document.addEventListener("click", (e) => {
   const b = e.target.closest("#picks-how-btn");
