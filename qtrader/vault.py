@@ -4,6 +4,7 @@
 - KIS:  kis_{demo|real}_app_key / kis_{demo|real}_app_secret
 - 토스증권: toss_client_id / toss_client_secret
 - Claude: anthropic_api_key
+- 텔레그램 봇: telegram_bot_token
 """
 from __future__ import annotations
 

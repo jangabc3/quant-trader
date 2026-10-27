@@ -42,7 +42,14 @@ const QBI_TPL = `
 // 같은 SVG 를 두 번 쓰므로 그라데이션 id 가 겹치지 않게 접미사를 붙인다
 const qbiSvg = (k) => QBI_TPL.replace(/qb-([a-z]+)/g, `qb-$1-${k}`);
 
-const chat = { open: false, busy: false, thread: null, dragging: false, moved: false };
+const chat = { open: false, busy: false, thread: null, dragging: false, moved: false, log: [] };
+const CHAT_KEY = "qtrader.chat.log";
+function saveChatLog() {
+  try { localStorage.setItem(CHAT_KEY, JSON.stringify({ thread: chat.thread, log: chat.log.slice(-60) })); } catch {}
+}
+function loadChatLog() {
+  try { return JSON.parse(localStorage.getItem(CHAT_KEY)) || null; } catch { return null; }
+}
 
 function chatPos() {
   try { return JSON.parse(localStorage.getItem("qtrader.chat.pos")) || null; } catch { return null; }
@@ -56,6 +63,7 @@ function buildChat() {
     <div class="qbi-panel hidden" id="qbi-panel">
       <div class="qbi-head"><div class="qbi-mini">${qbiSvg("m")}</div>
         <div><b>큐비</b><span>AI 애널리스트 · 시세·계좌·회의 결과를 확인하고 답해요</span></div>
+        <button class="qbi-x" id="qbi-clear" title="대화 지우기"><i data-lucide="eraser"></i></button>
         <button class="qbi-x" id="qbi-close" title="닫기"><i data-lucide="x"></i></button></div>
       <div class="qbi-log" id="chat-log"></div>
       <div class="qbi-quick" id="qbi-quick">
@@ -73,7 +81,16 @@ function buildChat() {
   if (p) { root.style.left = p.x + "px"; root.style.top = p.y + "px"; root.style.right = "auto"; root.style.bottom = "auto"; }
   clampChat();
   window.lucide && lucide.createIcons();
-  line("bot", "안녕하세요, 큐비예요. 시세·차트·내 계좌·AI 회의 결과를 직접 확인해서 애널리스트처럼 답해 드릴게요. 저는 주문은 내지 않아요.");
+  const saved = loadChatLog();
+  if (saved?.log?.length) {
+    chat.thread = saved.thread;
+    saved.log.forEach((m) => line(m.who, m.html, false));
+    chat.log = saved.log;
+  } else greet();
+  $("#qbi-clear").onclick = () => {
+    if (!confirm("큐비와 나눈 대화를 지울까요?")) return;
+    chat.log = []; chat.thread = null; $("#chat-log").innerHTML = ""; saveChatLog(); greet();
+  };
 
   const btn = $("#qbi-btn");
   let start = null;
@@ -121,7 +138,12 @@ function toggleChat(force) {
   }
 }
 
-function line(who, html) {
+function greet() {
+  line("bot", "안녕하세요, 큐비예요. 시세·차트·내 계좌·AI 회의 결과를 직접 확인해서 애널리스트처럼 답해 드릴게요. 저는 주문은 내지 않아요.", false);
+}
+
+function line(who, html, keep = true) {
+  if (keep && !who.includes("typing")) { chat.log.push({ who, html }); saveChatLog(); }
   const log = $("#chat-log");
   log.insertAdjacentHTML("beforeend", `<div class="msg ${who}">${html}</div>`);
   log.scrollTop = log.scrollHeight;
@@ -148,6 +170,7 @@ async function send(text) {
   try {
     const r = await api("/api/assistant", { method: "POST", body: { text, thread_id: chat.thread, page: pageContext() } });
     chat.thread = r.thread_id;
+    saveChatLog();
     $("#chat-log .typing")?.remove();
     const names = { market_overview: "시장 현황", rankings: "순위", quotes: "시세", chart_brief: "차트", portfolio: "내 계좌",
       recent_orders: "주문 내역", ai_decision: "AI 회의 결론", start_meeting: "회의 시작", web_search: "웹 검색" };

@@ -1,6 +1,7 @@
 """시장별 실행 시각에 하루 한 번 엔진을 돌린다. 자동매매가 켜져 있을 때만."""
 from __future__ import annotations
 
+import json
 import threading
 import time
 from datetime import datetime, time as dtime, timedelta
@@ -54,6 +55,7 @@ class Scheduler:
         self._thread: threading.Thread | None = None
         self.last_error = ""
         self._last_exit = 0.0
+        self._last_alert = 0.0
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -68,14 +70,26 @@ class Scheduler:
     def tick(self) -> list[dict]:
         cfg = config_mod.load()
         ctx = build_context(cfg)
-        if ctx.store.get("auto_trading", "0") != "1":
+        from . import extras
+        if cfg.get("alerts") and time.monotonic() - self._last_alert > 60:
+            self._last_alert = time.monotonic()
+            try:
+                extras.check_alerts(ctx.store, cfg, lambda s: ctx.data.price(Market.KR if s[:1].isdigit() else Market.US, s),
+                                    config_mod.save)
+            except Exception as e:
+                ctx.store.log("warn", "alert", f"가격 알림 확인 실패: {e}")
+        auto = ctx.store.get("auto_trading", "0") == "1"
+        extras.keep_awake(auto)
+        if not auto:
             return []
         out = []
         if cfg["ai"].get("auto_exit", True) and time.monotonic() - self._last_exit > 120:
             self._last_exit = time.monotonic()
             from .engine import check_exits, check_loss, snapshot_equity, sync_orders
             try:
-                sync_orders(ctx)
+                for o in sync_orders(ctx):
+                    if o["status"] == "filled":
+                        extras.notify(ctx.store, cfg, f"✅ {o['symbol']} {o['note']}", "order")
             except Exception as e:
                 ctx.store.log("error", "sync", f"체결 확인 실패: {e}")
             for m in (Market.KR, Market.US):
@@ -83,10 +97,18 @@ class Scheduler:
                     continue
                 try:
                     if is_open(m):
-                        check_loss(ctx, m)
-                        check_exits(ctx, m)
-                    elif after_close(m):
-                        snapshot_equity(ctx, m)
+                        was_killed = ctx.kill
+                        if check_loss(ctx, m) and not was_killed:
+                            extras.notify(ctx.store, cfg, f"⛔ {m.value} 하루 손실 한도를 넘어 신규 매수를 멈췄습니다", "risk")
+                        for x in check_exits(ctx, m):
+                            extras.notify(ctx.store, cfg, f"{'🛑 손절' if x['reason'] == 'stop' else '🎯 익절'} "
+                                                          f"{x['symbol']} @ {x['price']:,} ({x['status']})", "exit")
+                    elif after_close(m) and snapshot_equity(ctx, m):
+                        today = trade_date(m)
+                        rep = extras.daily_report(ctx.store, ctx.broker.name, m.value, today)
+                        ctx.store.set(f"report_{m.value}", json.dumps(rep, ensure_ascii=False, default=str))
+                        if (cfg.get("notify") or {}).get("daily_report", True):
+                            extras.notify(ctx.store, cfg, rep["text"], "report")
                 except Exception as e:
                     ctx.store.log("error", f"exit.{m.value}", f"장중 점검 실패: {e}")
         for m in (Market.KR, Market.US):

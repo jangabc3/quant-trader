@@ -172,6 +172,7 @@
       <div class="panel report" id="report"><h3>참석자 보고서</h3><p class="note">캐릭터를 누르면 그 참석자의 보고서와 출처가 보입니다.</p></div>
       <div class="panel track" id="track"><h3>AI 판단 기록</h3><p class="note">불러오는 중...</p></div>
     </div>
+    <div class="panel hidden" id="compare"></div>
     <details class="panel adv" id="refs"><summary><i data-lucide="book-open"></i> QTrader 가 따르는 투자 원칙 <small>퀀트 운용사·학계가 인용하는 연구 20편 · 눌러서 펼치기</small></summary><div id="refs-body" class="note">불러오는 중...</div></details>
   </section>
 
@@ -185,7 +186,8 @@
           <button id="auto-btn" class="primary"><i data-lucide="play"></i> 자동매매 시작</button>
           <button id="kill-btn" class="danger"><i data-lucide="octagon-x"></i> 킬 스위치</button>
           <button id="dry-btn" title="주문 없이 오늘 무엇을 살지 계산"><i data-lucide="flask-conical"></i> 미리보기</button>
-          <button id="run-btn" title="지금 바로 한 번 실행"><i data-lucide="zap"></i> 지금 실행</button>
+          <details class="more-menu"><summary title="고급"><i data-lucide="more-horizontal"></i></summary>
+            <div><button id="run-btn" class="danger-soft" title="실행 시각을 기다리지 않고 지금 한 번 주문까지 실행"><i data-lucide="zap"></i> 지금 바로 실행 (주문 나감)</button></div></details>
         </div>
       </div>
     </div>
@@ -195,6 +197,7 @@
       <h3><i data-lucide="hand"></i> 승인 대기 주문 <small>근거를 확인하고 승인해야 주문이 나갑니다</small></h3>
       <div id="appr-list"></div>
     </div>
+    <div id="conc-warn"></div>
     <div class="acct-grid">
       <div class="panel"><h3><i data-lucide="line-chart"></i> 자산 추이</h3><div id="equity-chart" class="eq-chart"></div><p class="note" id="eq-note"></p></div>
       <div class="panel"><h3><i data-lucide="pie-chart"></i> 자산 구성</h3><div id="alloc"></div></div>
@@ -202,6 +205,20 @@
     <div class="panel">
       <h3><i data-lucide="briefcase"></i> 보유 종목 <small>막대는 손절가 ~ 익절가 사이에서 지금 가격의 위치입니다</small></h3>
       <div id="holdings" class="holdings"></div>
+    </div>
+    <div class="acct-grid">
+      <div class="panel"><h3><i data-lucide="receipt"></i> 올해 실현 손익 · 세금 <small>판 종목의 확정 손익</small></h3><div id="realized"></div></div>
+      <div class="panel"><h3><i data-lucide="newspaper"></i> 오늘 마감 요약 <small>장 마감 5분 뒤 자동으로 만들어집니다</small></h3><div id="day-report" class="note">아직 없습니다.</div></div>
+    </div>
+    <div class="panel">
+      <h3><i data-lucide="bell-ring"></i> 가격 알림 <small>정한 가격에 닿으면 윈도우 알림(텔레그램)으로 알려 드립니다</small></h3>
+      <form class="form-row" id="alert-form">
+        <label>종목 <input id="al-sym" placeholder="005930 또는 NVDA" required></label>
+        <label>조건 <select id="al-op"><option value="above">이상 오르면</option><option value="below">이하로 내리면</option></select></label>
+        <label>가격 <input id="al-px" type="number" step="any" min="0" required></label>
+        <button class="primary"><i data-lucide="plus"></i> 알림 추가</button>
+      </form>
+      <div id="alert-list"></div>
     </div>
     <div class="panel">
       <div class="rank-bar">
@@ -263,9 +280,12 @@
         <div class="mode-cards">
           <label class="mode-card"><input type="radio" name="mode" value="paper"><b>가상매매</b><span>실제 시세로 내 PC 안에서만 체결. 처음엔 이걸로</span></label>
           <label class="mode-card live"><input type="radio" name="mode" value="toss_real"><b>토스증권 실전</b><span>실제 돈으로 주문</span></label>
-          <label class="mode-card"><input type="radio" name="mode" value="kis_demo"><b>한국투자증권 모의</b><span>KIS 모의투자 계좌</span></label>
-          <label class="mode-card live"><input type="radio" name="mode" value="kis_real"><b>한국투자증권 실전</b><span>실제 돈으로 주문</span></label>
         </div>
+        <details class="mini-adv"><summary>다른 증권사 (한국투자증권)</summary>
+          <div class="mode-cards">
+            <label class="mode-card"><input type="radio" name="mode" value="kis_demo"><b>한국투자증권 모의</b><span>KIS 모의투자 계좌</span></label>
+            <label class="mode-card live"><input type="radio" name="mode" value="kis_real"><b>한국투자증권 실전</b><span>실제 돈으로 주문</span></label>
+          </div></details>
         <label class="check"><input type="checkbox" id="live-confirmed"> 실전 주문을 허용합니다. 손실 책임이 저에게 있음을 이해했습니다.</label>
       </div>
 
@@ -277,6 +297,7 @@
             <option value="toss">토스증권 (Client ID / Secret)</option>
             <option value="anthropic">Claude API 키 (AI 회의·큐비)</option>
             <option value="dart">DART 인증키 (국내 재무제표, 무료)</option>
+            <option value="telegram">텔레그램 봇 토큰 (알림, 선택)</option>
             <option value="kis_demo">한국투자증권 모의 (앱키 / 시크릿)</option>
             <option value="kis_real">한국투자증권 실전 (앱키 / 시크릿)</option>
           </select></label>
@@ -301,6 +322,29 @@
         </div>
       </div>
 
+      <div class="panel">
+        <h3><i data-lucide="bell"></i> 4. 알림 · 비용 · 이 PC</h3>
+        <div class="form-row">
+          <button type="button" id="ntf-perm"><i data-lucide="bell-plus"></i> 윈도우 알림 허용</button>
+          <button type="button" id="ntf-test"><i data-lucide="send"></i> 알림 테스트</button>
+          <span class="note" id="ntf-state"></span>
+        </div>
+        <div class="form-row">
+          <label>텔레그램 대화방 번호 (선택) <input id="tg-chat" placeholder="예: 123456789"></label>
+          <label class="check"><input type="checkbox" id="ntf-report"> 장 마감 뒤 하루 요약 보내기</label>
+        </div>
+        <p class="note">텔레그램: @BotFather 로 봇을 만들고 받은 토큰을 위 '2. 연결'에 '텔레그램 봇 토큰'으로 저장한 뒤, 봇에게 말을 걸고 @userinfobot 으로 확인한 내 번호를 넣으세요.</p>
+        <div class="form-row">
+          <label>AI 회의 월 비용 상한 (원, 0=없음) <input id="ai-cap" type="number" step="1000" min="0"></label>
+          <span class="note" id="ai-cost-now"></span>
+          <label>한 업종 비중 경고 기준 <input id="sec-max" type="number" step="0.05" min="0.1" max="1"></label>
+        </div>
+        <div class="form-row">
+          <label class="check"><input type="checkbox" id="sys-autostart"> 윈도우를 켜면 QTrader 자동 실행</label>
+          <span class="note">자동매매가 켜져 있는 동안은 PC 가 잠자기에 들어가지 않습니다 (화면은 꺼져도 됩니다).</span>
+        </div>
+      </div>
+
       <details class="panel adv">
         <summary><i data-lucide="settings-2"></i> 고급 설정 <small>대부분은 그대로 두셔도 됩니다</small></summary>
         <div class="grid2">
@@ -319,7 +363,7 @@
               <label>1회 주문 한도($) <input id="r-ordus" type="number" step="100"></label>
             </div>
             <label>관심 종목 (쉼표로 구분) <input id="watchlist"></label>
-            <label>뉴스 피드 (한 줄에 하나: 이름|주소) <textarea id="news-feeds" rows="4"></textarea></label>
+            <label>뉴스 피드 (한 줄에 하나: 이름|주소|kr 또는 global) <textarea id="news-feeds" rows="4"></textarea></label>
           </div>
           <div>
             <h4>AI 투자 회의</h4>
@@ -370,5 +414,6 @@
 <script src="/static/tools.js?v=__BUILD__"></script>
 <script src="/static/chat.js?v=__BUILD__"></script>
 <script src="/static/onboarding.js?v=__BUILD__"></script>
+<script src="/static/extras.js?v=__BUILD__"></script>
 </body>
 </html>

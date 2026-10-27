@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .. import __version__, backtest, config as config_mod, fundamentals, market as market_mod, news as news_mod, principles, profile as profile_mod, stockdata, strategies, vault
+from .. import __version__, backtest, extras, config as config_mod, fundamentals, market as market_mod, news as news_mod, principles, profile as profile_mod, stockdata, strategies, vault
 from ..agents import meeting
 from ..agents.assistant import Assistant
 from ..agents.llm import LLMError
@@ -25,7 +25,7 @@ from ..storage import Store
 
 STATIC = Path(__file__).parent / "static"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
-SECRET_KINDS = ("kis_demo", "kis_real", "toss", "anthropic", "dart")
+SECRET_KINDS = ("kis_demo", "kis_real", "toss", "anthropic", "dart", "telegram")
 
 
 class BacktestIn(BaseModel):
@@ -63,6 +63,13 @@ class DecideIn(BaseModel):
     approve: bool
 
 
+class AlertIn(BaseModel):
+    symbol: str
+    name: str = ""
+    op: str = "above"
+    price: float
+
+
 class ChatIn(BaseModel):
     text: str
     thread_id: str | None = None
@@ -87,7 +94,7 @@ def session_token() -> str:
 def key_state() -> dict:
     return {"kis_demo": vault.has_kis("demo"), "kis_real": vault.has_kis("real"),
             "toss": vault.get_toss() is not None, "anthropic": bool(vault.get_anthropic()),
-            "dart": bool(vault.get("dart_api_key"))}
+            "dart": bool(vault.get("dart_api_key")), "telegram": bool(vault.get("telegram_bot_token"))}
 
 
 def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=None) -> FastAPI:
@@ -373,6 +380,121 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         c.store.log("warn", "web", f"주문 취소 요청 {order_id}")
         return r
 
+    # 실현 손익·세금, 업종 쏠림
+    @app.get("/api/account/realized")
+    def account_realized(year: str = ""):
+        c = ctx()
+        fx = None
+        try:
+            t = toss()
+            fx = float(t.exchange_rate().get("rate") or 0) or None if t else None
+        except Exception:
+            pass
+        return extras.tax_summary(c.store, c.broker.name, year or __import__("datetime").date.today().strftime("%Y"), fx)
+
+    @app.get("/api/account/concentration")
+    def account_concentration():
+        c = ctx()
+        out = {}
+        for m in (Market.KR, Market.US):
+            if not c.cfg["markets"][m.value]["enabled"]:
+                continue
+            try:
+                a = c.broker.account(m)
+            except Exception:
+                continue
+            out[m.value] = extras.concentration([{"symbol": p.symbol, "value": p.value} for p in a.positions.values()],
+                                                float(c.cfg["risk"]["max_weight"]), float(c.cfg.get("max_sector_weight", 0.4)))
+        return out
+
+    @app.get("/api/report")
+    def daily_report(market: str = "KR"):
+        import json as _json
+        c = ctx()
+        saved = c.store.get(f"report_{market}")
+        if saved:
+            return _json.loads(saved)
+        from ..engine import trade_date
+        return extras.daily_report(c.store, c.broker.name, market, trade_date(Market(market)))
+
+    # 알림
+    @app.get("/api/notices")
+    def notices(after: int = 0):
+        c = ctx()
+        return c.store.rows("select * from events where level='notice' and id>? order by id desc limit 30", (after,))
+
+    @app.post("/api/notify/test", dependencies=[Depends(need_token)])
+    def notify_test():
+        c = ctx()
+        extras.notify(c.store, c.cfg, "알림 테스트입니다. 이 메시지가 보이면 설정이 끝났습니다", "test")
+        return {"ok": True, "telegram": bool(vault.get("telegram_bot_token") and (c.cfg.get("notify") or {}).get("telegram_chat_id"))}
+
+    @app.get("/api/alerts")
+    def alert_list():
+        return config_mod.load().get("alerts") or []
+
+    @app.post("/api/alerts", dependencies=[Depends(need_token)])
+    def alert_add(body: AlertIn):
+        if body.op not in ("above", "below") or body.price <= 0 or not body.symbol.strip():
+            raise HTTPException(400, "종목, 조건(이상/이하), 가격을 확인하세요")
+        cfg = config_mod.load()
+        al = cfg.get("alerts") or []
+        if len(al) >= 30:
+            raise HTTPException(400, "가격 알림은 30개까지 둘 수 있습니다")
+        al.append({"symbol": body.symbol.strip().upper(), "name": body.name[:40], "op": body.op, "price": body.price})
+        cfg["alerts"] = al
+        config_mod.save(cfg)
+        return al
+
+    @app.delete("/api/alerts/{idx}", dependencies=[Depends(need_token)])
+    def alert_del(idx: int):
+        cfg = config_mod.load()
+        al = cfg.get("alerts") or []
+        if 0 <= idx < len(al):
+            al.pop(idx)
+        cfg["alerts"] = al
+        config_mod.save(cfg)
+        return al
+
+    # AI 비용·회의 비교
+    @app.get("/api/ai/cost")
+    def ai_cost():
+        cfg = config_mod.load()
+        return {"month_krw": extras.month_cost_krw(Store(config_mod.home() / "qtrader.db")),
+                "cap_krw": float(cfg["ai"].get("monthly_cost_cap_krw") or 0)}
+
+    @app.get("/api/ai/compare/{symbol}")
+    def ai_compare(symbol: str, limit: int = 6):
+        import json as _json
+        c = ctx()
+        out = []
+        for r in c.store.ai_runs(limit, symbol.upper()):
+            if r["status"] != "done":
+                continue
+            try:
+                rep = _json.loads(r.get("reports") or "{}") if isinstance(r.get("reports"), str) else (r.get("reports") or {})
+                fin = _json.loads(r.get("final") or "{}") if isinstance(r.get("final"), str) else (r.get("final") or {})
+            except ValueError:
+                rep, fin = {}, {}
+            cl = rep.get("checklist") or {}
+            out.append({"id": r["id"], "date": r["trade_date"], "rating": r.get("rating"), "rating_ko": RATING_KO.get(r.get("rating") or "", ""),
+                        "confidence": r.get("confidence"), "plan": rep.get("plan"), "price": (rep.get("facts") or {}).get("price"),
+                        "passed": cl.get("passed"), "total": cl.get("total"),
+                        "summary": (fin.get("summary") or fin.get("thesis") or "")[:200], "cost_usd": rep.get("cost_usd")})
+        return out
+
+    # 시스템: 윈도우 시작 시 실행
+    @app.get("/api/system")
+    def system_info():
+        return {"autostart": extras.autostart_on(), "windows": extras.startup_file() is not None}
+
+    @app.post("/api/system/autostart", dependencies=[Depends(need_token)])
+    def system_autostart(body: ToggleIn):
+        try:
+            return {"autostart": extras.set_autostart(body.on)}
+        except (RuntimeError, OSError) as e:
+            raise HTTPException(400, str(e))
+
     # 투자 성향
     @app.get("/api/profile")
     def get_profile():
@@ -572,7 +694,7 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
     def put_secret(body: SecretIn):
         if body.kind not in SECRET_KINDS:
             raise HTTPException(400, f"kind 는 {SECRET_KINDS} 중 하나")
-        if len(body.key.strip()) < 10 or (body.kind not in ("anthropic", "dart") and len(body.secret.strip()) < 10):
+        if len(body.key.strip()) < 10 or (body.kind not in ("anthropic", "dart", "telegram") and len(body.secret.strip()) < 10):
             raise HTTPException(400, "키가 너무 짧습니다")
         if body.kind.startswith("kis"):
             vault.set_kis(body.kind[4:], body.key, body.secret)
@@ -580,6 +702,8 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             vault.set_toss(body.key, body.secret)
         elif body.kind == "dart":
             vault.put("dart_api_key", body.key)
+        elif body.kind == "telegram":
+            vault.put("telegram_bot_token", body.key)
         else:
             vault.put("anthropic_api_key", body.key)
         return {"ok": True, "keys": key_state()}
@@ -594,6 +718,8 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             vault.delete_toss()
         elif kind == "dart":
             vault.delete("dart_api_key")
+        elif kind == "telegram":
+            vault.delete("telegram_bot_token")
         else:
             vault.delete("anthropic_api_key")
         return {"ok": True, "keys": key_state()}
