@@ -134,7 +134,7 @@ function toggleChat(force) {
   $("#qbi-dot").classList.add("hidden");
   if (chat.open) {
     $("#chat-input").focus();
-    window.anime && anime({ targets: "#qbi-panel", opacity: [0, 1], translateY: [12, 0], duration: 260, easing: "easeOutQuad" });
+    window.animateIn && animateIn("#qbi-panel", { y: 12, duration: 260 });
   }
 }
 

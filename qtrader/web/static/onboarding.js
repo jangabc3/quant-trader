@@ -9,7 +9,7 @@ function obShell(inner) {
   el.innerHTML = `<div class="ob-box">${inner}</div>`;
   el.classList.remove("hidden");
   icons();
-  window.anime && anime({ targets: "#onboard .ob-box", opacity: [0, 1], translateY: [14, 0], duration: 300, easing: "easeOutQuad" });
+  window.animateIn && animateIn("#onboard .ob-box", { y: 14, duration: 300 });
 }
 function obClose() { $("#onboard")?.classList.add("hidden"); }
 

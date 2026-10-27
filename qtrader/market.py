@@ -306,6 +306,46 @@ def industries(t: Toss | None, market: str = "KR", kind: str = "TOP_GAINERS", du
     return cached(f"industries:{market}:{kind}:{duration}", 300, build)
 
 
+def industry_chart(t: Toss | None, sector_id: str, market: str = "KR") -> dict:
+    """산업 1년 차트: 시가총액 상위 5종목을 시총 가중으로 묶은 지수 vs 코스피 (같은 날 0% 에서 시작).
+    토스 API 에 섹터 지수 시세가 없어서 구성 종목으로 만든다."""
+    import pandas as pd
+    if t is None:
+        rng = _rng("indc" + sector_id)
+        days = pd.bdate_range(end=datetime.now(KST).date(), periods=250)
+        a, b = np.cumprod(1 + rng.normal(0.0012, 0.02, 250)) - 1, np.cumprod(1 + rng.normal(0.0005, 0.01, 250)) - 1
+        fmt = lambda arr: [{"time": d.strftime("%Y-%m-%d"), "value": round(float(v), 4)} for d, v in zip(days, arr)]
+        return {"sector": fmt(a), "index": fmt(b), "basket": []}
+
+    def build():
+        st = sorted(t.sector_stocks(sector_id, market), key=lambda s: -num(s.get("marketCapitalization")))[:5]
+        series, caps = [], []
+        for s in st:
+            try:
+                c = t.candles(s["symbol"], "1d", 250)["close"]
+                series.append(c / c.iloc[0])
+                caps.append(num(s.get("marketCapitalization")) or 1)
+            except Exception:
+                continue
+        if not series:
+            return {"sector": [], "index": [], "basket": []}
+        df = pd.concat(series, axis=1).ffill().dropna()
+        w = np.array(caps[:df.shape[1]]) / sum(caps[:df.shape[1]])
+        sec = (df * w).sum(axis=1) - 1
+        out = {"sector": [{"time": d.strftime("%Y-%m-%d"), "value": round(float(v), 4)} for d, v in sec.items()],
+               "basket": [s.get("name") for s in st], "index": []}
+        if market == "KR":
+            try:
+                k = t.candles("KOSPI", "1d", 250, indicator=True)["close"]
+                k = k[k.index >= sec.index[0]]
+                out["index"] = [{"time": d.strftime("%Y-%m-%d"), "value": round(float(v / k.iloc[0] - 1), 4)} for d, v in k.items()]
+            except Exception:
+                pass
+        return out
+
+    return cached(f"industry_chart:{sector_id}:{market}", 1800, build)
+
+
 def industry_detail(t: Toss | None, sector_id: str, market: str = "KR") -> dict:
     """기간별 등락률 (섹터 vs 코스피) + 구성 종목 상위."""
     durs = ["1d", "1w", "1mo", "3mo", "1y"]
