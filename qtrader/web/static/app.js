@@ -82,6 +82,18 @@ function banner(msg, kind = "") {
   b.textContent = msg || "";
 }
 
+// 화면 아래에 잠깐 뜨는 알림
+function toast(msg, icon = "info") {
+  let box = $("#toasts");
+  if (!box) { box = document.createElement("div"); box.id = "toasts"; document.body.appendChild(box); }
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.innerHTML = `<i data-lucide="${icon}"></i><span>${esc(msg)}</span>`;
+  box.appendChild(el);
+  icons();
+  setTimeout(() => { el.classList.add("out"); setTimeout(() => el.remove(), 400); }, 3800);
+}
+
 function modal(html) {
   $("#modal-body").innerHTML = html;
   $("#modal").classList.remove("hidden");

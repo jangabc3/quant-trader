@@ -63,7 +63,7 @@ table.md td { border: 1px solid var(--line); white-space: normal; }
 .vhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .vtag { font-size: 11px; padding: 1px 8px; border-radius: 99px; }
 .vtag.cheap { background: rgba(47,191,113,.18); color: var(--green); }
-.vtag.rich { background: rgba(240,83,78,.18); color: var(--red); }
+.vtag.rich { background: rgba(240,68,82,.18); color: var(--red); }
 .vrow { display: grid; grid-template-columns: 56px 1fr 64px; gap: 6px; align-items: center; font-size: 12px; margin: 3px 0; }
 .vrow span { color: var(--muted); }
 .vrow em { font-style: normal; text-align: right; font-variant-numeric: tabular-nums; }
@@ -75,15 +75,15 @@ table.md td { border: 1px solid var(--line); white-space: normal; }
 .tww ul { margin: 0; padding-left: 18px; }
 .chipst { font-size: 11px; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
 .chipst.ok { background: rgba(47,191,113,.18); color: var(--green); }
-.chipst.bad { background: rgba(240,83,78,.18); color: var(--red); }
+.chipst.bad { background: rgba(240,68,82,.18); color: var(--red); }
 .chipst.unk { background: rgba(233,162,59,.18); color: var(--amber); }
 table.fc td { white-space: normal; font-size: 13px; }
 details { background: var(--bg); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; }
 summary { cursor: pointer; font-weight: 600; }
 .debate { display: grid; gap: 8px; max-height: 520px; overflow: auto; }
 .dmsg { max-width: 80%; padding: 10px 12px; border-radius: 12px; font-size: 13px; }
-.dmsg.bull { background: rgba(240,83,78,.12); border: 1px solid rgba(240,83,78,.3); }
-.dmsg.bear { margin-left: auto; background: rgba(76,141,255,.12); border: 1px solid rgba(76,141,255,.3); }
+.dmsg.bull { background: rgba(240,68,82,.12); border: 1px solid rgba(240,68,82,.3); }
+.dmsg.bear { margin-left: auto; background: rgba(49,130,246,.12); border: 1px solid rgba(49,130,246,.3); }
 
 /* 계산기 */
 .calc-out { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 10px 0; }
@@ -126,7 +126,7 @@ input[type=range] { padding: 0; }
 .gauge { position: relative; height: 54px; margin: 14px 8px 4px; }
 .g-bar { position: absolute; left: 0; right: 0; top: 8px; height: 12px; background: var(--line); border-radius: 99px; }
 .g-bar i { position: absolute; top: 0; bottom: 0; }
-.g-loss { background: linear-gradient(90deg, #2f5fb8, #6aa0ff); border-radius: 99px 0 0 99px; }
+.g-loss { background: linear-gradient(90deg, #2f5fb8, #5a9bff); border-radius: 99px 0 0 99px; }
 .g-gain { background: linear-gradient(90deg, #f08a5e, #c0393b); border-radius: 0 99px 99px 0; }
 .g-m { position: absolute; top: 26px; transform: translateX(-50%); font-size: 12px; white-space: nowrap; font-weight: 700; }
 .g-m.mid { top: -12px; }

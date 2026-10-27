@@ -25,8 +25,8 @@ function sparkChart(el, data, up, intraday = true) {
     c = { chart, series: chart.addAreaSeries({ lineWidth: 2, priceLineVisible: false, lastValueVisible: false }) };
     mkt.charts[el.id] = c;
   }
-  const color = up ? "#f0534e" : "#4c8dff";
-  c.series.applyOptions({ lineColor: color, topColor: up ? "rgba(240,83,78,.35)" : "rgba(76,141,255,.35)", bottomColor: "rgba(0,0,0,0)" });
+  const color = up ? "#f04452" : "#3182f6";
+  c.series.applyOptions({ lineColor: color, topColor: up ? "rgba(240,68,82,.35)" : "rgba(49,130,246,.35)", bottomColor: "rgba(0,0,0,0)" });
   c.series.setData(data);
   c.chart.timeScale().fitContent();
 }
@@ -99,15 +99,17 @@ $$("#idx-group button").forEach((b) => b.addEventListener("click", () => {
 async function loadWatch() {
   try {
     const rows = await api("/api/market/watch");
-    $("#watch").innerHTML = rows.length ? `<span class="note">관심</span>` + rows.map((w) => `<button class="chip" data-open="${esc(w.symbol)}">
+    $("#watch").innerHTML = rows.length ? `<span class="watch-lbl"><i data-lucide="heart"></i> 관심 종목</span>` + rows.map((w) => `<button class="chip" data-open="${esc(w.symbol)}">
       ${logo(w.symbol, w.name, 20)}<span>${esc(w.name)}</span><b>${money(w.price, w.symbol.match(/^\d/) ? "KR" : "US")}</b><b class="${cls(w.change_rate)}">${pct(w.change_rate)}</b></button>`).join("") : "";
+    if (!rows.length) $("#watch").innerHTML = `<span class="watch-lbl note"><i data-lucide="heart"></i> 순위에서 ♥ 를 누르면 여기 관심 종목으로 모입니다</span>`;
+    icons();
   } catch { $("#watch").innerHTML = ""; }
 }
 
 function rateCell(r) {
-  const a = Math.min(Math.abs(r) / 0.15, 1);
-  const bg = r > 0 ? `rgba(240,83,78,${0.15 + a * 0.6})` : r < 0 ? `rgba(76,141,255,${0.15 + a * 0.6})` : "transparent";
-  return `<span class="rate" style="background:${bg}">${pct(r)}</span>`;
+  const a = Math.min(Math.abs(r) / 0.1, 1);
+  const bg = r > 0 ? `rgba(240,68,82,${0.55 + a * 0.45})` : r < 0 ? `rgba(49,130,246,${0.55 + a * 0.45})` : "#3a4350";
+  return `<span class="rate" style="background:${bg}">${r > 0 ? "▲ " : r < 0 ? "▼ " : ""}${pct(r).replace("+", "")}</span>`;
 }
 
 async function loadRankings() {
@@ -153,7 +155,10 @@ document.addEventListener("click", async (e) => {
     const list = new Set(c.watchlist || []);
     list.has(s) ? list.delete(s) : list.add(s);
     c.watchlist = [...list];
-    try { state.config = await api("/api/config", { method: "PUT", body: c }); heart.classList.toggle("on"); loadWatch(); }
+    try {
+      state.config = await api("/api/config", { method: "PUT", body: c }); heart.classList.toggle("on"); loadWatch();
+      toast(list.has(s) ? `관심 종목에 담았어요. 시장 화면 위쪽 '관심' 줄과 AI 자동 회의 후보에서 볼 수 있어요` : "관심 종목에서 뺐어요", list.has(s) ? "heart" : "heart-off");
+    }
     catch (err) { alert(err.message); }
   }
 });
@@ -178,7 +183,7 @@ async function loadSectors() {
     const items = r.items.slice().sort((a, b) => b.changeRate - a.changeRate);
     el.innerHTML = items.map((x) => {
       const a = Math.min(Math.abs(x.changeRate) / 0.04, 1);
-      const bg = x.changeRate >= 0 ? `rgba(240,83,78,${0.12 + a * 0.6})` : `rgba(76,141,255,${0.12 + a * 0.6})`;
+      const bg = x.changeRate >= 0 ? `rgba(240,68,82,${0.12 + a * 0.6})` : `rgba(49,130,246,${0.12 + a * 0.6})`;
       return `<button class="sector" data-sector="${esc(x.sectorId)}" data-sname="${esc(x.name)}" style="background:${bg}">
         <b>${esc(x.name)}</b><span>${pct(x.changeRate)}</span></button>`;
     }).join("") || `<p class="note">섹터 데이터가 없습니다.</p>`;

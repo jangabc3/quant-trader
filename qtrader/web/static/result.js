@@ -4,10 +4,10 @@
 // 밸류에이션 비교, Trust/Worry/Watch, 팩트체크, 추가 질문)을 따른다.
 
 const RES = { chartFor: null, chart: null, series: {} };
-const R_COLOR = { Buy: "#f0534e", Overweight: "#f08a5e", Hold: "#8b98a5", Underweight: "#6aa0ff", Sell: "#4c8dff" };
+const R_COLOR = { Buy: "#f04452", Overweight: "#f08a5e", Hold: "#8b98a5", Underweight: "#5a9bff", Sell: "#3182f6" };
 const R_KO = { Buy: "매수", Overweight: "비중확대", Hold: "보유", Underweight: "비중축소", Sell: "매도" };
 const SCORE_KO = { technical: "기술", fundamental: "재무", valuation: "밸류", earnings: "실적", news: "뉴스", flow: "수급" };
-const VOTE_COLOR = { 확대: "#f0534e", 유지: "#8b98a5", 축소: "#6aa0ff", 관망: "#c9a227" };
+const VOTE_COLOR = { 확대: "#f04452", 유지: "#8b98a5", 축소: "#5a9bff", 관망: "#c9a227" };
 
 const fmtPx = (v, m) => v == null || isNaN(v) ? "-" : m === "US" ? "$" + Number(v).toFixed(2) : Math.round(v).toLocaleString() + "원";
 const upPct = (to, from) => from ? (to / from - 1) : 0;
@@ -27,12 +27,12 @@ function radar(scores) {
     return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="#2c3743"/><text x="${lx}" y="${ly + 4}" text-anchor="middle" fill="#c7d0d9" font-size="12">${SCORE_KO[k]} ${Math.round(scores[k] ?? 0)}</text>`;
   }).join("");
   const poly = keys.map((k, i) => pt(i, Math.max(0, Math.min(100, scores[k] ?? 0))).join(",")).join(" ");
-  return `<svg viewBox="0 0 260 245" class="radar">${grid}${axes}<polygon points="${poly}" fill="rgba(76,141,255,.3)" stroke="#4c8dff" stroke-width="2"/></svg>`;
+  return `<svg viewBox="0 0 260 245" class="radar">${grid}${axes}<polygon points="${poly}" fill="rgba(49,130,246,.3)" stroke="#3182f6" stroke-width="2"/></svg>`;
 }
 
 function scenarioBlock(f, last, m) {
   const sc = f.scenarios || {};
-  const order = [["bear", "약세", "#4c8dff"], ["base", "기본", "#8b98a5"], ["bull", "강세", "#f0534e"]]
+  const order = [["bear", "약세", "#3182f6"], ["base", "기본", "#8b98a5"], ["bull", "강세", "#f04452"]]
     .filter(([k]) => sc[k] && sane(sc[k].price, last));
   if (!order.length) return `<p class="note">시나리오 가격이 현재가와 맞지 않아 표시하지 않습니다 (AI 가 통화 단위를 잘못 썼을 수 있습니다).</p>`;
   const prices = order.map(([k]) => sc[k]?.price || last).concat([last]);
@@ -71,7 +71,7 @@ function valuationBlock(vals) {
       tag = `<span class="vtag ${cheap ? "cheap" : "rich"}">${cheap ? "평균보다 싸다" : "평균보다 비싸다"}</span>`;
     }
     return `<div class="vcard"><div class="vhead"><b>${esc(v.metric)}</b>${tag}</div>
-      ${bar(v.current, "#ffd34d", "현재")}${bar(v.hist_avg, "#6b7785", "5년 평균")}${bar(v.peer_avg, "#4c8dff", "경쟁사")}
+      ${bar(v.current, "#ffd34d", "현재")}${bar(v.hist_avg, "#6b7785", "5년 평균")}${bar(v.peer_avg, "#3182f6", "경쟁사")}
       ${v.note ? `<div class="note">${esc(v.note)}</div>` : ""}</div>`;
   }).join("")}</div>`;
 }
@@ -87,21 +87,21 @@ async function drawChart(run, f) {
     grid: { vertLines: { color: "#1e262f" }, horzLines: { color: "#1e262f" } },
     rightPriceScale: { borderColor: "#26303b" }, timeScale: { borderColor: "#26303b" }, autoSize: true,
   });
-  const c = chart.addCandlestickSeries({ upColor: "#f0534e", downColor: "#4c8dff", borderVisible: false, wickUpColor: "#f0534e", wickDownColor: "#4c8dff" });
+  const c = chart.addCandlestickSeries({ upColor: "#f04452", downColor: "#3182f6", borderVisible: false, wickUpColor: "#f04452", wickDownColor: "#3182f6" });
   c.setData(data.candles);
   [["sma20", "#ffd34d"], ["sma60", "#3fe07a"], ["sma120", "#c084fc"]].forEach(([k, col]) =>
     chart.addLineSeries({ color: col, lineWidth: 1, priceLineVisible: false, lastValueVisible: false }).setData(data[k]));
   const lastPx = data.candles.at(-1)?.close;
   const line = (price, color, title, style = 2) => sane(price, lastPx) && c.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title });
-  (data.levels.support || []).forEach((p) => line(p, "#4c8dff", "지지"));
-  (data.levels.resistance || []).forEach((p) => line(p, "#f0534e", "저항"));
+  (data.levels.support || []).forEach((p) => line(p, "#3182f6", "지지"));
+  (data.levels.resistance || []).forEach((p) => line(p, "#f04452", "저항"));
   if (f) {
     const mid = sane(f.entry_low, lastPx) && sane(f.entry_high, lastPx) ? (f.entry_low + f.entry_high) / 2 : lastPx;
     line(f.entry_low, "#3fe07a", "진입 하단", 0); line(f.entry_high, "#3fe07a", "진입 상단", 0);
     line(mid * (1 - f.stop_loss_pct / 100), "#ff6b6b", `손절 -${f.stop_loss_pct}%`, 0);
     line(mid * (1 + f.take_profit_pct / 100), "#ffd34d", `익절 +${f.take_profit_pct}%`, 0);
     if (f.scenarios?.bull) line(f.scenarios.bull.price, "#f08a5e", "강세 시나리오", 1);
-    if (f.scenarios?.bear) line(f.scenarios.bear.price, "#6aa0ff", "약세 시나리오", 1);
+    if (f.scenarios?.bear) line(f.scenarios.bear.price, "#5a9bff", "약세 시나리오", 1);
   }
   chart.timeScale().fitContent();
   RES.chart = chart;

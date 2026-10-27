@@ -165,3 +165,22 @@ def test_sector_and_account_endpoints(client, isolated_home):
 def test_index_has_build_id(client):
     html = client.get("/").text
     assert "__BUILD__" not in html and "/static/chat.js?v=" in html
+
+
+def test_investor_profile(client):
+    from qtrader import profile
+    m = client.get("/api/profile").json()
+    assert m["investor"] is None and len(m["questions"]) == 8 and len(m["types"]) == 5
+    safe = {"age": 4, "exp": 0, "goal": 0, "horizon": 0, "loss": 0, "share": 0, "drop": 0, "style": 0}
+    bold = {"age": 0, "exp": 4, "goal": 4, "horizon": 4, "loss": 4, "share": 3, "drop": 3, "style": 1}
+    assert client.post("/api/profile", json={"answers": safe}).status_code == 403
+    r = client.post("/api/profile", json={"answers": safe}, headers=client.h).json()
+    assert r["type"] == "안정형" and r["style"] == "분산형"
+    cfg = client.get("/api/config").json()
+    assert cfg["risk"]["max_weight"] == 0.10 and cfg["ai"]["rules"]["min_confidence"] == 0.75 and "안정형" in cfg["ai"]["profile"]
+    r = client.post("/api/profile", json={"answers": bold}, headers=client.h).json()
+    assert r["type"] == "공격투자형" and r["style"] == "집중형"
+    cfg = client.get("/api/config").json()
+    assert cfg["risk"]["max_weight"] == 0.30 and cfg["risk"]["daily_loss_limit"] == 0.04
+    assert any(c["k"] == "손절·익절" for c in r["criteria"])
+    assert client.post("/api/profile", json={"answers": {"age": 1}}, headers=client.h).status_code == 400

@@ -33,7 +33,7 @@ function compound() {
       rightPriceScale: { borderColor: "#26303b" }, timeScale: { borderColor: "#26303b" },
       localization: { priceFormatter: (v) => man(v) },
     });
-    cpSeries = cpChart.addAreaSeries({ lineColor: "#4c8dff", topColor: "rgba(76,141,255,.35)", bottomColor: "rgba(0,0,0,0)" });
+    cpSeries = cpChart.addAreaSeries({ lineColor: "#3182f6", topColor: "rgba(49,130,246,.35)", bottomColor: "rgba(0,0,0,0)" });
     cpGoalSeries = cpChart.addLineSeries({ color: "#ffd34d", lineWidth: 1, lineStyle: 2 });
   }
   const start = new Date().getFullYear();

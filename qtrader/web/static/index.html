@@ -141,7 +141,7 @@
   <!-- 뉴스 -->
   <section id="tab-news" class="tab hidden">
     <div class="news-bar">
-      <div class="seg" id="news-cat"><button data-v="all" class="on">전체</button><button data-v="kr">국내 증권</button><button data-v="global">해외 증시</button></div>
+      <div class="seg" id="news-cat"><button data-v="all" class="on">전체</button><button data-v="kr">국내증시</button><button data-v="global">해외증시</button></div>
       <div class="news-src-chips" id="news-src"></div>
       <input id="news-q" placeholder="제목 검색 (예: 반도체, 금리)" style="width:220px">
       <button id="news-refresh"><i data-lucide="refresh-cw"></i> 새로고침</button>
@@ -172,7 +172,7 @@
       <div class="panel report" id="report"><h3>참석자 보고서</h3><p class="note">캐릭터를 누르면 그 참석자의 보고서와 출처가 보입니다.</p></div>
       <div class="panel track" id="track"><h3>AI 판단 기록</h3><p class="note">불러오는 중...</p></div>
     </div>
-    <div class="panel" id="refs"><h3>QTrader 가 따르는 투자 원칙 <small>퀀트 운용사·학계가 인용하는 연구</small></h3><div id="refs-body" class="note">불러오는 중...</div></div>
+    <details class="panel adv" id="refs"><summary><i data-lucide="book-open"></i> QTrader 가 따르는 투자 원칙 <small>퀀트 운용사·학계가 인용하는 연구 20편 · 눌러서 펼치기</small></summary><div id="refs-body" class="note">불러오는 중...</div></details>
   </section>
 
   <!-- 내 계좌 -->
@@ -190,6 +190,7 @@
       </div>
     </div>
     <div class="kpis" id="kpis"></div>
+    <details class="panel adv"><summary><i data-lucide="list-checks"></i> 자동매매는 이 기준으로 사고팝니다 <small>투자 성향에 맞춘 기준 · 눌러서 펼치기</small></summary><div class="criteria-box"></div></details>
     <div class="panel" id="approvals-panel">
       <h3><i data-lucide="hand"></i> 승인 대기 주문 <small>근거를 확인하고 승인해야 주문이 나갑니다</small></h3>
       <div id="appr-list"></div>
@@ -256,6 +257,7 @@
   <!-- 설정 -->
   <section id="tab-cfg" class="tab hidden">
     <div class="cfg-wrap">
+      <div class="panel"><h3><i data-lucide="user-check"></i> 내 투자 성향과 매매 기준</h3><div class="criteria-box"></div></div>
       <div class="panel">
         <h3><i data-lucide="shield-check"></i> 1. 운용 모드</h3>
         <div class="mode-cards">
@@ -367,5 +369,6 @@
 <script src="/static/result.js?v=__BUILD__"></script>
 <script src="/static/tools.js?v=__BUILD__"></script>
 <script src="/static/chat.js?v=__BUILD__"></script>
+<script src="/static/onboarding.js?v=__BUILD__"></script>
 </body>
 </html>

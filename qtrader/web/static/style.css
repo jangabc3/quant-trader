@@ -4,9 +4,9 @@
   --line: #26303b;
   --text: #e6edf3;
   --muted: #8b98a5;
-  --blue: #4c8dff;
+  --blue: #3182f6;
   --green: #2fbf71;
-  --red: #f0534e;
+  --red: #f04452;
   --amber: #e9a23b;
   --font: "Pretendard", "Malgun Gothic", system-ui, sans-serif;
 }
@@ -23,12 +23,12 @@ nav button.on { color: var(--text); background: var(--line); }
 .badges { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
 .badge { padding: 2px 10px; border-radius: 99px; background: var(--line); font-size: 12px; }
 .badge.green { background: rgba(47,191,113,.18); color: var(--green); }
-.badge.red { background: rgba(240,83,78,.18); color: var(--red); }
+.badge.red { background: rgba(240,68,82,.18); color: var(--red); }
 .badge.amber { background: rgba(233,162,59,.18); color: var(--amber); }
 main { padding: 16px 20px; max-width: 1400px; margin: 0 auto; }
 .hidden { display: none !important; }
-.banner { padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; background: rgba(240,83,78,.15); color: #ffb3b0; }
-.banner.info { background: rgba(76,141,255,.15); color: #b7cfff; }
+.banner { padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; background: rgba(240,68,82,.15); color: #ffb3b0; }
+.banner.info { background: rgba(49,130,246,.15); color: #b7cfff; }
 .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
 .sep { width: 1px; height: 24px; background: var(--line); margin: 0 6px; }
 button, select, input { font: inherit; color: var(--text); background: var(--line); border: 1px solid #33404d;
@@ -81,8 +81,8 @@ footer { color: var(--muted); font-size: 12px; text-align: center; padding: 20px
 .idx-top { display: flex; justify-content: space-between; align-items: center; }
 .idx-name { font-weight: 700; }
 .idx-tag { font-size: 11px; padding: 1px 8px; border-radius: 99px; }
-.up-bg { background: rgba(240,83,78,.18); color: var(--red); }
-.down-bg { background: rgba(76,141,255,.18); color: var(--blue); }
+.up-bg { background: rgba(240,68,82,.18); color: var(--red); }
+.down-bg { background: rgba(49,130,246,.18); color: var(--blue); }
 .idx-val { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.5px; }
 .idx-chg { font-size: 14px; font-weight: 600; }
 .spark { height: 90px; margin: 6px -4px; }
@@ -106,7 +106,7 @@ table.rank .nm { font-weight: 600; } table.rank .sym { color: var(--muted); font
 .rate { display: inline-block; min-width: 76px; text-align: right; padding: 3px 8px; border-radius: 6px; font-weight: 600; color: #fff; }
 .heart { background: none; border: 0; color: #4a5562; padding: 0 4px; font-size: 15px; }
 .heart.on { color: var(--red); }
-.ai-btn { font-size: 12px; padding: 3px 10px; background: rgba(76,141,255,.15); border-color: rgba(76,141,255,.4); color: #b7cfff; }
+.ai-btn { font-size: 12px; padding: 3px 10px; background: rgba(49,130,246,.15); border-color: rgba(49,130,246,.4); color: #b7cfff; }
 
 /* AI 사무실 */
 .office-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
