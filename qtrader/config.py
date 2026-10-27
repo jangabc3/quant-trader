@@ -81,12 +81,16 @@ DEFAULT = {
         "min_confidence": 0.5,  # 이보다 확신이 낮으면 Hold 로 본다
         "monthly_cost_cap_krw": 30000,
         # 회의할 종목을 AI 가 매일 고른다 (설정 종목 + 관심 종목 + 보유 + 거래대금 상위 중 숫자 규칙 통과)
-        "auto_pick": True,  # 이번 달 AI 회의 비용이 이만큼 넘으면 새 회의를 열지 않는다 (0 = 제한 없음)
+        "auto_pick": True,
+        # 장중 AI 긴급 재점검: 가진 종목이 급락하거나 손절선에 가까울 때만, 하루 이만큼까지 (위험을 줄이는 매도만 바로 한다)
+        "live_recheck": True,
+        "recheck_per_day": 5,  # 이번 달 AI 회의 비용이 이만큼 넘으면 새 회의를 열지 않는다 (0 = 제한 없음)
     },
     # 알림: 화면(윈도우 알림)은 항상, 텔레그램은 봇 토큰(키 보관함)과 대화방 번호가 있을 때
     "notify": {"telegram_chat_id": "", "daily_report": True},
     "alerts": [],  # 가격 알림 [{symbol, name, op: above|below, price}]
     "max_sector_weight": 0.4,  # 한 업종 비중 경고 기준
+    "security": {"pin": True},  # 실전 주문 PIN (끄면 실전 모드 전환·직접 주문에도 묻지 않는다)
     "watchlist": ["005930", "000660", "AAPL", "NVDA"],
     "investor": None,  # 투자 성향 검사 결과 (처음 실행 때 묻는다)
     "news": {"feeds": [

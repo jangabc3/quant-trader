@@ -446,6 +446,7 @@ async function loadConfig() {
   $("#rl-vol").value = R.max_vol; $("#rl-fact").value = R.min_fact_ok; $("#rl-buys").value = R.max_new_buys_per_day;
   $("#rl-cool").value = R.cooldown_days; $("#rl-trend").checked = R.require_trend; $("#rl-mom").checked = R.require_momentum;
   $("#rl-market").value = R.market_filter || "half";
+  $("#pin-enabled").checked = c.security?.pin !== false;
   loadPin();
   const ruleKeys = Object.keys(state.strategies);
   const stratSelect = (cur) => `<option value="ai" ${cur === "ai" ? "selected" : ""}>${STRAT_NAME.ai} (추천)</option>
@@ -518,6 +519,7 @@ $("#cfg-save").onclick = async () => {
     .map(([n, u, k]) => ({ name: n.trim(), url: u.trim(), cat: (k || "").trim() === "global" ? "global" : "kr" })) };
   c.notify = { ...(c.notify || {}), telegram_chat_id: $("#tg-chat").value.trim(), daily_report: $("#ntf-report").checked };
   c.max_sector_weight = Number($("#sec-max").value) || 0.4;
+  c.security = { ...(c.security || {}), pin: $("#pin-enabled").checked };
   Object.assign(c.ai, {
     mode: $("#ai-mode").value, quick_model: $("#ai-quick").value.trim(), deep_model: $("#ai-deep").value.trim(),
     effort: $("#ai-effort").value, profile: $("#ai-profile").value.trim(), require_approval: $("#ai-approve").checked,

@@ -103,6 +103,10 @@ class Scheduler:
                         for x in check_exits(ctx, m):
                             extras.notify(ctx.store, cfg, f"{'🛑 손절' if x['reason'] == 'stop' else '🎯 익절'} "
                                                           f"{x['symbol']} @ {x['price']:,} ({x['status']})", "exit")
+                        if cfg["markets"][m.value].get("strategy") == "ai":
+                            from . import live
+                            live.run_rechecks(ctx, m)
+                            self._new_candidates(ctx, m)
                     elif after_close(m) and snapshot_equity(ctx, m):
                         today = trade_date(m)
                         rep = extras.daily_report(ctx.store, ctx.broker.name, m.value, today)
@@ -137,6 +141,25 @@ class Scheduler:
                 # 같은 날 계속 재시도하며 주문이 쌓이지 않도록 실패도 실행으로 기록
                 ctx.store.mark_run(trade_date(m), ctx.broker.name, m.value)
         return out
+
+    def _new_candidates(self, ctx, m: Market) -> None:
+        """15분마다 숫자 규칙을 다시 돌려, 새로 통과한 종목을 오늘 회의 후보에 올린다 (매수는 정기 실행 때만)."""
+        import json as _json
+        from . import live
+        key = f"_cand_{m.value}"
+        if time.monotonic() - getattr(self, key, 0) < 900:
+            return
+        setattr(self, key, time.monotonic())
+        today = trade_date(m)
+        pk = f"picks_{m.value}_{today}"
+        picks = _json.loads(ctx.store.get(pk) or "[]")
+        have = {p["symbol"] for p in picks}
+        fresh = [c for c in live.next_candidates(ctx, m) if not c["missing"] and c["symbol"] not in have]
+        if fresh and len(picks) < int(ctx.cfg["ai"]["max_symbols_per_day"]):
+            add = fresh[: int(ctx.cfg["ai"]["max_symbols_per_day"]) - len(picks)]
+            picks += [{"symbol": c["symbol"], "score": c["score"], "reason": "장중 새로 규칙 통과", "held": False, "fails": []} for c in add]
+            ctx.store.set(pk, _json.dumps(picks, ensure_ascii=False))
+            ctx.store.log("info", f"live.{m.value}", "새 후보: " + ", ".join(c["symbol"] for c in add) + " (다음 정기 회의·실행 때 검토)")
 
     @staticmethod
     def _session_open(ctx, m: Market) -> bool:

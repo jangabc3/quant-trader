@@ -123,3 +123,29 @@ def test_token_conflict_message(tmp_path):
     t = Toss("tsck_live_x12345678", "s" * 16, tmp_path, session=S())
     with pytest.raises(TossError, match="다른 프로그램"):
         t.prices(["005930"])
+
+
+def test_live_recheck_sells_only_on_trigger_and_caps(ctx):
+    from qtrader import live
+    from qtrader.agents.llm import Reply
+
+    class LLM:
+        calls = 0
+
+        def run(self, *a, **k):
+            LLM.calls += 1
+            return Reply("", data={"action": "sell", "reason": "실적 쇼크 확정", "watch": "-"}, model="claude-sonnet-5-5")
+
+    class Bars:
+        def bars(self, m, s, n):
+            import pandas as pd
+            return pd.DataFrame({"close": [100.0, 100.0]})
+
+        price = lambda self, m, s: 95.0
+
+    ctx.data = Bars()
+    ctx.broker.positions["005930"] = Position(Market.KR, "005930", 10, 100.0, 95.0)  # 오늘 -5%
+    ctx.store.save_plan("toss", "KR", "005930", "r", 100, 90, 120)
+    out = live.run_rechecks(ctx, Market.KR, llm=LLM())
+    assert out[0]["action"] == "sell" and ctx.broker.sent[-1].side.value == "sell"
+    assert live.run_rechecks(ctx, Market.KR, llm=LLM()) == [] and LLM.calls == 1  # 같은 종목은 하루 한 번

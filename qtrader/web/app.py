@@ -130,8 +130,10 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         if not secrets.compare_digest(x_qtrader_token, token):
             raise HTTPException(403, "토큰이 올바르지 않습니다. 페이지를 새로고침하세요")
 
-    def live_pin(pin: str) -> None:
-        """실전 주문 전에 PIN 확인. 428 이면 화면이 PIN 을 묻고 다시 보낸다."""
+    def live_pin(pin: str, force: bool = False) -> None:
+        """실전 주문 전에 PIN 확인. 428 이면 화면이 PIN 을 묻고 다시 보낸다. 설정에서 PIN 을 끄면 묻지 않는다."""
+        if not force and not (config_mod.load().get("security") or {}).get("pin", True):
+            return
         try:
             pinlock.verify(config_mod.home(), pin)
         except pinlock.PinError as e:
@@ -588,6 +590,13 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         return [p | {"name": name_of(p["symbol"]), "met": bool(met.get(p["symbol"])),
                      "rating": (met.get(p["symbol"]) or {}).get("rating")} for p in rows]
 
+    # 실시간 사무실 현황판
+    @app.get("/api/live")
+    def live_board(market: str = "KR"):
+        from .. import live
+        c = ctx()
+        return live.snapshot(c, Market(market), name_of)
+
     # 매매 이유 보고: 자동 주문 뒤 '왜, 무슨 근거로' 샀고 팔았는지
     @app.get("/api/trades/why")
     def trades_why(limit: int = 20):
@@ -646,7 +655,7 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
     # 실전 주문 PIN
     @app.get("/api/pin")
     def pin_state():
-        return {"set": pinlock.is_set(config_mod.home())}
+        return {"set": pinlock.is_set(config_mod.home()), "enabled": (config_mod.load().get("security") or {}).get("pin", True)}
 
     @app.post("/api/pin", dependencies=[Depends(need_token)])
     def pin_set(body: PinIn):
@@ -863,6 +872,10 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
     def put_config(cfg: dict, x_qtrader_pin: str = Header("")):
         merged = config_mod._merge(config_mod.DEFAULT, cfg)
         before = config_mod.load()
+        # PIN 을 끄는 것도 PIN 이 있어야 한다 (남이 꺼 버리지 못하게)
+        if (before.get("security") or {}).get("pin", True) and not (merged.get("security") or {}).get("pin", True) \
+                and pinlock.is_set(config_mod.home()):
+            live_pin(x_qtrader_pin, force=True)
         if merged["mode"] in config_mod.LIVE_MODES and merged.get("live_confirmed") and (
                 before["mode"] != merged["mode"] or not before.get("live_confirmed")):
             live_pin(x_qtrader_pin)
