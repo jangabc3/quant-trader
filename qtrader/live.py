@@ -66,7 +66,7 @@ def next_candidates(ctx, market: Market, n: int = 8) -> list[dict]:
         R = principles.DEFAULT_RULES | (ctx.cfg["ai"].get("rules") or {})
         syms, held = screener.pool(ctx, market)
         rows = []
-        for s in syms:
+        for s in syms[:60]:  # 15분마다 도니까 시세 호출 수를 제한
             if s in held:
                 continue
             try:
@@ -90,13 +90,13 @@ def next_candidates(ctx, market: Market, n: int = 8) -> list[dict]:
 
 
 def schedule(ctx, market: Market) -> dict:
-    from .scheduler import SESSIONS, is_open, next_run
+    from .scheduler import SESSIONS, next_run, trading_now
     mc = ctx.cfg["markets"][market.value]
     nr = next_run(market, mc["run_time"])
     before = int(ctx.cfg["ai"]["run_before_minutes"])
     t = datetime.now(TZ[market])
     close = t.replace(hour=SESSIONS[market][1].hour, minute=SESSIONS[market][1].minute, second=0, microsecond=0)
-    return {"open": is_open(market), "now": t.isoformat(timespec="seconds"), "next_run": nr.isoformat(timespec="minutes"),
+    return {"open": trading_now(ctx.cfg, market), "now": t.isoformat(timespec="seconds"), "next_run": nr.isoformat(timespec="minutes"),
             "next_meeting": (nr - timedelta(minutes=before)).isoformat(timespec="minutes"),
             "close": close.isoformat(timespec="minutes"), "strategy": mc["strategy"], "enabled": mc["enabled"]}
 

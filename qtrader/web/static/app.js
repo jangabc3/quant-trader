@@ -123,6 +123,7 @@ function flashChanges(root, sel = "[data-val]") {
     if (old != null && v !== old && !REDUCED) {
       el.classList.remove("flash-up", "flash-down"); void el.offsetWidth;
       el.classList.add(v > old ? "flash-up" : "flash-down");
+      el.addEventListener("animationend", () => el.classList.remove("flash-up", "flash-down"), { once: true });
     }
     lastVals.set(k, v);
   });
@@ -327,6 +328,7 @@ $("#ord-table").addEventListener("click", (e) => {
 });
 
 function renderApprovals(rows) {
+  $("#approvals-panel")?.classList.toggle("hidden", !rows.length);
   $("#approvals-panel").classList.toggle("hidden", !rows.length);
   $("#appr-list").innerHTML = rows.map((a) => `<div class="appr ${a.side}">
     <div class="appr-head">${logo(a.symbol, a.symbol, 32)}<div><b>${a.side === "buy" ? "매수" : "매도"} ${esc(a.symbol)} ${a.qty.toLocaleString()}주</b>
@@ -457,7 +459,7 @@ async function loadConfig() {
   $("#rl-cool").value = R.cooldown_days; $("#rl-trend").checked = R.require_trend; $("#rl-mom").checked = R.require_momentum;
   $("#rl-market").value = R.market_filter || "half";
   $("#pin-enabled").checked = c.security?.pin !== false;
-  $$("input[name=holding]").forEach((i) => (i.checked = i.value === (c.ai.holding || "long")));
+  $$("input[name=holding]").forEach((i) => (i.checked = i.value === (c.ai.holding || "auto")));
   loadPin();
   const ruleKeys = Object.keys(state.strategies);
   const stratSelect = (cur) => `<option value="ai" ${cur === "ai" ? "selected" : ""}>${STRAT_NAME.ai} (추천)</option>
@@ -470,7 +472,14 @@ async function loadConfig() {
         <label>쓸 돈 (${m === "KR" ? "원" : "$"}) <input data-f="budget" type="number" value="${mc.budget}"></label>
       </div>
       <details class="mini-adv"><summary>실행 시각·종목·전략 세부</summary>
-        <div class="form-row"><label>실행 시각 (${m === "KR" ? "한국" : "뉴욕"}) <input data-f="run_time" value="${esc(mc.run_time)}"></label></div>
+        ${m === "KR" ? `<div class="form-row"><label>실행 시각 (한국) <input data-f="run_time" value="${esc(mc.run_time)}"></label></div>
+          <label class="check"><input type="checkbox" data-f="extended" ${mc.extended ? "checked" : ""}> 시간외(넥스트레이드 08:00~20:00)에도 손절·익절 감시와 주문 <small class="note">시간외는 지정가로만 나가요 · 토스 Open API 지원 확인 필요</small></label>`
+        : `<div class="form-row"><label>정기 실행 <select data-f="run_session"><option value="regular" ${mc.run_session !== "day" ? "selected" : ""}>뉴욕 정규장 마감 전 (밤)</option><option value="day" ${mc.run_session === "day" ? "selected" : ""}>한국 낮 주간거래</option></select></label>
+            <label>실행 시각 <small class="note">정규장=뉴욕, 주간거래=한국 시각</small> <input data-f="run_time" value="${esc(mc.run_time)}"></label>
+            <label>주간거래 시간 (한국) <input data-f="day_hours" value="${esc(mc.day_hours || "10:00-17:30")}"></label></div>
+          <div class="form-row">${[["day", "주간거래 (한국 낮)"], ["pre", "프리마켓"], ["after", "애프터마켓"]].map(([k, n]) =>
+            `<label class="check"><input type="checkbox" data-ext="${k}" ${(mc.extended_sessions || []).includes(k) ? "checked" : ""}> ${n}에도 감시·주문</label>`).join("")}</div>
+          <p class="note">국내장이 열린 낮에도 미국 주간거래로 사고팔 수 있어요. 토스 Open API 가 해당 세션 주문을 받는지는 첫 실전 때 꼭 확인하세요. 미국 주식은 달러로만 사고, 달러가 모자라면 자동 환전 대신 환전 우대로 바꾸라고 알려 드려요.</p>`}
         <label>종목 (쉼표로 구분${m === "US" ? ", 나스닥 외에는 NYSE:KO 처럼" : ""}) <input data-f="universe" value="${esc(mc.universe.join(", "))}"></label>
         <div class="form-row params" data-params></div>
       </details>
@@ -538,7 +547,7 @@ $("#cfg-save").onclick = async () => {
     run_before_minutes: Number($("#ai-before").value), max_symbols_per_day: Number($("#ai-max").value),
     min_confidence: Number($("#ai-conf").value), web_research: $("#ai-web").checked,
     monthly_cost_cap_krw: Number($("#ai-cap").value) || 0, auto_pick: $("#ai-autopick").checked,
-    holding: ($$("input[name=holding]").find((i) => i.checked) || {}).value || "long",
+    holding: ($$("input[name=holding]").find((i) => i.checked) || {}).value || "auto",
     rules: { min_confidence: Number($("#rl-conf").value), min_reward_risk: Number($("#rl-rr").value),
       max_rsi: Number($("#rl-rsi").value), max_vol: Number($("#rl-vol").value), min_fact_ok: Number($("#rl-fact").value),
       max_new_buys_per_day: Number($("#rl-buys").value), cooldown_days: Number($("#rl-cool").value),
@@ -549,6 +558,12 @@ $("#cfg-save").onclick = async () => {
     mc.enabled = el.querySelector("[data-f=enabled]").checked;
     mc.strategy = el.querySelector("[data-f=strategy]").value;
     mc.run_time = el.querySelector("[data-f=run_time]").value.trim();
+    if (el.dataset.market === "KR") mc.extended = el.querySelector("[data-f=extended]").checked;
+    else {
+      mc.run_session = el.querySelector("[data-f=run_session]").value;
+      mc.day_hours = el.querySelector("[data-f=day_hours]").value.trim() || "10:00-17:30";
+      mc.extended_sessions = [...el.querySelectorAll("[data-ext]")].filter((x) => x.checked).map((x) => x.dataset.ext);
+    }
     mc.budget = Number(el.querySelector("[data-f=budget]").value);
     mc.universe = el.querySelector("[data-f=universe]").value.split(",").map((x) => x.trim()).filter(Boolean);
     if (mc.strategy !== "ai") mc.params = readParams(el.querySelector("[data-params]"));

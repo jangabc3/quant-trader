@@ -71,13 +71,17 @@ window.renderDash = (d) => {
       bar = `<div class="sl-bar"><i class="fill" style="width:${at}%"></i><i class="entry" style="left:${en}%"></i><i class="now" style="left:${at}%"></i></div>
         <div class="sl-lbl"><span class="down">손절 ${money(pl.stop, p.market)}</span><span class="up">익절 ${money(pl.take, p.market)}</span></div>`;
     }
+    const gain = p.value - p.qty * p.avg_price;
     return `<div class="hold" data-open="${esc(p.symbol)}">
-      <div class="hold-top">${logo(p.symbol, p.name || p.symbol, 36)}<div><b>${esc(p.name || p.symbol)}</b><span class="note">${esc(p.symbol)} · ${p.qty.toLocaleString()}주 · 평균 ${money(p.avg_price, p.market)}</span></div>
-        <div class="hold-pl"><b class="${cls(p.pnl)}">${pct(p.pnl)}</b><span class="note">${money(p.value, p.market)}</span></div></div>
-      ${bar || `<div class="hold-noplan"><span class="note">손절·익절이 없어 자동으로 팔지 않아요</span></div>`}
-      <div class="hold-acts"><button data-plan="${esc(p.symbol)}">${pl ? "손절·익절 바꾸기" : "손절·익절 정하기"}</button>${pl ? `<button data-unplan="${esc(p.symbol)}">감시 끄기</button>` : ""}</div></div>`;
+      <div class="hold-top">${logo(p.symbol, p.name || p.symbol, 40)}
+        <div class="hold-name"><b>${esc(p.name || p.symbol)}</b><span class="note">${p.qty.toLocaleString()}주 · 평균 ${money(p.avg_price, p.market)} · 지금 ${money(p.last_price, p.market)}</span></div>
+        <div class="hold-pl"><b>${money(p.value, p.market)}</b><span class="${cls(p.pnl)}">${gain > 0 ? "+" : ""}${money(gain, p.market)} (${pct(p.pnl)})</span></div></div>
+      ${bar || `<div class="hold-noplan"><i data-lucide="shield-off"></i><span>손절·익절이 없어 자동으로 팔지 않아요</span></div>`}
+      <div class="hold-acts"><button data-plan="${esc(p.symbol)}"><i data-lucide="shield-check"></i> ${pl ? "손절·익절 바꾸기" : "손절·익절 정하기"}</button>${pl ? `<button data-unplan="${esc(p.symbol)}">감시 끄기</button>` : ""}</div></div>`;
   }).join("") : `<div class="empty"><i data-lucide="inbox"></i><p>보유 종목이 없습니다</p><span class="note">자동매매를 시작하거나 '미리보기'로 오늘 무엇을 살지 확인해 보세요.</span></div>`;
   if (dash.animKey !== m) { dash.animKey = m; animateIn("#holdings .hold, #kpis .kpi", { y: 12 }); }
+  const tv = pos.reduce((s, p) => s + p.value, 0), tg = pos.reduce((s, p) => s + p.value - p.qty * p.avg_price, 0);
+  $("#hold-sum").innerHTML = pos.length ? `${pos.length}종목 · 평가 ${money(tv, m)} · <span class="${cls(tg)}">${tg > 0 ? "+" : ""}${money(tg, m)}</span>` : "";
   renderOrders(d.orders.filter((o) => o.market === m || !o.market));
   renderEvents(d.events);
   icons();
@@ -132,7 +136,7 @@ $("#holdings").addEventListener("click", async (e) => {
     await api("/api/plans/" + encodeURIComponent(sym), { method: "DELETE" }).catch((err) => toast(err.message, "alert-triangle"));
     return refresh();
   }
-  const H = { long: [7, 15], swing: [5, 10], short: [2.5, 5] }[state.config?.ai?.holding || "long"] || [7, 15];
+  const H = { auto: [7, 15], long: [7, 15], swing: [5, 10], short: [2.5, 5] }[state.config?.ai?.holding || "auto"] || [7, 15];
   const r = (v) => p.market === "KR" ? Math.round(v) : Math.round(v * 100) / 100;
   modal(`<div class="plan-edit"><h3>${esc(p.name || sym)} 손절·익절</h3>
     <p class="note">지금 ${money(p.last_price, p.market)} · 평균 ${money(p.avg_price, p.market)}. 정한 가격에 닿으면 장중 2분 안에 자동으로 팝니다.</p>
@@ -147,3 +151,14 @@ $("#holdings").addEventListener("click", async (e) => {
     } catch (err) { toast(err.message, "alert-triangle"); }
   };
 });
+
+// 내 계좌 하위 탭: 보유 종목 · 수익 · 거래 기록 · 오늘
+function acctSub(v) {
+  $$("#acct-sub button").forEach((b) => b.classList.toggle("on", b.dataset.v === v));
+  $$("#tab-dash .acct-pane").forEach((p) => p.classList.toggle("hidden", p.dataset.pane !== v));
+  try { localStorage.setItem("qtrader.acct.sub", v); } catch {}
+  animateIn(`#tab-dash .acct-pane[data-pane="${v}"] > *`, { y: 10, step: 50 });
+  if (v === "profit" && dash.chart) setTimeout(() => dash.chart.timeScale().fitContent(), 50);
+}
+$("#acct-sub").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) acctSub(b.dataset.v); });
+try { const v = localStorage.getItem("qtrader.acct.sub"); if (v) acctSub(v); } catch {}

@@ -69,6 +69,13 @@ REFERENCES = [
      "변동성이 큰 종목일수록 이후 수익률이 오히려 낮음", "연 변동성 상한"),
     ("lowvol", "Baker, Bradley & Wurgler (2011)", "Benchmarks as Limits to Arbitrage: Understanding the Low-Volatility Anomaly", "Financial Analysts Journal",
      "저변동성 주식이 장기적으로 고변동성 주식보다 위험 대비 성과가 좋음", "변동성 상한과 변동성 목표 비중"),
+    # 후보 고르기 (screener)
+    ("52wh", "George & Hwang (2004)", "The 52-Week High and Momentum Investing", "Journal of Finance",
+     "52주 신고가에 가까운 종목이 이후에도 더 오르는 경향. 모멘텀 효과의 상당 부분을 설명", "후보 점수에 52주 고가 근접도"),
+    ("volmom", "Lee & Swaminathan (2000)", "Price Momentum and Trading Volume", "Journal of Finance",
+     "거래량이 함께 늘어난 모멘텀이 더 오래 이어지거나, 관심 쏠림의 신호가 됨", "후보 점수에 거래량 증가"),
+    ("reversal", "Jegadeesh (1990)", "Evidence of Predictable Behavior of Security Returns", "Journal of Finance",
+     "직전 1주~1개월 급등한 종목은 단기적으로 되돌림이 잦음", "최근 5일 급등은 감점 (추격 매수 방지)"),
     # 행동재무
     ("disposition", "Odean (1998)", "Are Investors Reluctant to Realize Their Losses?", "Journal of Finance",
      "개인은 이익 난 주식은 너무 빨리 팔고 손실 난 주식은 너무 오래 들고 있음 (처분 효과)", "손절가에 닿으면 사람 판단 없이 자동 매도"),
@@ -125,6 +132,7 @@ DEFAULT_RULES = {
 }
 # 매매 기간. 단기일수록 손절·익절을 좁히고 오래 들고 있지 않는다 (기한이 지나면 판다)
 HOLDING = {
+    "auto": {"name": "AI에게 맡기기 (종목마다 알맞게)", "stop": None, "take": None, "days": None, "buys": 1},
     "long": {"name": "장기 (추세 따라 몇 주~몇 달)", "stop": None, "take": None, "days": None, "buys": 0},
     "swing": {"name": "스윙 (며칠~2주)", "stop": 5.0, "take": 10.0, "days": 10, "buys": 1},
     "short": {"name": "단기 (1~3일, 짧게 자주)", "stop": 2.5, "take": 5.0, "days": 3, "buys": 2},
@@ -133,6 +141,10 @@ HOLDING = {
 
 def adjust_for_holding(final: dict | None, mode: str) -> dict | None:
     """회의 결론의 손절·익절·보유 기간을 매매 기간에 맞춘다. 손익비 2 : 1 은 유지한다."""
+    if mode == "auto" and final:
+        # 회의가 정한 보유 기간으로 단기·스윙·장기 중 하나를 고른다 (실적 발표·이벤트면 짧게, 추세면 길게)
+        d = int(final.get("horizon_days") or 20)
+        mode = "short" if d <= 3 else "swing" if d <= 10 else "long"
     h = HOLDING.get(mode or "long")
     if not final or not h or h["stop"] is None:
         return final

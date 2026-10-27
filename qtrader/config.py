@@ -26,6 +26,8 @@ DEFAULT = {
             # 예시 종목: 삼성전자, SK하이닉스, NAVER, 현대차, LG에너지솔루션, 카카오, 셀트리온, KB금융
             "universe": ["005930", "000660", "035420", "005380", "373220", "035720", "068270", "105560"],
             "run_time": "15:10",  # KST. 장 마감(15:30) 전
+            # 넥스트레이드(NXT) 시간외 08:00~20:00 에도 손절·익절 감시·주문 (토스 Open API 지원 여부를 먼저 확인하세요)
+            "extended": False,
             "budget": 10_000_000,  # 이 전략이 쓸 최대 금액(원)
         },
         "US": {
@@ -37,6 +39,11 @@ DEFAULT = {
             "run_time": "15:45",  # 뉴욕 시간. 장 마감(16:00) 전
             "budget": 10_000,  # 달러
             "limit_offset": 0.003,  # 미국 지정가 주문을 현재가에서 얼마나 유리하게 걸지
+            # 정기 실행: regular = 뉴욕 정규장 마감 전 (run_time 은 뉴욕 시각), day = 한국 낮 주간거래 (run_time 은 한국 시각)
+            "run_session": "regular",
+            # 정규장 밖에서도 감시·주문할 세션: day(주간거래), pre(프리마켓), after(애프터마켓)
+            "extended_sessions": [],
+            "day_hours": "10:00-17:30",  # 주간거래 시간 (한국 시각). 토스 앱의 실제 시간에 맞게
         },
     },
     "risk": {
@@ -82,8 +89,8 @@ DEFAULT = {
         "monthly_cost_cap_krw": 30000,
         # 회의할 종목을 AI 가 매일 고른다 (설정 종목 + 관심 종목 + 보유 + 거래대금 상위 중 숫자 규칙 통과)
         "auto_pick": True,
-        # 매매 기간: long(장기) / swing(스윙, 며칠~2주) / short(단기 1~3일). 단기는 손절·익절이 좁고 기한이 지나면 판다
-        "holding": "long",
+        # 매매 기간: auto(AI가 종목마다) / long(장기) / swing(스윙, 며칠~2주) / short(단기 1~3일). 단기는 손절·익절이 좁고 기한이 지나면 판다
+        "holding": "auto",
         # 장중 AI 긴급 재점검: 가진 종목이 급락하거나 손절선에 가까울 때만, 하루 이만큼까지 (위험을 줄이는 매도만 바로 한다)
         "live_recheck": True,
         "recheck_per_day": 5,  # 이번 달 AI 회의 비용이 이만큼 넘으면 새 회의를 열지 않는다 (0 = 제한 없음)
@@ -92,7 +99,9 @@ DEFAULT = {
     "notify": {"telegram_chat_id": "", "daily_report": True},
     "alerts": [],  # 가격 알림 [{symbol, name, op: above|below, price}]
     "max_sector_weight": 0.4,  # 한 업종 비중 경고 기준
-    "security": {"pin": True},  # 실전 주문 PIN (끄면 실전 모드 전환·직접 주문에도 묻지 않는다)
+    "security": {"pin": True},
+    # 미국 주식은 달러로만 산다. 달러가 모자라면 자동 환전하지 않고 알려서 환전 우대로 직접 바꾸게 한다
+    "fx_policy": "preferential_only",  # 실전 주문 PIN (끄면 실전 모드 전환·직접 주문에도 묻지 않는다)
     "watchlist": ["005930", "000660", "AAPL", "NVDA"],
     "investor": None,  # 투자 성향 검사 결과 (처음 실행 때 묻는다)
     "news": {"feeds": [

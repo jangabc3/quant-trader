@@ -144,6 +144,10 @@ class Store:
         self.db = sqlite3.connect(self.path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
+        # 예전 DB 에 없는 열 추가 (보유 기한)
+        cols = {r[1] for r in self.db.execute("pragma table_info(plans)")}
+        if "horizon" not in cols:
+            self.db.execute("alter table plans add column horizon integer")
         self.db.commit()
 
     def exec(self, sql: str, args: tuple = ()) -> sqlite3.Cursor:
@@ -247,10 +251,10 @@ class Store:
         return {x["symbol"] for x in r}
 
     # 포지션 계획 (손절·익절)
-    def save_plan(self, account, market, symbol, run_id, entry, stop, take) -> None:
+    def save_plan(self, account, market, symbol, run_id, entry, stop, take, horizon: int | None = None) -> None:
         self.close_plan(account, market, symbol, "replaced")
-        self.exec("insert into plans (account, market, symbol, run_id, entry, stop, take, created_at) "
-                  "values (?,?,?,?,?,?,?,?)", (account, market, symbol, run_id, entry, stop, take, now()))
+        self.exec("insert into plans (account, market, symbol, run_id, entry, stop, take, created_at, horizon) "
+                  "values (?,?,?,?,?,?,?,?,?)", (account, market, symbol, run_id, entry, stop, take, now(), horizon))
 
     def close_plan(self, account, market, symbol, reason) -> None:
         self.exec("update plans set closed_at=?, close_reason=? where account=? and market=? and symbol=? "

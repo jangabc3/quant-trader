@@ -209,3 +209,31 @@ def test_heartbeat_gap_notice(ctx, monkeypatch):
     s._heartbeat(ctx, ctx.cfg, True)
     assert s._last_exit == 0.0
     assert any("꺼져 있었어요" in r["message"] for r in ctx.store.rows("select * from events where level='notice'"))
+
+
+def test_extended_sessions_and_tick(ctx):
+    from zoneinfo import ZoneInfo
+    from qtrader.engine import kr_tick
+    from qtrader.scheduler import trading_now
+    kst = ZoneInfo("Asia/Seoul")
+    eve = datetime(2026, 10, 28, 19, 0, tzinfo=kst)  # 수요일 저녁 7시
+    assert not trading_now(ctx.cfg, Market.KR, eve)
+    ctx.cfg["markets"]["KR"]["extended"] = True
+    assert trading_now(ctx.cfg, Market.KR, eve) and not trading_now(ctx.cfg, Market.KR, eve.replace(hour=21))
+    noon = datetime(2026, 10, 28, 12, 0, tzinfo=kst)
+    assert not trading_now(ctx.cfg, Market.US, noon)
+    ctx.cfg["markets"]["US"]["extended_sessions"] = ["day"]
+    assert trading_now(ctx.cfg, Market.US, noon)
+    assert kr_tick(70_345) == 70_300 and kr_tick(1_234) == 1_234 and kr_tick(250_700) == 250_500
+
+
+def test_us_buy_skipped_when_dollars_short(ctx, monkeypatch):
+    from qtrader import engine
+    ctx.broker.client.buying_power = lambda cur: 100.0
+    orders = [engine.OrderRequest(Market.US, "AAPL", engine.Side.BUY, 5, 200.0, "ai", "r")]
+    monkeypatch.setattr(engine, "plan_orders", lambda *a, **k: orders)
+    monkeypatch.setattr(engine, "panel", lambda *a, **k: {"AAPL": __import__("pandas").DataFrame({"close": [200.0] * 300})})
+    ctx.cfg["markets"]["US"].update(enabled=True, strategy="trend")
+    r = engine.run_market(ctx, Market.US, force=True)
+    assert r["orders"][0]["status"] == "skipped_fx" and not ctx.broker.sent
+    assert any("환전 우대" in e["message"] for e in ctx.store.rows("select * from events where level='notice'"))

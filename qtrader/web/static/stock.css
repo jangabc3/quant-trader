@@ -20,7 +20,7 @@
 .st-name { font-size: 22px; font-weight: 800; }
 .st-price b { font-size: 30px; font-weight: 800; margin-right: 10px; font-variant-numeric: tabular-nums; transition: color .3s; }
 .st-price span { font-size: 16px; font-weight: 700; }
-.flash-up { color: var(--red); } .flash-down { color: var(--blue); }
+
 .st-tags { display: flex; gap: 6px; }
 .st-actions { margin-left: auto; display: flex; gap: 8px; }
 #st-watch.on { color: var(--red); border-color: var(--red); }

@@ -40,7 +40,7 @@ function pfCompute(trades, open = 0, base = null) {
 function pfFiltered() {
   const d = pf.data;
   if (!d || pf.period === "all") return d;
-  const since = new Date(); since.setDate(since.getDate() - (pf.period === "30" ? 30 : 7));
+  const since = new Date(); since.setDate(since.getDate() - Number(pf.period) + 1);
   const s = since.toLocaleDateString("sv-SE");
   return pfCompute(d.trades.filter((t) => t.sell_date >= s), d.summary.open, d.summary.base);
 }
@@ -72,7 +72,7 @@ function renderPerf() {
   box.innerHTML = `
     ${pf.demo ? `<div class="pf-demo-note"><i data-lucide="info"></i> 예시 화면이에요. 실제 기록이 아닙니다. <button id="pf-demo-off">닫기</button></div>` : ""}
     <div class="pf-hero ${up ? "up" : "down"}">
-      <div><span class="note">총 손익 ${pf.period === "all" ? "" : pf.period === "30" ? "· 최근 30일" : "· 최근 7일"}</span>
+      <div><span class="note">총 손익 ${pf.period === "all" ? "" : pf.period === "1" ? "· 오늘" : `· 최근 ${pf.period}일`}</span>
         <b id="pf-total" class="${cls(S.total)}">${fm(S.total)}</b>
         <div class="pf-sub">${S.total_rate != null ? `<span class="pf-chip ${cls(S.total)}">${pct(S.total_rate)}</span>` : ""}
           <span>실현 ${fm(S.realized)}</span><span>· 평가 ${fm(S.open)}</span></div></div>

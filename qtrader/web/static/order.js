@@ -54,7 +54,7 @@ function ticketShell() {
   $("#tk-price").oninput = (e) => { tk.price = Number(e.target.value.replace(/,/g, "")) || 0; ticketDraw(false); };
   $("#tk-qty").oninput = (e) => { tk.qty = Math.floor(Number(e.target.value.replace(/,/g, "")) || 0); ticketDraw(false); };
   $("#tk-go").onclick = confirmOrder;
-  const H = { long: [7, 15], swing: [5, 10], short: [2.5, 5] }[state.config?.ai?.holding || "long"] || [7, 15];
+  const H = { auto: [7, 15], long: [7, 15], swing: [5, 10], short: [2.5, 5] }[state.config?.ai?.holding || "auto"] || [7, 15];
   $("#tk-stop").value = H[0]; $("#tk-take").value = H[1];
   ["#tk-stop", "#tk-take", "#tk-guard-on"].forEach((s) => $(s).addEventListener("input", () => ticketDraw(false)));
 }
@@ -96,7 +96,7 @@ function ticketDraw(syncInputs = true) {
   const over = tk.qty > maxQty();
   go.disabled = !tk.qty || !p || over;
   $("#tk-note").innerHTML = over ? `<span class="down">${buy ? "주문 가능 금액(또는 1회 주문 한도)을 넘었어요" : "판매 가능 수량을 넘었어요"}</span>`
-    : `${i.live ? "<b class='up'>실전 계좌</b> · 실제 돈으로 주문됩니다" : "가상 계좌 · 내 PC 안에서만 체결됩니다"}${i.kill_switch ? " · 긴급 정지는 자동매매만 막고 직접 주문은 막지 않아요" : ""}`;
+    : `${i.live ? "<b class='up'>실전 계좌</b> · 실제 돈으로 주문됩니다" : "가상 계좌 · 내 PC 안에서만 체결됩니다"}${i.market === "US" && buy ? " · 달러로만 사요 (모자라면 환전 우대로 먼저 바꿔 주세요)" : ""}${i.kill_switch ? " · 긴급 정지는 자동매매만 막고 직접 주문은 막지 않아요" : ""}`;
 }
 
 async function ticketLoad(sym) {
