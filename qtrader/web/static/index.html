@@ -74,7 +74,6 @@
         <div class="seg" id="rank-market"><button data-v="KR" class="on">국내</button><button data-v="US">해외</button></div>
         <div class="seg" id="rank-kind">
           <button data-v="watch" class="watch-tab"><i data-lucide="heart"></i> 관심</button>
-          <button data-v="toss_amount">토스증권 거래대금</button><button data-v="toss_volume">토스증권 거래량</button>
           <button data-v="amount" class="on">거래대금</button><button data-v="volume">거래량</button>
           <button data-v="gainers">급상승</button><button data-v="losers">급하락</button>
         </div>
@@ -119,6 +118,7 @@
           <div class="st-info" id="st-info"></div>
         </div>
         <div class="st-side">
+          <div class="panel ticket" id="ticket"><p class="note">불러오는 중...</p></div>
           <div class="panel"><h3>호가 <small id="ob-time"></small></h3><div id="st-ob" class="ob"></div></div>
           <div class="panel"><h3>체결</h3><div id="st-trades" class="trades"></div></div>
         </div>
@@ -427,6 +427,7 @@
 <script src="/static/app.js?v=__BUILD__"></script>
 <script src="/static/market.js?v=__BUILD__"></script>
 <script src="/static/stock.js?v=__BUILD__"></script>
+<script src="/static/order.js?v=__BUILD__"></script>
 <script src="/static/news.js?v=__BUILD__"></script>
 <script src="/static/dash.js?v=__BUILD__"></script>
 <script src="/static/office.js?v=__BUILD__"></script>
