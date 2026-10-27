@@ -152,3 +152,69 @@ details[open] > :not(summary) { animation: openDown .28s ease-out; }
 .skeleton { background: linear-gradient(90deg, var(--panel2) 25%, #222c38 37%, var(--panel2) 63%); background-size: 400% 100%; animation: shimmer 1.3s infinite; border-radius: 8px; }
 @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* ===== 설정 다시 짜기 ===== */
+.cfg-nav { position: sticky; top: 56px; z-index: 5; display: flex; gap: 6px; flex-wrap: wrap; padding: 8px; background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(6px); border-radius: 12px; }
+.cfg-nav a { padding: 6px 12px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); text-decoration: none; font-size: 13px; }
+.cfg-nav a:hover { color: var(--text); border-color: var(--blue); }
+.cfg-wrap > .panel { scroll-margin-top: 110px; }
+.hint { display: block; font-style: normal; font-size: 12px; color: var(--muted); font-weight: 400; margin: 2px 0 4px; }
+label.check .hint { display: inline; margin-left: 6px; }
+.mode-now { display: flex; gap: 14px; align-items: center; padding: 16px 18px; border-radius: 14px; border: 2px solid; margin-bottom: 10px; }
+.mode-now.paper { border-color: rgba(47,191,113,.55); background: rgba(47,191,113,.08); }
+.mode-now.live { border-color: var(--red); background: rgba(240,68,82,.1); }
+.mode-now .mn-ico { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; flex: none; }
+.mode-now.paper .mn-ico { background: rgba(47,191,113,.18); color: var(--green); }
+.mode-now.live .mn-ico { background: rgba(240,68,82,.2); color: var(--red); }
+.mode-now .mn-txt { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.mode-now .mn-txt b { font-size: 18px; }
+.mode-now .mn-txt span { color: var(--muted); font-size: 13px; }
+button.danger { background: rgba(240,68,82,.14); border: 1px solid var(--red); color: #ff8f99; }
+button.danger:disabled { opacity: .45; }
+.live-strip { position: sticky; top: 0; z-index: 60; display: flex; gap: 10px; align-items: center; justify-content: center; padding: 6px 12px;
+  background: #b4232f; color: #fff; font-weight: 700; font-size: 13px; }
+.live-strip svg { width: 16px; height: 16px; }
+.live-strip button { background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.5); color: #fff; padding: 3px 10px; font-size: 12px; }
+body.is-live header.top { box-shadow: inset 0 -2px 0 var(--red); }
+.tk-go.is-live, button.is-live { outline: 2px solid var(--red); outline-offset: 2px; }
+.live-list { margin: 8px 0 12px; padding-left: 18px; line-height: 1.7; }
+.bad-note { color: #ff8f99; background: rgba(240,68,82,.1); padding: 8px 10px; border-radius: 8px; }
+.kis-modes { margin-top: 8px; }
+.key-guide { display: grid; gap: 4px; margin: 6px 0 12px; font-size: 13px; }
+.key-guide > div { display: flex; gap: 8px; align-items: baseline; }
+.key-guide b.req, .key-guide b.rec, .key-guide b.opt { flex: none; font-size: 11px; padding: 1px 8px; border-radius: 99px; }
+.key-guide b.req { background: rgba(240,68,82,.15); color: #ff8f99; }
+.key-guide b.rec { background: rgba(49,130,246,.15); color: #7fb0ff; }
+.key-guide b.opt { background: var(--panel2); color: var(--muted); }
+.key-guide span { color: var(--muted); } .key-guide span b { color: var(--text); }
+.how-intro { font-size: 14px; color: var(--text); background: var(--panel2); padding: 10px 12px; border-radius: 10px; }
+h4.step { display: flex; gap: 8px; align-items: center; margin: 16px 0 8px; font-size: 14px; }
+h4.step > span { width: 22px; height: 22px; border-radius: 50%; background: var(--blue); color: #fff; display: grid; place-items: center; font-size: 12px; }
+.mkt-cfg { opacity: .75; transition: opacity .2s, border-color .2s; }
+.mkt-cfg.on { opacity: 1; border-color: rgba(49,130,246,.5); }
+.mkt-head { display: flex !important; align-items: center; gap: 8px; margin-bottom: 10px; cursor: pointer; }
+.mkt-head b { font-size: 16px; flex: 1; } .mkt-head .flag { font-size: 18px; }
+.sw { position: relative; width: 42px; height: 24px; flex: none; }
+.sw input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.sw i { position: absolute; inset: 0; background: var(--line); border-radius: 99px; transition: background .2s; pointer-events: none; }
+.sw i::after { content: ""; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .2s; }
+.sw input:checked + i { background: var(--blue); } .sw input:checked + i::after { transform: translateX(18px); }
+.sw-txt { font-style: normal; font-size: 12px; color: var(--muted); min-width: 64px; }
+.safe-grid, .adv-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px; margin-bottom: 10px; }
+@media (max-width: 900px) { .safe-grid, .adv-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .safe-grid, .adv-grid { grid-template-columns: 1fr; } .mode-now { flex-wrap: wrap; } }
+.pct-in { display: flex; align-items: center; gap: 6px; } .pct-in input { flex: 1; min-width: 0; }
+.adv-group { border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-top: 10px; background: #0f141b; }
+.adv-group > summary { cursor: pointer; display: flex; gap: 8px; align-items: center; font-weight: 700; }
+.adv-group > summary span { font-weight: 400; color: var(--muted); font-size: 13px; }
+.adv-group > summary svg { width: 16px; height: 16px; color: var(--blue); }
+.adv-group[open] > summary { margin-bottom: 10px; }
+label.wide { display: block; } label.wide textarea { width: 100%; }
+.upd-box { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.upd-box h4 { margin: 0 0 6px; display: flex; gap: 6px; align-items: center; }
+#cfg-dirty { color: var(--amber); display: inline-flex; gap: 4px; align-items: center; }
+#cfg-dirty.hidden { display: none; }
+.mode-now { flex-wrap: wrap; }
+.mode-now .mn-txt { flex: 1 1 220px; min-width: 0; }
+.mode-now > button { flex: 0 0 auto; }
+@media (max-width: 560px) { .mode-now > button { flex: 1 1 100%; } .cfg-nav { top: 0; } }
