@@ -60,9 +60,9 @@ function buildChat() {
   const root = document.createElement("div");
   root.id = "qbi";
   root.innerHTML = `
-    <div class="qbi-panel hidden" id="qbi-panel">
+    <div class="qbi-panel" id="qbi-panel" aria-hidden="true">
       <div class="qbi-head"><div class="qbi-mini">${qbiSvg("m")}</div>
-        <div><b>큐비</b><span>AI 애널리스트 · 시세·계좌·회의 결과를 확인하고 답해요</span></div>
+        <div><b>큐비</b><span>시세·계좌·회의 결과를 확인하고 답해요</span></div>
         <button class="qbi-x" id="qbi-clear" title="대화 지우기"><i data-lucide="eraser"></i></button>
         <button class="qbi-x" id="qbi-close" title="닫기"><i data-lucide="x"></i></button></div>
       <div class="qbi-log" id="chat-log"></div>
@@ -130,11 +130,15 @@ function clampChat() {
 
 function toggleChat(force) {
   chat.open = force ?? !chat.open;
-  $("#qbi-panel").classList.toggle("hidden", !chat.open);
+  // 열기·닫기는 CSS 가 아래에서 살짝 올라오며 나타나게 한다 (.open)
+  const panel = $("#qbi-panel");
+  panel.classList.toggle("open", chat.open);
+  panel.setAttribute("aria-hidden", String(!chat.open));
   $("#qbi-dot").classList.add("hidden");
   if (chat.open) {
-    $("#chat-input").focus();
-    window.animateIn && animateIn("#qbi-panel", { y: 12, duration: 260 });
+    $("#chat-input").focus({ preventScroll: true });
+    // 최근 말풍선이 차례로 떠오르게
+    window.animateIn && animateIn([...$$("#chat-log .msg")].slice(-5), { y: 6, step: 40, duration: 240 });
   }
 }
 

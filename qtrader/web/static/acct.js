@@ -180,3 +180,29 @@ $("#cond-list")?.addEventListener("click", async (e) => {
 });
 const _loadDashExtras4 = window.loadDashExtras;
 window.loadDashExtras = async () => { await Promise.all([_loadDashExtras4(), loadConds()]); };
+
+// 가상 계좌 처음부터 다시 (가상매매일 때만 보인다). 확인은 화면 안 창으로, '다시 시작'을 적어야 진행
+const _renderDash6 = window.renderDash;
+window.renderDash = (d) => {
+  _renderDash6(d);
+  const paper = state.status?.mode === "paper" && d.overview?.broker === "paper";
+  $("#paper-bar")?.classList.toggle("hidden", !paper);
+};
+$("#paper-reset")?.addEventListener("click", async () => {
+  const all = $("#paper-reset-mkt").value === "ALL";
+  const m = dash.market;
+  const which = all ? "국내·미국 가상 계좌 둘 다" : `${MARKET_NAME[m]} 가상 계좌`;
+  const cfg = state.config || await api("/api/config").catch(() => null);
+  const cash = cfg?.paper?.initial_cash || {};
+  const start = all ? `국내 ${money(cash.KR || 0, "KR")} · 미국 ${money(cash.US || 0, "US")}` : money(cash[m] || 0, m);
+  const typed = await ask(`${which}를 처음 상태로 되돌려요.\n\n• 가진 주식·주문 기록·자산 추이가 지워지고 현금이 ${start}으로 돌아가요\n• 손절·익절 감시와 가상 조건 주문도 꺼져요\n• AI 회의 기록과 이벤트 기록은 그대로 남아요\n\n되돌릴 수 없어요. 계속하려면 아래에 '다시 시작'이라고 적어 주세요.`,
+    { title: "가상 계좌 처음부터 다시", danger: true, ok: "처음부터 다시", input: "확인 글자", value: "" });
+  if (typed === null) return;
+  if (typed !== "다시 시작") { toast("'다시 시작'을 똑같이 적어야 진행돼요. 아무것도 바꾸지 않았어요", "info"); return; }
+  try {
+    await api("/api/paper/reset", { method: "POST", body: { market: all ? "ALL" : m } });
+    toast(`${which}를 처음부터 다시 시작했어요`, "rotate-ccw");
+    state.plans = {};
+    await refresh();
+  } catch (e) { toast(e.message); }
+});

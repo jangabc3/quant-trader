@@ -45,6 +45,10 @@ class ToggleIn(BaseModel):
     on: bool
 
 
+class PaperResetIn(BaseModel):
+    market: str = "ALL"  # KR, US, ALL
+
+
 class SecretIn(BaseModel):
     kind: str
     key: str
@@ -708,19 +712,47 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         return {"ok": True, "status": status, "message": r.message, "price": r.filled_price or body.price or ref, "order_id": r.broker_order_id}
 
     @app.get("/api/picks")
-    def picks(market: str = "KR", refresh: bool = False):
-        """오늘 AI 회의 후보. 아직 없으면 지금 고른다 (숫자 규칙만 쓰고 AI 호출은 없다)."""
+    def picks(market: str = "KR", refresh: bool = False, stats: bool = False):
+        """오늘 AI 회의 후보. 아직 없으면 지금 고른다 (숫자 규칙만 쓰고 AI 호출은 없다).
+        stats=true 면 {items, excluded}: 규칙별로 몇 종목이 빠졌는지 같이 준다 (기본 응답은 예전처럼 목록)."""
         from ..engine import trade_date
-        from ..screener import todays
+        from ..screener import stats_key, todays
         c = ctx()
         m = Market(market)
         today = trade_date(m)
         if refresh:
-            c.store.exec("delete from state where key=?", (f"picks_{m.value}_{today}",))
-        rows = todays(c, m, today, int(c.cfg["ai"]["max_symbols_per_day"]))
+            c.store.exec("delete from state where key in (?,?)", (f"picks_{m.value}_{today}", stats_key(m, today)))
+        st: dict = {}
+        rows = todays(c, m, today, int(c.cfg["ai"]["max_symbols_per_day"]), st)
         met = {r["symbol"]: r for r in c.store.ai_runs(200) if r["trade_date"] == today}
-        return [p | {"name": name_of(p["symbol"]), "met": bool(met.get(p["symbol"])),
-                     "rating": (met.get(p["symbol"]) or {}).get("rating")} for p in rows]
+        items = [p | {"name": name_of(p["symbol"]), "met": bool(met.get(p["symbol"])),
+                      "rating": (met.get(p["symbol"]) or {}).get("rating")} for p in rows]
+        return {"items": items, "excluded": st or None} if stats else items
+
+    # 가상 계좌 처음부터 다시 (가상매매일 때만)
+    @app.post("/api/paper/reset", dependencies=[Depends(need_token)])
+    def paper_reset(body: PaperResetIn):
+        from .. import conditional
+        c = ctx()
+        if c.cfg.get("mode") != "paper" or c.broker.name != "paper":
+            raise HTTPException(400, "가상매매 모드에서만 가상 계좌를 처음부터 다시 시작할 수 있어요")
+        want = body.market.upper()
+        if want not in ("KR", "US", "ALL"):
+            raise HTTPException(400, "시장은 KR, US, ALL 중 하나예요")
+        out = {}
+        for m in (Market.KR, Market.US):
+            if want not in ("ALL", m.value):
+                continue
+            cash = float(c.cfg["paper"]["initial_cash"].get(m.value) or 0)
+            out[m.value] = c.store.reset_paper(c.broker.name, m.value, cash)
+            for r in conditional._load(c.store):  # 가상 계좌에 걸어 둔 조건 주문도 끈다
+                if r.get("broker") == c.broker.name and r.get("market") == m.value and r.get("status") == "watching":
+                    conditional.cancel(c, r["id"])
+            fmt = f"{cash:,.0f}원" if m == Market.KR else f"${cash:,.2f}"
+            r = out[m.value]
+            c.store.log("warn", "paper", f"{'국내' if m == Market.KR else '미국'} 가상 계좌를 처음부터 다시 시작: 현금 {fmt}, "
+                        f"보유 {r['positions']}종목·주문 기록 {r['orders']}건 지움, 손절·익절 계획 {r['plans']}개 닫음")
+        return {"ok": True, "markets": out}
 
     # 실시간 사무실 현황판
     @app.get("/api/live")
