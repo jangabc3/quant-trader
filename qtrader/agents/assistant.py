@@ -220,6 +220,19 @@ class Assistant:
         raise ValueError(f"알 수 없는 도구 {name}")
 
     def chat(self, thread_id: str | None, text: str, page: str = "") -> dict:
+        """한 번에 답 (스트리밍을 모아서). 실패하면 LLMError."""
+        out = {"thread_id": thread_id, "answer": "", "tools": [], "sources": []}
+        for ev in self.chat_stream(thread_id, text, page):
+            if ev["type"] == "error":
+                raise LLMError(ev["message"])
+            if ev["type"] == "done":
+                out = {k: ev[k] for k in ("thread_id", "answer", "tools", "sources")}
+        return out
+
+    def chat_stream(self, thread_id: str | None, text: str, page: str = ""):
+        """답을 쓰는 대로 내보낸다: start → (tool → text …) → done | error.
+        글자가 생기는 즉시 화면에 보여서 기다리는 느낌이 줄고, 여러 도구는 동시에 실행한다."""
+        from concurrent.futures import ThreadPoolExecutor
         cfg = self.cfg_loader()
         ai = cfg["ai"]
         tid = thread_id or uuid.uuid4().hex[:10]
@@ -230,52 +243,85 @@ class Assistant:
             msgs = self.threads.setdefault(tid, [])
             ctx_line = f" ({page})" if page else ""
             msgs.append({"role": "user", "content": f"[{datetime.now():%Y-%m-%d %H:%M}{ctx_line}] {text}"})
+        yield {"type": "start", "thread_id": tid}
+        if notice:
+            yield {"type": "text", "text": notice}
         used: list[str] = []
         sources: list[dict] = []
+        answer = notice
         tools = TOOLS + ([WEB_SEARCH] if ai.get("web_research", True) else [])
+        req = dict(model=ai.get("quick_model") or ai.get("model"), max_tokens=16000,
+                   system=f"{SYSTEM}\n\n# 사용자 투자 프로필\n{ai.get('profile') or PROFILE_DEFAULT}",
+                   tools=tools, cache_control={"type": "ephemeral"},
+                   output_config={"effort": ai.get("chat_effort") or "medium"}, betas=BETAS, fallbacks="default")
         for _ in range(8):
             try:
-                resp = self.client.beta.messages.create(
-                    model=ai.get("quick_model") or ai.get("model"), max_tokens=16000,
-                    system=f"{SYSTEM}\n\n# 사용자 투자 프로필\n{ai.get('profile') or PROFILE_DEFAULT}",
-                    messages=msgs, tools=tools, cache_control={"type": "ephemeral"},
-                    output_config={"effort": ai.get("chat_effort") or "medium"}, betas=BETAS, fallbacks="default")
-            except TypeError as e:  # 키가 어디에도 없으면 SDK 가 요청을 만들지 못한다
-                if "authentication" in str(e).lower():
+                with self.client.beta.messages.stream(messages=msgs, **req) as st:
+                    for ev in st:
+                        if ev.type == "text":
+                            answer += ev.text
+                            yield {"type": "text", "text": ev.text}
+                    resp = st.get_final_message()
+            except Exception as e:
+                if len(msgs) and msgs[-1].get("role") == "user" and isinstance(msgs[-1]["content"], str):
                     with self.lock:
-                        msgs.pop()
-                    raise LLMError("큐비를 쓰려면 설정 → API 키에서 Claude API 키를 저장해 주세요")
-                raise
-            except anthropic.AuthenticationError:
-                raise LLMError("Claude API 키가 올바르지 않습니다. 설정에서 키를 확인하세요")
-            except anthropic.RateLimitError:
-                raise LLMError("Claude API 호출 한도에 걸렸습니다. 잠시 후 다시 시도하세요")
-            except anthropic.APIStatusError as e:
-                raise LLMError(f"Claude API 오류 {e.status_code}: {e.message}")
-            except anthropic.APIConnectionError:
-                raise LLMError("Claude API 에 연결할 수 없습니다")
+                        msgs.pop()  # 실패한 질문은 대화에 남기지 않는다
+                yield {"type": "error", "message": _llm_message(e)}
+                return
             msgs.append({"role": "assistant", "content": resp.content})
             for b in resp.content:
                 if b.type == "web_search_tool_result" and isinstance(b.content, list):
                     sources += [{"title": r.title, "url": r.url} for r in b.content]
+                if b.type == "server_tool_use":
+                    yield {"type": "tool", "name": "web_search", "label": TOOL_KO.get("web_search")}
             if resp.stop_reason == "pause_turn":
                 continue
             calls = [b for b in resp.content if b.type == "tool_use"]
             if resp.stop_reason != "tool_use" or not calls:
-                answer = "".join(b.text for b in resp.content if b.type == "text").strip()
                 if resp.stop_reason == "refusal":
                     answer = "이 요청에는 답할 수 없습니다."
                 elif resp.stop_reason == "max_tokens":
-                    answer += "\n\n(답이 길어 여기서 끊겼어요. '이어서'라고 보내면 계속할게요.)"
-                return {"thread_id": tid, "answer": notice + answer, "tools": used, "sources": sources[:8]}
-            results = []
+                    tail = "\n\n(답이 길어 여기서 끊겼어요. '이어서'라고 보내면 계속할게요.)"
+                    answer += tail
+                    yield {"type": "text", "text": tail}
+                yield {"type": "done", "thread_id": tid, "answer": answer.strip(), "tools": used, "sources": sources[:8]}
+                return
             for c in calls:
                 used.append(c.name)
+                yield {"type": "tool", "name": c.name, "label": TOOL_KO.get(c.name, c.name)}
+
+            def run(c):
                 try:
-                    out, err = self.call(c.name, dict(c.input)), False
+                    return self.call(c.name, dict(c.input)), False
                 except Exception as e:
-                    out, err = f"도구 실행 실패: {e}", True
-                results.append({"type": "tool_result", "tool_use_id": c.id, "content": out[:20000], "is_error": err})
-            msgs.append({"role": "user", "content": results})
-        return {"thread_id": tid, "answer": "확인할 것이 너무 많아 멈췄습니다. 질문을 나눠 주세요.", "tools": used,
-                "sources": sources[:8]}
+                    return f"도구 실행 실패: {e}", True
+            with ThreadPoolExecutor(max_workers=min(6, len(calls))) as pool:  # 여러 도구를 동시에
+                outs = list(pool.map(run, calls))
+            msgs.append({"role": "user", "content": [{"type": "tool_result", "tool_use_id": c.id, "content": o[:20000], "is_error": err}
+                                                     for c, (o, err) in zip(calls, outs)]})
+            if answer and not answer.endswith("\n"):
+                answer += "\n\n"
+                yield {"type": "text", "text": "\n\n"}
+        yield {"type": "done", "thread_id": tid, "answer": (answer + "\n\n확인할 것이 너무 많아 멈췄습니다. 질문을 나눠 주세요.").strip(),
+               "tools": used, "sources": sources[:8]}
+
+
+TOOL_KO = {"market_overview": "시장 현황", "rankings": "순위", "quotes": "시세", "chart_brief": "차트 분석", "portfolio": "내 계좌",
+           "recent_orders": "주문 내역", "ai_decision": "AI 회의 결론", "start_meeting": "회의 시작", "web_search": "웹 검색",
+           "today_picks": "오늘 후보", "performance": "수익 리포트", "trades_why": "매매 이유", "my_rules": "내 기준", "live_board": "장중 감시",
+           "industries": "뜨는 산업", "investor_flows": "외국인·기관", "stock_news": "뉴스", "app_help": "사용법", "stock_profile": "종목 정보",
+           "financials": "재무·밸류에이션", "disclosures": "공시"}
+
+
+def _llm_message(e: Exception) -> str:
+    if isinstance(e, TypeError) and "authentication" in str(e).lower():
+        return "큐비를 쓰려면 설정 → API 키에서 Claude API 키를 저장해 주세요"
+    if isinstance(e, anthropic.AuthenticationError):
+        return "Claude API 키가 올바르지 않습니다. 설정에서 키를 확인하세요"
+    if isinstance(e, anthropic.RateLimitError):
+        return "Claude API 호출 한도에 걸렸습니다. 잠시 후 다시 시도하세요"
+    if isinstance(e, anthropic.APIStatusError):
+        return f"Claude API 오류 {e.status_code}: {e.message}"
+    if isinstance(e, anthropic.APIConnectionError):
+        return "Claude API 에 연결할 수 없습니다"
+    return f"큐비가 답하지 못했어요: {e}"

@@ -517,3 +517,9 @@ nav { scrollbar-width: none; } nav::-webkit-scrollbar { display: none; }
   background: #3182f6; color: #fff; border: 2px solid #0b0f14; z-index: 2; } .dt-pin.past { background: #4a5666; }
 .dt-ev { top: 24px !important; } .dt-now { top: 12px !important; bottom: 26px !important; } .dt-now::after { top: 10px !important; }
 .dt-mark { display: none; }
+
+/* 큐비: 확인 중인 자료 칩이 반짝, 쓰는 중인 답 끝에 커서 */
+.qbi-tools span.on { animation: qbi-pulse 1s ease-in-out infinite; border-color: var(--blue); color: var(--text); }
+@keyframes qbi-pulse { 50% { opacity: .55; } }
+.msg.bot.live .report-text::after { content: "▍"; color: var(--blue); animation: qbi-pulse .8s steps(2) infinite; margin-left: 1px; }
+.qbi-tools:empty { display: none; }

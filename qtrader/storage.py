@@ -141,8 +141,14 @@ class Store:
     def __init__(self, path: Path | str):
         self.path = str(path)
         self._lock = threading.Lock()
-        self.db = sqlite3.connect(self.path, check_same_thread=False)
+        # 스케줄러·화면 요청·실시간 스트림이 같은 파일을 함께 쓴다: WAL(읽기와 쓰기 동시) + 잠겨 있으면 30초까지 기다리기
+        self.db = sqlite3.connect(self.path, check_same_thread=False, timeout=30)
         self.db.row_factory = sqlite3.Row
+        try:
+            self.db.execute("pragma journal_mode=wal")
+            self.db.execute("pragma busy_timeout=30000")
+        except sqlite3.Error:
+            pass
         self.db.executescript(SCHEMA)
         # 예전 DB 에 없는 열 추가 (보유 기한)
         cols = {r[1] for r in self.db.execute("pragma table_info(plans)")}

@@ -198,6 +198,43 @@ function modal(html) {
   $("#modal-body").innerHTML = html;
   $("#modal").classList.remove("hidden");
 }
+// 브라우저 기본 창(confirm·prompt·alert)은 앱 안 브라우저에서 보이지도 않고 바로 '취소'가 된다.
+// 그래서 확인·입력은 모두 화면 안 창으로 묻는다. ask(...) 는 확인=true, 입력이 있으면 입력값(취소=null).
+function ask(msg, { ok = "확인", cancel = "취소", danger = false, input = null, value = "", title = "" } = {}) {
+  return new Promise((resolve) => {
+    let el = $("#ask");
+    if (!el) { el = document.createElement("div"); el.id = "ask"; el.className = "ask-back"; document.body.appendChild(el); }
+    el.innerHTML = `<div class="ask-box" role="dialog" aria-modal="true">${title ? `<h3>${esc(title)}</h3>` : ""}
+      <p>${esc(msg).replace(/\n/g, "<br>")}</p>
+      ${input !== null ? `<label class="ask-in">${esc(input)}<input id="ask-in" value="${esc(value)}" autocomplete="off"></label>` : ""}
+      <div class="ask-acts">${cancel ? `<button data-a="no">${esc(cancel)}</button>` : ""}<button class="${danger ? "danger" : "primary"}" data-a="yes">${esc(ok)}</button></div></div>`;
+    el.classList.remove("hidden");
+    const done = (yes) => {
+      el.classList.add("hidden");
+      document.removeEventListener("keydown", key, true);
+      resolve(input !== null ? (yes ? $("#ask-in").value.trim() : null) : yes);
+    };
+    // 진짜 누름만 받는다: 같은 단추 위에서 눌렀다 뗀 클릭, 또는 키보드(Enter·Space)로 누른 단추.
+    // (화면 캡처 도구 등이 보내는 홀로 된 클릭이 '확인'으로 처리돼 자동매매가 켜진 일이 있었다)
+    let downOn = null;
+    el.onpointerdown = (e) => { downOn = e.target.closest("[data-a]") || (e.target === el ? el : null); };
+    const key = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); done(false); }
+      else if (e.key === "Enter" && document.activeElement?.id === "ask-in") { e.preventDefault(); done(true); }
+    };
+    document.addEventListener("keydown", key, true);
+    el.onclick = (e) => {
+      const b = e.target.closest("[data-a]");
+      const keyboard = e.detail === 0 && b && document.activeElement === b;
+      if (b && (downOn === b || keyboard)) done(b.dataset.a === "yes");
+      else if (e.target === el && downOn === el && cancel) done(false);
+      downOn = null;
+    };
+    setTimeout(() => ($("#ask-in") || el.querySelector(danger ? '[data-a="no"]' : '[data-a="yes"]') || el.querySelector("[data-a]"))?.focus(), 30);
+  });
+}
+const tell = (msg) => ask(msg, { cancel: null });
+window.ask = ask;
 $("#modal-x").onclick = () => $("#modal").classList.add("hidden");
 $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") $("#modal").classList.add("hidden"); });
 
@@ -381,11 +418,11 @@ document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-appr]");
   if (!b) return;
   const ok = b.dataset.ok === "1";
-  if (ok && LIVE.has(state.status?.mode) && prompt("실제 돈으로 주문합니다. 진행하려면 '실전주문' 이라고 입력하세요.") !== "실전주문") return;
+  if (ok && LIVE.has(state.status?.mode) && (await ask("실제 돈으로 주문합니다. 진행하려면 아래 칸에 '실전주문' 이라고 입력하세요.", { input: "확인 문구", danger: true, ok: "실전 주문" })) !== "실전주문") return;
   try {
     const r = await api(`/api/approvals/${b.dataset.appr}`, { method: "POST", body: { approve: ok } });
-    alert(ok ? `주문 결과: ${r.status} ${r.message || ""}` : "거절했습니다.");
-  } catch (err) { alert(err.message); }
+    toast(ok ? `주문 결과: ${r.status} ${r.message || ""}` : "거절했습니다.");
+  } catch (err) { toast(err.message); }
   refresh();
 });
 
@@ -398,8 +435,8 @@ async function runNow(dry) {
   const m = $("#run-market").value;
   const s = state.status;
   if (!dry) {
-    if (!confirm(`${MODE_NAME[s.mode]} 계좌로 ${MARKET_NAME[m]} 주문을 지금 냅니다. 계속할까요?`)) return;
-    if (LIVE.has(s.mode) && prompt("실제 돈으로 주문합니다. 진행하려면 '실전주문' 이라고 입력하세요.") !== "실전주문") return;
+    if (!(await ask(`${MODE_NAME[s.mode]} 계좌로 ${MARKET_NAME[m]} 주문을 지금 냅니다. 계속할까요?`))) return;
+    if (LIVE.has(s.mode) && (await ask("실제 돈으로 주문합니다. 진행하려면 아래 칸에 '실전주문' 이라고 입력하세요.", { input: "확인 문구", danger: true, ok: "실전 주문" })) !== "실전주문") return;
   }
   $("#run-out").textContent = "실행 중...";
   try {
@@ -424,8 +461,8 @@ function formatRun(r) {
 }
 
 $("#dry-btn").onclick = () => runNow(true);
-$("#run-btn").onclick = () => {
-  if (!confirm("실행 시각을 기다리지 않고 지금 바로 주문까지 실행합니다. 진행할까요?")) return;
+$("#run-btn").onclick = async () => {
+  if (!(await ask("실행 시각을 기다리지 않고 지금 바로 주문까지 실행합니다. 진행할까요?"))) return;
   $("#run-btn").closest("details").open = false;
   runNow(false);
 };
@@ -435,14 +472,14 @@ $("#auto-btn").onclick = async () => {
   if (on) {
     const c = state.config || await api("/api/config");
     const lines = Object.entries(c.markets).filter(([, mc]) => mc.enabled).map(([m, mc]) =>
-      `· ${MARKET_NAME[m]}: ${STRAT_NAME[mc.strategy]} 전략, 매 거래일 ${mc.run_time}(${m === "KR" ? "한국" : "뉴욕"} 시간), 한도 ${money(mc.budget, m)}`);
+      `· ${MARKET_NAME[m]}: ${STRAT_NAME[mc.strategy]} 전략, 매 거래일 ${mc.run_time}(${m === "KR" ? "한국" : "뉴욕"} 시간), 한도 ${m === "US" ? usdWithKrw(mc.budget) : money(mc.budget, m)}`);
     const rules = c.markets.KR.strategy === "ai" || c.markets.US.strategy === "ai"
       ? "\n· AI 회의 결과가 매수여도 체크리스트(추세·모멘텀·과열·변동성·손익비·팩트체크)를 모두 넘어야 삽니다.\n· 산 종목은 손절가·익절가에 닿으면 자동으로 팝니다." + (c.ai.require_approval ? "\n· 주문은 승인 대기에 먼저 올라오고, 근거를 보고 승인해야 나갑니다." : "")
       : "";
-    if (!confirm(`${MODE_NAME[s.mode]} 계좌로 자동매매를 시작합니다.\n\n${lines.join("\n")}${rules}\n\n종목당 최대 ${Math.round(c.risk.max_weight * 100)}%, 하루 손실 ${Math.round(c.risk.daily_loss_limit * 100)}% 에 닿으면 긴급 정지(새로 사지 않음)가 켜집니다. 계속할까요?`)) return;
-    if (LIVE.has(s.mode) && prompt("실전 자동매매입니다. 진행하려면 '실전주문' 이라고 입력하세요.") !== "실전주문") return;
+    if (!(await ask(`${MODE_NAME[s.mode]} 계좌로 자동매매를 시작합니다.\n\n${lines.join("\n")}${rules}\n\n종목당 최대 ${Math.round(c.risk.max_weight * 100)}%, 하루 손실 ${Math.round(c.risk.daily_loss_limit * 100)}% 에 닿으면 긴급 정지(새로 사지 않음)가 켜집니다. 계속할까요?`))) return;
+    if (LIVE.has(s.mode) && (await ask("실전 자동매매입니다. 진행하려면 아래 칸에 '실전주문' 이라고 입력하세요.", { input: "확인 문구", danger: true, ok: "실전 자동매매 시작" })) !== "실전주문") return;
   }
-  await api("/api/auto", { method: "POST", body: { on } }).catch((e) => alert(e.message));
+  await api("/api/auto", { method: "POST", body: { on } }).catch((e) => toast(e.message));
   refresh();
 };
 $("#kill-help").onclick = () => modal(`<h3><i data-lucide="octagon-x"></i> 긴급 정지 (킬 스위치)</h3>
@@ -453,8 +490,8 @@ $("#kill-help").onclick = () => modal(`<h3><i data-lucide="octagon-x"></i> 긴�
   <li>다시 사게 하려면 '긴급 정지 풀기'를 누르세요. 자동으로 풀리지 않습니다.</li></ul>
   <p class="note">자동매매 켜기·끄기와는 별개입니다. 자동매매를 끄면 손절·익절 감시도 멈추고, 긴급 정지는 사는 것만 멈춥니다.</p>`) || icons();
 $("#kill-btn").onclick = async () => {
-  if (!state.status.kill_switch && !confirm("긴급 정지를 켭니다. 새로 사는 주문만 멈추고, 손절·익절 매도는 계속됩니다.")) return;
-  await api("/api/kill-switch", { method: "POST", body: { on: !state.status.kill_switch } }).catch((e) => alert(e.message));
+  if (!state.status.kill_switch && !(await ask("긴급 정지를 켭니다. 새로 사는 주문만 멈추고, 손절·익절 매도는 계속됩니다."))) return;
+  await api("/api/kill-switch", { method: "POST", body: { on: !state.status.kill_switch } }).catch((e) => toast(e.message));
   refresh();
 };
 document.addEventListener("tab", (e) => refresh());
@@ -587,9 +624,9 @@ async function applyMode(target) {
   renderModeNow();
   refresh();
 }
-function switchMode(target) {
+async function switchMode(target) {
   if (!LIVE.has(target)) {
-    if (confirm(`${ro(MODE_NAME[target])} 바꿀까요?\n자동매매는 꺼진 상태로 시작해요. 실전 계좌의 주식·주문은 그대로 남아요.`)) applyMode(target);
+    if (await ask(`${ro(MODE_NAME[target])} 바꿀까요?\n자동매매는 꺼진 상태로 시작해요. 실전 계좌의 주식·주문은 그대로 남아요.`)) applyMode(target);
     return;
   }
   const keyKind = target === "toss_real" ? "toss" : target;
@@ -718,10 +755,10 @@ $("#key-save").onclick = async () => {
     const r = await api("/api/secrets", { method: "PUT", body: { kind: $("#key-kind").value, key: $("#key-app").value, secret: $("#key-secret").value } });
     $("#key-app").value = ""; $("#key-secret").value = "";
     await refresh(); refreshKeyState();
-    if (!r.keys[$("#key-kind").value]) return alert("저장이 확인되지 않았습니다. 다시 시도하세요.");
+    if (!r.keys[$("#key-kind").value]) return toast("저장이 확인되지 않았습니다. 다시 시도하세요.");
     toast("키를 저장했어요. 연결을 시험해 볼게요", "save");
     keyTest();
-  } catch (e) { alert("저장 실패: " + e.message + (e.message.includes("토큰") ? "\n페이지를 새로고침(F5)한 뒤 다시 저장하세요." : "")); }
+  } catch (e) { toast("저장 실패: " + e.message + (e.message.includes("토큰") ? "\n페이지를 새로고침(F5)한 뒤 다시 저장하세요." : "")); }
 };
 // 저장한 키가 실제로 되는지 단계별로 시험 (주문은 내지 않는다)
 async function keyTest() {
@@ -739,8 +776,8 @@ async function keyTest() {
 $("#key-test").onclick = keyTest;
 
 $("#key-del").onclick = async () => {
-  if (!confirm("이 키를 삭제할까요?")) return;
-  await api("/api/secrets/" + $("#key-kind").value, { method: "DELETE" }).catch((e) => alert(e.message));
+  if (!(await ask("이 키를 삭제할까요?"))) return;
+  await api("/api/secrets/" + $("#key-kind").value, { method: "DELETE" }).catch((e) => toast(e.message));
   await refresh(); refreshKeyState();
 };
 

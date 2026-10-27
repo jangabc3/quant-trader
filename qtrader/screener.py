@@ -74,7 +74,13 @@ def pool(ctx, market: Market) -> tuple[list[str], set[str]]:
         if s not in ORIGIN or tag == "보유":
             ORIGIN[s] = tag
         out.append(s)
-    return list(dict.fromkeys(out))[:120], held
+    # 같은 종목이 'SPY' 와 'AMEX:SPY' 처럼 두 번 들어오지 않게 (가진 종목이면 그 표기를 쓴다)
+    by = {}
+    for s_ in out:
+        k = s_.split(":")[-1]
+        if k not in by or s_ in held:
+            by[k] = s_
+    return list(by.values())[:120], held
 
 
 def factors(bars) -> dict:

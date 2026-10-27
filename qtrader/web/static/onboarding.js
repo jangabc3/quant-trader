@@ -53,7 +53,7 @@ window.criteriaHtml = criteriaHtml;
 async function obSubmit() {
   try {
     ob.result = await api("/api/profile", { method: "POST", body: { answers: ob.answers } });
-  } catch (e) { alert(e.message); return; }
+  } catch (e) { toast(e.message); return; }
   const r = ob.result;
   const idx = ob.meta.types.findIndex((t) => t.name === r.type);
   obShell(`<div class="note">검사 결과</div><h2>당신은 <span class="ob-type t${idx}">${esc(r.type)}</span> · ${esc(r.style)}</h2>

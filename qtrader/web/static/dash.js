@@ -117,8 +117,8 @@ document.addEventListener("click", (e) => {
 });
 document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-cancel]");
-  if (!b || !confirm("이 주문을 취소할까요?")) return;
-  try { await api(`/api/account/orders/${b.dataset.cancel}/cancel`, { method: "POST" }); loadOpenOrders(); } catch (err) { alert(err.message); }
+  if (!b || !(await ask("이 주문을 취소할까요?"))) return;
+  try { await api(`/api/account/orders/${b.dataset.cancel}/cancel`, { method: "POST" }); loadOpenOrders(); } catch (err) { toast(err.message); }
 });
 
 // 보유 종목의 손절·익절 정하기
@@ -129,7 +129,7 @@ $("#holdings").addEventListener("click", async (e) => {
   const sym = b.dataset.plan || b.dataset.unplan;
   const p = dash.data.positions.find((x) => x.symbol === sym), pl = state.plans[sym];
   if (b.dataset.unplan) {
-    if (!confirm("이 종목의 손절·익절 감시를 끌까요? 그러면 자동으로 팔지 않아요.")) return;
+    if (!(await ask("이 종목의 손절·익절 감시를 끌까요? 그러면 자동으로 팔지 않아요."))) return;
     await api("/api/plans/" + encodeURIComponent(sym), { method: "DELETE" }).catch((err) => toast(err.message, "alert-triangle"));
     return refresh();
   }

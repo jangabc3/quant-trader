@@ -87,8 +87,8 @@ function buildChat() {
     saved.log.forEach((m) => line(m.who, m.html, false));
     chat.log = saved.log;
   } else greet();
-  $("#qbi-clear").onclick = () => {
-    if (!confirm("큐비와 나눈 대화를 지울까요?")) return;
+  $("#qbi-clear").onclick = async () => {
+    if (!(await ask("큐비와 나눈 대화를 지울까요?"))) return;
     chat.log = []; chat.thread = null; $("#chat-log").innerHTML = ""; saveChatLog(); greet();
   };
 
@@ -166,21 +166,50 @@ async function send(text) {
   line("me", esc(text));
   chat.busy = true; window.chatBusy = true;
   $("#qbi").classList.add("thinking");
-  line("bot typing", `<span class="dots"><i></i><i></i><i></i></span> 확인하는 중`);
+  // 답을 쓰는 대로 보여 준다: 무엇을 확인하는지(도구) → 글자가 생기는 즉시
+  const log = $("#chat-log");
+  log.insertAdjacentHTML("beforeend", `<div class="msg bot live"><div class="qbi-tools"></div><div class="report-text"><span class="dots"><i></i><i></i><i></i></span> 생각하는 중</div></div>`);
+  const box = log.lastElementChild, toolsEl = box.querySelector(".qbi-tools"), textEl = box.querySelector(".report-text");
+  let acc = "", started = false, raf = 0, done = null;
+  const paint = () => { raf = 0; textEl.innerHTML = window.mdLite ? mdLite(acc) : esc(acc); log.scrollTop = log.scrollHeight; };
+  const seenTools = new Set();
   try {
-    const r = await api("/api/assistant", { method: "POST", body: { text, thread_id: chat.thread, page: pageContext() } });
-    chat.thread = r.thread_id;
-    saveChatLog();
-    $("#chat-log .typing")?.remove();
-    const names = { market_overview: "시장 현황", rankings: "순위", quotes: "시세", chart_brief: "차트", portfolio: "내 계좌",
-      recent_orders: "주문 내역", ai_decision: "AI 회의 결론", start_meeting: "회의 시작", web_search: "웹 검색" };
-    const tools = r.tools.length ? `<div class="qbi-tools">${[...new Set(r.tools)].map((t) => `<span>${names[t] || t}</span>`).join("")}</div>` : "";
-    const src = r.sources.length ? `<div class="sources">${r.sources.slice(0, 5).map((s) => `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a>`).join("")}</div>` : "";
-    line("bot", `${tools}<div class="report-text">${window.mdLite ? mdLite(r.answer) : esc(r.answer)}</div>${src}`);
-    if (r.tools.includes("start_meeting") && window.showRunById) { openTab("office"); }
+    const res = await fetch("/api/assistant/stream", { method: "POST", headers: { "content-type": "application/json", "x-qtrader-token": window.QT_TOKEN },
+      body: JSON.stringify({ text, thread_id: chat.thread, page: pageContext() }) });
+    if (!res.ok || !res.body) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done: end } = await reader.read();
+      if (end) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+        if (!chunk.startsWith("data: ")) continue;
+        const ev = JSON.parse(chunk.slice(6));
+        if (ev.type === "start") { chat.thread = ev.thread_id; }
+        else if (ev.type === "tool") {
+          if (!seenTools.has(ev.name)) { seenTools.add(ev.name); toolsEl.insertAdjacentHTML("beforeend", `<span class="on">${esc(ev.label || ev.name)}</span>`); }
+          if (!started) textEl.innerHTML = `<span class="dots"><i></i><i></i><i></i></span> ${esc(ev.label || "자료")} 확인하는 중`;
+        } else if (ev.type === "text") {
+          started = true; acc += ev.text;
+          if (!raf) raf = requestAnimationFrame(paint);
+        } else if (ev.type === "done") done = ev;
+        else if (ev.type === "error") throw new Error(ev.message);
+      }
+    }
+    if (!done) throw new Error("답을 다 받지 못했어요. 다시 보내 주세요");
+    acc = done.answer;
+    paint();
+    toolsEl.querySelectorAll("span").forEach((s) => s.classList.remove("on"));
+    if (done.sources.length) box.insertAdjacentHTML("beforeend", `<div class="sources">${done.sources.slice(0, 5).map((s) => `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a>`).join("")}</div>`);
+    box.classList.remove("live");
+    chat.log.push({ who: "bot", html: box.innerHTML }); saveChatLog();
+    if (done.tools.includes("start_meeting") && window.showRunById) { openTab("office"); }
   } catch (err) {
-    $("#chat-log .typing")?.remove();
-    line("bot", `<span class="down">${esc(err.message)}</span>`);
+    box.classList.remove("live");
+    textEl.innerHTML = `${acc ? (window.mdLite ? mdLite(acc) : esc(acc)) + "<br>" : ""}<span class="down">${esc(err.message)}</span>`;
   }
   chat.busy = false; window.chatBusy = false;
   $("#qbi").classList.remove("thinking");

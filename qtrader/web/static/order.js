@@ -157,10 +157,10 @@ async function sendSpecial() {
   } catch (err) { toast(err.message, "alert-triangle"); }
 }
 
-function confirmOrder() {
+async function confirmOrder() {
   if (tk.how !== "now") {
     const msg = tk.how === "cond" ? `${tk.qty}주 조건 ${tk.side === "buy" ? "구매" : "판매"}를 걸까요?\n${$("#tk-cond-note").textContent}` : `${tk.qty}주를 나눠서 ${tk.side === "buy" ? "살까요" : "팔까요"}?\n${$("#tk-split-note").textContent}`;
-    if (confirm(msg)) sendSpecial();
+    if (await ask(msg)) sendSpecial();
     return;
   }
   const i = tk.info, buy = tk.side === "buy", p = unitPrice(), gross = p * tk.qty;
