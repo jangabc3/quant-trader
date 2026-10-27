@@ -226,7 +226,7 @@ table.refs td { white-space: normal; font-size: 13px; vertical-align: top; }
 .lb-emptyg svg { width: 28px; height: 28px; opacity: .5; }
 
 /* 회의 후보: 작게 한 줄씩 */
-#picks-panel { padding: 12px 16px; position: relative; }
+#picks-panel { padding: 12px 16px; position: relative; overflow: visible; }  /* 기준 보기 창이 패널 밖으로 펼쳐지게 */
 .pk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; } .pk-head h3 { margin: 0; font-size: 15px; }
 .pk-tools { display: flex; gap: 6px; align-items: center; } .pk-tools .icon-btn { width: 30px; height: 30px; padding: 0; } .pk-tools .icon-btn svg { width: 15px; height: 15px; }
 .pk-how { position: absolute; right: 16px; top: 48px; z-index: 20; width: min(440px, 90vw); background: var(--panel2); border: 1px solid #2c3a4d; border-radius: 14px;
@@ -255,3 +255,12 @@ table.refs td { white-space: normal; font-size: 13px; vertical-align: top; }
 .lb-item.meeting { border-color: var(--blue); } .lb-item.meeting svg { color: var(--blue); }
 .lb-item.bought { border-color: #2fbf71; } .lb-item.bought svg { color: #2fbf71; }
 .lb-item.approval svg, .lb-item.error svg { color: #e9a23b; }
+
+/* 왜 후보가 적은지 */
+.pk-why { margin: 8px 0 0; font-size: 12px; }
+.pk-why .link { background: none; border: 0; padding: 0 2px; color: var(--blue, #3182f6); cursor: pointer; font-size: 12px; text-decoration: underline; }
+.pk-why-box { margin-top: 10px; padding-top: 10px; border-top: 1px solid #2c3a4d; }
+.pk-why-box ul { list-style: none; margin: 6px 0; padding: 0; }
+.pk-why-box li { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+.pk-why-box li span { display: flex; flex-direction: column; } .pk-why-box li em { font-style: normal; font-size: 11px; opacity: .7; }
+.pk-why-box li.zero { opacity: .5; } .pk-why-box .note { margin: 6px 0 0; }

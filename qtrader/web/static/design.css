@@ -24,8 +24,8 @@ nav button.on svg.lucide { color: var(--blue); }
 .panel { background: var(--panel); }
 .panel h3 { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .panel h3 small { font-weight: 400; }
-.idx-card { transition: transform .15s, border-color .15s; }
-.idx-card:hover { transform: translateY(-2px); border-color: #34445a; }
+.idx-card { transition: transform .2s cubic-bezier(.2,.8,.2,1), border-color .15s; }
+.idx-card:hover { transform: translateY(-1px); border-color: #34445a; }
 
 /* 버튼 */
 button { border-radius: 10px; font-weight: 600; transition: transform .08s, background .15s, border-color .15s, filter .15s; display: inline-flex; align-items: center; gap: 6px; justify-content: center; }
@@ -88,7 +88,7 @@ details.adv[open] > summary { margin-bottom: 8px; }
 #toasts { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 60; display: grid; gap: 8px; }
 .toast { display: flex; gap: 8px; align-items: center; background: rgba(24,31,41,.97); border: 1px solid #34445a; color: var(--text);
   padding: 11px 16px; border-radius: 12px; box-shadow: 0 12px 30px rgba(0,0,0,.45); font-size: 14px; animation: toast-in .25s ease-out; }
-.toast.out { opacity: 0; transform: translateY(8px); transition: .35s; }
+.toast.out { opacity: 0; transform: translateY(6px); transition: opacity .2s, transform .2s cubic-bezier(.2,.8,.2,1); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(10px); } }
 
 /* 등락: 토스증권 색 (상승 #F04452, 하락 #3182F6), 배경 없이 글자색만 */
@@ -132,26 +132,29 @@ table.rank tr:hover .ai-btn, .ai-btn:focus { opacity: 1; }
 .agent .bubble { font-size: clamp(8px, 1.2cqw, 12px) !important; line-height: 1.35; padding: .5cqw .8cqw !important; border-radius: .8cqw !important; box-shadow: 0 4px 12px rgba(0,0,0,.35); }
 @media (max-width: 900px) { .office-status { grid-template-columns: 1fr; } }
 
-/* 모션 */
+/* 모션 — 토스처럼 짧고 차분하게: 150~300ms, cubic-bezier(.2,.8,.2,1), transform·opacity 위주 */
 nav { position: relative; }
-#nav-ink { position: absolute; left: 0; bottom: 0; height: 2px; border-radius: 3px; background: var(--blue); transition: transform .35s cubic-bezier(.2,.8,.2,1), width .35s cubic-bezier(.2,.8,.2,1); pointer-events: none; }
-button { transition: transform .12s ease, background .15s, border-color .15s, color .15s, box-shadow .15s; }
+#nav-ink { position: absolute; left: 0; bottom: 0; height: 2px; border-radius: 3px; background: var(--blue); transition: transform .28s cubic-bezier(.2,.8,.2,1), width .28s cubic-bezier(.2,.8,.2,1); pointer-events: none; }
+button { transition: transform .15s cubic-bezier(.2,.8,.2,1), background .15s, border-color .15s, color .15s, box-shadow .15s; }
 button:active:not(:disabled) { transform: scale(.97); }
-button.primary:hover { box-shadow: 0 6px 18px rgba(49,130,246,.35); }
-.panel, .kpi, .hold, .idx-card, .card { transition: transform .2s ease, border-color .2s, box-shadow .2s; }
-.hold:hover, .idx-card:hover, .kpi:hover { transform: translateY(-2px); border-color: #34445a; box-shadow: 0 10px 26px rgba(0,0,0,.35); }
-.flash-up { animation: flashUp .9s ease-out; } .flash-down { animation: flashDown .9s ease-out; }
-@keyframes flashUp { 0% { background: rgba(240,68,82,.35); } 100% { background: transparent; } }
-@keyframes flashDown { 0% { background: rgba(49,130,246,.35); } 100% { background: transparent; } }
+button.primary:hover { filter: brightness(1.08); }
+.panel, .kpi, .hold, .idx-card, .card { transition: transform .2s cubic-bezier(.2,.8,.2,1), border-color .2s; }
+.hold:hover, .idx-card:hover, .kpi:hover { transform: translateY(-1px); border-color: #34445a; }
+.flash-up { animation: flashUp .6s ease-out; } .flash-down { animation: flashDown .6s ease-out; }
+@keyframes flashUp { 0% { background: rgba(240,68,82,.22); } 100% { background: transparent; } }
+@keyframes flashDown { 0% { background: rgba(49,130,246,.22); } 100% { background: transparent; } }
 td.px span { padding: 2px 4px; border-radius: 4px; }
-.toast { animation: toastIn .35s cubic-bezier(.2,.8,.2,1); }
-@keyframes toastIn { from { opacity: 0; transform: translateY(14px) scale(.96); } to { opacity: 1; transform: none; } }
+.toast { animation: toastIn .26s cubic-bezier(.2,.8,.2,1); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
 details > summary { transition: color .15s; }
-details[open] > :not(summary) { animation: openDown .28s ease-out; }
+details[open] > :not(summary) { animation: openDown .2s cubic-bezier(.2,.8,.2,1); }
 @keyframes openDown { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 .skeleton { background: linear-gradient(90deg, var(--panel2) 25%, #222c38 37%, var(--panel2) 63%); background-size: 400% 100%; animation: shimmer 1.3s infinite; border-radius: 8px; }
 @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+/* 탭을 바꾸면 화면이 살짝 떠오르며 바뀐다 (각 카드의 차례 등장은 app.js animateIn) */
+.tab:not(.hidden) { animation: tabIn .22s cubic-bezier(.2,.8,.2,1); }
+@keyframes tabIn { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 
 /* ===== 설정 다시 짜기 ===== */
 .cfg-nav { position: sticky; top: var(--hdr-h, 56px); z-index: 5; display: flex; gap: 6px; flex-wrap: wrap; padding: 8px; background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(6px); border-radius: 12px; }

@@ -187,8 +187,10 @@
             <li><b>숫자로 거르기</b> 200일선 위 · 모멘텀 양수 · 과열(RSI)·변동성 상한 안쪽만</li>
             <li><b>점수</b> 모멘텀 35 · 52주 고가 근접 25 · 저변동 20 · 거래량 10 · 단기 급등 감점 10</li>
             <li><b>공시·재무</b> 유상증자·전환사채·감자·횡령 공시는 제외, 적자+매출 감소는 감점</li></ol>
-          <p class="note">숫자로 먼저 걸러서 통과한 종목만 AI 회의를 열어요 (비용 절약). 자동매매가 켜져 있으면 실행 40분 전부터 차례로 회의합니다. 줄에 마우스를 올리면 점수 근거가 보여요.</p></div></div>
+          <p class="note">숫자로 먼저 걸러서 통과한 종목만 AI 회의를 열어요 (비용 절약). 자동매매가 켜져 있으면 실행 40분 전부터 차례로 회의합니다. 줄에 마우스를 올리면 점수 근거가 보여요.</p>
+          <div id="picks-why-detail"></div></div></div>
       <div id="picks"></div>
+      <div id="picks-why"></div>
     </div>
     <div class="office-wrap" id="office-wrap">
       <canvas id="office" width="640" height="360"></canvas>
@@ -223,6 +225,9 @@
       </div>
       </div>
       <div class="kpis" id="kpis"></div>
+      <div class="paper-bar hidden" id="paper-bar"><span><i data-lucide="flask-conical"></i> 가상 계좌예요 · 진짜 돈이 아니라 연습용 돈이에요</span>
+        <span class="paper-acts"><select id="paper-reset-mkt" title="어느 계좌를 다시 시작할까요?"><option value="cur">지금 보는 계좌만</option><option value="ALL">국내·미국 둘 다</option></select>
+          <button id="paper-reset" class="danger-soft"><i data-lucide="rotate-ccw"></i> 가상 계좌 처음부터 다시</button></span></div>
     </div>
     <div id="conc-warn"></div>
     <div class="panel hidden" id="approvals-panel">
@@ -450,6 +455,7 @@
           <button type="button" id="tg-find"><i data-lucide="search"></i> 대화방 번호 자동으로 찾기</button>
           <label class="check"><input type="checkbox" id="ntf-report"> 장 마감 뒤 하루 요약 보내기</label>
         </div>
+        <p class="note">휴대폰 명령: 내 봇에게 <b>/status</b> 지금 상태, <b>/stop</b> 긴급 정지(새로 사기만 멈추고 손절·익절은 계속), <b>/pause</b> 자동매매 끄기, <b>/help</b> 안내. 안전을 위해 다시 켜기·실전 전환·주문은 이 PC 화면에서만 돼요.</p>
         <div class="form-row">
           <label>AI 비용 한 달 상한 <em class="hint">원, 넘으면 회의를 멈춰요. 0 = 상한 없음</em><input id="ai-cap" type="number" step="1000" min="0"></label>
           <span class="note" id="ai-cost-now"></span>

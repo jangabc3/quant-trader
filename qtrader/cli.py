@@ -22,6 +22,8 @@ def cmd_serve(a):
 
     sched = Scheduler()
     sched.start()
+    from .telegram_bot import Poller
+    Poller().start()  # 휴대폰(텔레그램) 명령: 토큰·대화방 번호가 있을 때만 텔레그램에 묻는다
     url = f"http://127.0.0.1:{a.port}"
     print(f"QTrader 대시보드: {url}  (끄려면 Ctrl+C)")
     if not a.no_browser:

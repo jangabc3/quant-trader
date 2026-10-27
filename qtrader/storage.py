@@ -282,6 +282,21 @@ class Store:
                       "and side='buy' and status in ('submitted','filled')", (account, market, today))
         return r[0]["n"] if r else 0
 
+    # 가상 계좌 처음부터 다시
+    def reset_paper(self, account: str, market: str, cash: float) -> dict:
+        """그 시장의 가상 계좌만 첫 현금으로 되돌린다: 보유·주문 내역·자산 기록을 지우고 손절·익절 계획과 승인 대기를 닫는다.
+        AI 회의 기록과 이벤트 기록은 남긴다."""
+        n_pos = self.exec("delete from positions where account=? and market=?", (account, market)).rowcount
+        n_ord = self.exec("delete from orders where account=? and market=?", (account, market)).rowcount
+        self.exec("delete from equity where account=? and market=?", (account, market))
+        n_plan = self.exec("update plans set closed_at=?, close_reason='reset' where account=? and market=? "
+                           "and closed_at is null", (now(), account, market)).rowcount
+        self.exec("update approvals set status='expired', decided_at=? where account=? and market=? and status='pending'",
+                  (now(), account, market))
+        self.exec("insert into cash values (?,?,?) on conflict(account,market) do update set amount=excluded.amount",
+                  (account, market, float(cash)))
+        return {"positions": n_pos, "orders": n_ord, "plans": n_plan, "cash": float(cash)}
+
     # AI 회의
     def save_ai_run(self, run: dict) -> None:
         import json

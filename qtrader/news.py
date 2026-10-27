@@ -69,7 +69,7 @@ def fetch(url: str, source: str, ttl: float = 300, session=None) -> list[dict]:
         hit = _cache.get(url)
         if hit and time.monotonic() - hit[0] < ttl:
             return hit[1]
-    if session is None and os.environ.get("QTRADER_OFFLINE"):  # 시험 중에는 밖으로 나가지 않는다 (가짜 세션만)
+    if session is None and os.environ.get("QTRADER_OFFLINE"):  # 시험 중에는 밖으로 나가지 않는다 (가짜 세션은 통과)
         return []
     r = (session or requests).get(url, headers=UA, timeout=8)
     r.raise_for_status()
