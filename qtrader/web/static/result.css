@@ -224,3 +224,22 @@ table.refs td { white-space: normal; font-size: 13px; vertical-align: top; }
 .lb-watch .gg { padding-top: 4px; } .lb-nobar { font-size: 12px; color: #e9a23b; margin-top: 6px; }
 .lb-emptyg { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 18px 6px; color: var(--muted); font-size: 12.5px; }
 .lb-emptyg svg { width: 28px; height: 28px; opacity: .5; }
+
+/* 회의 후보: 작게 한 줄씩 */
+#picks-panel { padding: 12px 16px; position: relative; }
+.pk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; } .pk-head h3 { margin: 0; font-size: 15px; }
+.pk-tools { display: flex; gap: 6px; align-items: center; } .pk-tools .icon-btn { width: 30px; height: 30px; padding: 0; } .pk-tools .icon-btn svg { width: 15px; height: 15px; }
+.pk-how { position: absolute; right: 16px; top: 48px; z-index: 20; width: min(440px, 90vw); background: var(--panel2); border: 1px solid #2c3a4d; border-radius: 14px;
+  padding: 14px 16px; box-shadow: 0 16px 40px rgba(0,0,0,.5); animation: openDown .2s ease-out; font-size: 13px; }
+.pk-how ol { margin: 8px 0; padding-left: 18px; line-height: 1.6; } .pk-how ol b { margin-right: 4px; } .pk-how .note { margin: 0; font-size: 12px; }
+.pk-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 2px 14px; }
+.pk-row { display: grid; grid-template-columns: 16px 26px minmax(0, 1fr) 92px 64px; gap: 10px; align-items: center; padding: 7px 6px; border-radius: 10px; cursor: pointer; transition: background .15s; }
+.pk-row:hover { background: var(--panel2); }
+.pk-n { font-size: 12px; font-weight: 800; color: var(--muted); text-align: center; }
+.pk-nm { min-width: 0; display: flex; flex-direction: column; } .pk-nm b { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk-nm em { font-style: normal; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk-sc { display: flex; align-items: center; gap: 6px; } .pk-sc i { flex: 1; height: 5px; border-radius: 3px; background: #222b36; overflow: hidden; }
+.pk-sc i b { display: block; height: 100%; background: linear-gradient(90deg, #3182f6, #6aa5ff); transform-origin: left; } .pk-sc strong { font-size: 13px; width: 22px; text-align: right; }
+.pk-st { font-size: 11.5px; text-align: center; padding: 3px 0; border-radius: 99px; background: var(--panel2); color: var(--muted); white-space: nowrap; }
+.pk-st.done { color: #2fbf71; background: rgba(47,191,113,.12); } .pk-st.held { color: #e9a23b; background: rgba(233,162,59,.12); }
+.pk-none { margin: 4px 0; }

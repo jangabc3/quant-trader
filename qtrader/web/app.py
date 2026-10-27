@@ -403,6 +403,10 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
     def market_industry(sector_id: str, market: str = "KR"):
         return guard(lambda: market_mod.industry_detail(toss(), sector_id, market))
 
+    @app.get("/api/market/industry/{sector_id}/chart")
+    def market_industry_chart(sector_id: str, market: str = "KR"):
+        return guard(lambda: market_mod.industry_chart(toss(), sector_id, market))
+
     @app.get("/api/market/investors")
     def market_investors(side: str = "buy"):
         return guard(lambda: market_mod.investor_flows(toss(), side))

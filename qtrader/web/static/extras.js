@@ -217,25 +217,32 @@ const FACT = [["mom", "모멘텀", (v) => Math.max(0, Math.min(1, (v + 0.2) / 0.
 async function loadPicks(refresh = false) {
   const box = $("#picks");
   if (!box) return;
-  box.innerHTML = `<div class="skeleton" style="height:58px"></div>`;
+  box.innerHTML = `<div class="skeleton" style="height:44px"></div>`;
   const rows = await api(`/api/picks?market=${pk.market}${refresh ? "&refresh=true" : ""}`).catch((e) => ({ error: e.message }));
   if (rows.error) { box.innerHTML = `<p class="note">${esc(rows.error)}</p>`; return; }
-  const how = `<details class="pick-how"><summary><i data-lucide="help-circle"></i> AI가 후보를 고르는 기준 <small>숫자로 먼저 거르고, 통과한 종목만 AI 회의를 엽니다 (비용 절약)</small></summary>
-    <div class="ph-steps">${PICK_STEPS.map(([ic, t, d]) => `<div><i data-lucide="${ic}"></i><b>${t}</b><span>${d}</span></div>`).join("")}</div></details>`;
-  box.innerHTML = how + (rows.length ? `<div class="pick-grid">${rows.map((p, i) => `<div class="pick" data-open="${esc(p.symbol)}">
-      <div class="pk-top"><span class="pk-n">${i + 1}</span>${logo(p.symbol, p.name, 30)}<span class="pk-t"><b>${esc(p.name)}</b><em>${esc(p.reason)}</em></span>
-        <span class="pk-s ${p.met ? "done" : ""}">${p.held ? "보유 점검" : p.met ? esc(RATING_KO[p.rating] || "회의 완료") : "회의 대기"}</span></div>
-      ${p.factors ? `<div class="pk-f">${FACT.map(([k, n, f]) => `<div><span>${n}</span><i><b style="width:${(f(p.factors[k] ?? 0) * 100).toFixed(0)}%"></b></i></div>`).join("")}
-        <div class="pk-score"><span>점수</span><b>${Math.round((p.score || 0) * 100)}</b></div></div>` : ""}
-    </div>`).join("")}</div>`
-    : `<div class="empty"><i data-lucide="filter-x"></i><p>오늘은 숫자 규칙을 통과한 후보가 없어요</p>
-       <span class="note">하락 추세이거나 과열된 종목뿐이라 회의를 열지 않습니다. 이렇게 쉬는 날이 있어야 손실을 줄일 수 있어요.</span></div>`)
-    + `<button class="nmore" id="picks-refresh"><i data-lucide="refresh-cw"></i> 지금 다시 고르기</button>`;
-  $("#picks-refresh").onclick = () => loadPicks(true);
-  animateIn("#picks .pick", { step: 40 });
-  if (!REDUCED && window.anime) anime({ targets: "#picks .pk-f b", scaleX: [0, 1], duration: 700, delay: anime.stagger(25), easing: "easeOutCubic" });
+  const origin = (r) => (r.reason || "").split(" · ")[0];
+  box.innerHTML = rows.length ? `<div class="pk-list">${rows.map((p, i) => {
+    const sc = Math.round((p.score || 0) * 100);
+    const tip = (p.reason || "") + (p.factors ? `\n모멘텀 ${pct(p.factors.mom)} · 52주 고가의 ${Math.round((p.factors.near_high || 0) * 100)}% · 변동성 ${Math.round((p.factors.vol || 0) * 100)}% · 거래량 ${(p.factors.vol_ratio || 1).toFixed(1)}배` : "");
+    return `<div class="pk-row" data-open="${esc(p.symbol)}" title="${esc(tip)}">
+      <span class="pk-n">${i + 1}</span>${logo(p.symbol, p.name, 26)}
+      <span class="pk-nm"><b>${esc(p.name)}</b><em>${esc(origin(p))}</em></span>
+      <span class="pk-sc"><i><b style="width:${Math.max(4, sc)}%"></b></i><strong>${sc}</strong></span>
+      <span class="pk-st ${p.met ? "done" : p.held ? "held" : ""}">${p.held ? "보유 점검" : p.met ? esc(RATING_KO[p.rating] || "회의 끝") : "회의 대기"}</span></div>`;
+  }).join("")}</div>`
+    : `<p class="note pk-none">오늘은 숫자 규칙을 통과한 후보가 없어요. 하락 추세·과열 종목뿐이라 회의를 쉽니다 (쉬는 날도 손실을 줄이는 전략이에요).</p>`;
+  animateIn("#picks .pk-row", { step: 30 });
+  if (!REDUCED && window.anime) anime({ targets: "#picks .pk-sc b", scaleX: [0, 1], duration: 700, delay: anime.stagger(30), easing: "easeOutCubic" });
   icons();
 }
+// 기준 보기 (작은 팝오버)
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("#picks-how-btn");
+  const pop = $("#picks-how");
+  if (b) { pop.classList.toggle("hidden"); return; }
+  if (pop && !pop.classList.contains("hidden") && !e.target.closest("#picks-how")) pop.classList.add("hidden");
+});
+document.addEventListener("click", (e) => { if (e.target.closest("#picks-refresh")) loadPicks(true); });
 $("#picks-mkt")?.addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
@@ -280,7 +287,7 @@ function renderDayReport(rep, m) {
   renderDayReport.key = key;
   if (fresh && !REDUCED && window.anime) {
     anime({ targets: "#day-report .dr-bar i", scaleY: [0, 1], delay: anime.stagger(40), duration: 600, easing: "easeOutCubic" });
-    anime({ targets: "#day-report .dr-k", opacity: [0, 1], translateY: [8, 0], delay: anime.stagger(60), duration: 400, easing: "easeOutQuad" });
+    animateIn("#day-report .dr-k", { step: 60 });
   }
   if (fresh && dr != null) countTo($("#dr-ret"), dr * 100, { decimals: 2, format: (v) => (v > 0 ? "+" : "") + v.toFixed(2) + "%" });
   icons();

@@ -64,27 +64,12 @@
     <div class="watch" id="watch"></div>
     <div class="panel trend-panel">
       <div class="rank-bar">
-        <div class="seg big" id="trend-tab"><button data-v="ind" class="on">지금 뜨는 산업</button><button data-v="inv">외국인·기관 매매 동향</button></div>
+        <div class="trend-tabs" id="trend-tab"><button data-v="rank" class="on">실시간 차트</button><button data-v="ind">지금 뜨는 산업</button><button data-v="inv">외국인·기관 매매 동향</button><i class="tt-ink"></i></div>
         <span class="note" id="trend-note"></span>
       </div>
-      <div id="trend-ind">
-        <div class="rank-bar">
-          <div class="seg" id="ind-market"><button data-v="KR" class="on">국내</button><button data-v="US">해외</button></div>
-          <div class="seg" id="ind-kind"><button data-v="TOP_GAINERS" class="on">등락률</button><button data-v="MARKET_TRADING_AMOUNT">거래대금</button></div>
-          <div class="seg" id="ind-dur"><button data-v="1d" class="on">1일</button><button data-v="1w">1주일</button><button data-v="1mo">1개월</button><button data-v="3mo">3개월</button><button data-v="1y">1년</button></div>
-        </div>
-        <div class="ind-layout"><table class="rank ind-table"><thead><tr><th>순위</th><th>산업</th><th class="r">등락률</th><th class="r">거래대금</th><th class="r">시가총액</th><th>대표 종목</th></tr></thead><tbody id="ind-body"></tbody></table>
-          <aside class="ind-detail" id="ind-detail"></aside></div>
-      </div>
-      <div id="trend-inv" class="hidden">
-        <div class="rank-bar"><div class="seg" id="inv-side"><button data-v="buy" class="on">순매수</button><button data-v="sell">순매도</button></div><span class="note" id="inv-note"></span></div>
-        <div class="inv-cols" id="inv-cols"></div>
-      </div>
-    </div>
-    <div class="panel">
+      <div id="trend-rank">
       <div class="rank-bar">
-        <h3 style="margin:0 8px 0 0">실시간 차트</h3>
-        <div class="seg" id="rank-market"><button data-v="KR" class="on">국내</button><button data-v="US">해외</button></div>
+                <div class="seg" id="rank-market"><button data-v="KR" class="on">국내</button><button data-v="US">해외</button></div>
         <div class="seg" id="rank-kind">
           <button data-v="watch" class="watch-tab"><i data-lucide="heart"></i> 관심</button>
           <button data-v="amount" class="on">거래대금</button><button data-v="volume">거래량</button>
@@ -98,6 +83,20 @@
       </div>
       <table class="rank"><thead><tr><th>순위</th><th></th><th>종목</th><th class="r">현재가</th><th class="r">등락률</th><th class="r">거래대금</th><th></th></tr></thead>
         <tbody id="rank-body"></tbody></table>
+      </div>
+      <div id="trend-ind" class="hidden">
+        <div class="rank-bar">
+          <div class="seg" id="ind-market"><button data-v="KR" class="on">국내</button><button data-v="US">해외</button></div>
+          <div class="seg" id="ind-kind"><button data-v="TOP_GAINERS" class="on">등락률</button><button data-v="MARKET_TRADING_AMOUNT">거래대금</button></div>
+          <div class="seg" id="ind-dur"><button data-v="1d" class="on">1일</button><button data-v="1w">1주일</button><button data-v="1mo">1개월</button><button data-v="3mo">3개월</button><button data-v="1y">1년</button></div>
+        </div>
+        <div class="ind-layout"><table class="rank ind-table"><thead><tr><th>순위</th><th>산업</th><th class="r">등락률</th><th class="r">거래대금</th><th class="r">시가총액</th><th>대표 종목</th></tr></thead><tbody id="ind-body"></tbody></table>
+          <aside class="ind-detail" id="ind-detail"></aside></div>
+      </div>
+      <div id="trend-inv" class="hidden">
+        <div class="rank-bar"><div class="seg" id="inv-side"><button data-v="buy" class="on">순매수</button><button data-v="sell">순매도</button></div><span class="note" id="inv-note"></span></div>
+        <div class="inv-cols" id="inv-cols"></div>
+      </div>
     </div>
   </section>
 
@@ -175,9 +174,17 @@
     </div>
     <div class="office-status"><div class="office-hud" id="office-hud"></div><div class="stage-line" id="stage-line"></div></div>
     <div class="panel picks" id="picks-panel">
-      <div class="rank-bar"><h3 style="margin:0"><i data-lucide="sparkles"></i> 오늘 AI가 고른 회의 후보 <small id="picks-sub">자동매매가 켜져 있으면 실행 시각 전에 이 종목들로 차례로 회의합니다</small></h3>
-        <div class="seg" id="picks-mkt"><button data-v="KR" class="on">국내</button><button data-v="US">미국</button></div></div>
-      <div id="picks" class="pick-list"></div>
+      <div class="pk-head"><h3><i data-lucide="sparkles"></i> 오늘 AI 회의 후보</h3>
+        <div class="pk-tools"><button class="icon-btn" id="picks-how-btn" title="어떻게 고르나요?"><i data-lucide="help-circle"></i></button>
+          <button class="icon-btn" id="picks-refresh" title="지금 다시 고르기"><i data-lucide="refresh-cw"></i></button>
+          <div class="seg" id="picks-mkt"><button data-v="KR" class="on">국내</button><button data-v="US">미국</button></div></div>
+        <div class="pk-how hidden" id="picks-how"><b>AI가 후보를 고르는 순서</b>
+          <ol><li><b>넓게 모으기</b> 보유·관심 + 성장·기술주 + 1·3개월 급상승 + 토스 인기 + 거래대금·거래량 상위 + 강세 섹터 주도주</li>
+            <li><b>숫자로 거르기</b> 200일선 위 · 모멘텀 양수 · 과열(RSI)·변동성 상한 안쪽만</li>
+            <li><b>점수</b> 모멘텀 35 · 52주 고가 근접 25 · 저변동 20 · 거래량 10 · 단기 급등 감점 10</li>
+            <li><b>공시·재무</b> 유상증자·전환사채·감자·횡령 공시는 제외, 적자+매출 감소는 감점</li></ol>
+          <p class="note">숫자로 먼저 걸러서 통과한 종목만 AI 회의를 열어요 (비용 절약). 자동매매가 켜져 있으면 실행 40분 전부터 차례로 회의합니다. 줄에 마우스를 올리면 점수 근거가 보여요.</p></div></div>
+      <div id="picks"></div>
     </div>
     <div class="office-wrap" id="office-wrap">
       <canvas id="office" width="640" height="360"></canvas>

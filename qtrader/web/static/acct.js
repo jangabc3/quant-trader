@@ -125,19 +125,23 @@ async function renderFlow() {
   const evs = d.timeline.filter((e) => ["order", "exit", "sync", "manual", "engine", "live", "picks", "ai"].includes(e.source));
   const hours = [];
   for (let h = Math.ceil(a / 60); h <= b / 60; h += 2) hours.push(h);
+  const hm = (iso) => new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: tz });
+  const nowTxt = new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: tz });
   $("#flow").innerHTML = `<div class="dt">
+      <div class="dt-legend">${marks.map(([n, iso, ic], k) => `<span class="dt-chip ${toMin(iso) <= nowMin ? "past" : ""}"><i class="dt-num">${k + 1}</i><i data-lucide="${ic}"></i>${hm(iso)} ${n}</span>`).join("")}
+        <span class="dt-chip now"><i class="dt-nowdot"></i>지금 ${nowTxt}</span></div>
       <div class="dt-track"><i class="dt-reg" style="left:${X(reg[0])}%;width:${X(reg[1]) - X(reg[0])}%"></i>
         ${hours.map((h) => `<span class="dt-h" style="left:${X(h * 60)}%">${h}시</span>`).join("")}
-        ${marks.map(([n, iso, ic]) => `<div class="dt-mark" style="left:${X(toMin(iso))}%"><i data-lucide="${ic}"></i><b>${n}</b><em>${new Date(iso).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: tz })}</em></div>`).join("")}
+        ${marks.map(([n, iso], k) => `<i class="dt-pin ${toMin(iso) <= nowMin ? "past" : ""}" style="left:${X(toMin(iso))}%" title="${hm(iso)} ${n}">${k + 1}</i>`).join("")}
         ${evs.slice(0, 20).map((e) => `<i class="dt-ev ${e.level}" style="left:${X(toMin(e.ts))}%" title="${esc(e.message)}"></i>`).join("")}
-        ${nowMin >= a && nowMin <= b ? `<div class="dt-now" style="left:${X(nowMin)}%"><span>지금</span></div>` : ""}
+        ${nowMin >= a && nowMin <= b ? `<div class="dt-now" style="left:${X(nowMin)}%"></div>` : ""}
       </div>
-      <p class="note dt-cap">${d.schedule.open ? "지금 사고팔 수 있는 시간이에요. 2분마다 손절·익절을 확인합니다." : "지금은 장이 닫혀 있어요."} 파란 띠는 ${m === "KR" ? "정규장(09:00~15:30)" : "정규장(뉴욕 09:30~16:00)"}, 점은 오늘 있었던 일이에요.</p>
+      <p class="note dt-cap">${d.schedule.open ? "지금 사고팔 수 있는 시간이에요. 2분마다 손절·익절을 확인합니다." : "지금은 장이 닫혀 있어요."} 파란 띠 = ${m === "KR" ? "정규장 09:00~15:30" : "정규장 뉴욕 09:30~16:00"} · 숫자 = 일정 · 흰 점 = 오늘 있었던 일 (올리면 내용)</p>
     </div>
     <div class="dt-feed"><h4>오늘 있었던 일</h4>${evs.slice(0, 12).map((e) => `<div class="dt-row ${e.level}"><time>${new Date(e.ts).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false })}</time><span>${esc(e.message)}</span></div>`).join("")
       || `<p class="note">아직 없어요. 자동매매가 켜져 있으면 회의·주문·체결이 시간 순서대로 여기 쌓여요.</p>`}</div>`;
   $("#flow-sub").textContent = `${MODE_NAME[s.mode]} · ${MARKET_NAME[m]} · ${s.auto_trading ? "자동매매 켜짐" : "자동매매 꺼짐"}`;
-  if (fl.key !== m) { fl.key = m; if (!REDUCED && window.anime) anime({ targets: "#flow .dt-mark, #flow .dt-ev", opacity: [0, 1], translateY: [-6, 0], delay: anime.stagger(40), duration: 400 }); }
+  if (fl.key !== m) { fl.key = m; animateIn("#flow .dt-pin, #flow .dt-ev, #flow .dt-chip", { y: -6, step: 40 }); }
   icons();
 }
 const fl = { key: null };

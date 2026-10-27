@@ -108,10 +108,11 @@ function icons() { window.lucide && lucide.createIcons(); }
 // 모션: 목록이 아래에서 차례로 떠오르게 (움직임 줄이기 설정이면 생략)
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 function animateIn(sel, opts = {}) {
-  if (REDUCED || !window.anime) return;
-  const els = [...document.querySelectorAll(sel)].slice(0, opts.max || 24);
-  if (!els.length) return;
-  anime({ targets: els, opacity: [0, 1], translateY: [opts.y ?? 8, 0], delay: anime.stagger(opts.step || 22), duration: 360, easing: "easeOutCubic" });
+  if (REDUCED || document.hidden) return;
+  const els = (typeof sel === "string" ? [...document.querySelectorAll(sel)] : [...sel]).slice(0, opts.max || 24);
+  // 브라우저 내장 애니메이션: 끝나면 원래 모습으로 돌아가서, 중간에 멈춰도 내용이 숨겨진 채 남지 않는다
+  els.forEach((el, i) => el.animate?.([{ opacity: 0, transform: `translateY(${opts.y ?? 8}px)` }, { opacity: 1, transform: "none" }],
+    { duration: opts.duration || 360, delay: i * (opts.step || 22), easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" }));
 }
 window.animateIn = animateIn;
 
@@ -177,8 +178,7 @@ function openTab(name) {
   // 화면 전환 애니메이션 (anime.js)
   const sec = $("#tab-" + name);
   moveInk();
-  if (window.anime && sec && !REDUCED) anime({ targets: sec.querySelectorAll(":scope > .panel, :scope > div > .panel, :scope .idx-card"),
-    opacity: [0, 1], translateY: [10, 0], delay: anime.stagger(30), duration: 380, easing: "easeOutQuad" });
+  if (sec) animateIn(sec.querySelectorAll(":scope > .panel, :scope > div > .panel, :scope .idx-card"), { y: 10, step: 30, duration: 380 });
   setTimeout(icons, 0);
 }
 $$("nav button").forEach((b) => b.addEventListener("click", () => openTab(b.dataset.tab)));
@@ -280,7 +280,7 @@ function renderStatus(s) {
   const msgs = [s.error, s.scheduler_error && "스케줄러: " + s.scheduler_error].filter(Boolean);
   if (msgs.length) banner(msgs.join(" / "));
   else if (!s.keys.toss && ["mkt", "stock"].includes(state.tab)) banner("토스증권 키가 없어 체험용 데이터를 보여줍니다. 설정에서 토스증권 Client ID/Secret 을 등록하면 실제 시세로 바뀝니다.", "info");
-  else if (!s.keys.anthropic && state.tab === "office") banner("AI 회의와 비서를 쓰려면 설정에서 Claude API 키를 등록하세요.", "info");
+  else if (!s.keys.anthropic && state.tab === "office") banner("AI 회의와 큐비를 쓰려면 설정에서 Claude API 키를 등록하세요.", "info");
   else banner("");
 
   if ($("#market-cards")) $("#market-cards").innerHTML = Object.entries(s.markets).map(([m, x]) => `
