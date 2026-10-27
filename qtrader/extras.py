@@ -144,7 +144,7 @@ def check_alerts(store, cfg: dict, price_of, save) -> list[dict]:
 # AI 비용 (이번 달, 원)
 def month_cost_krw(store) -> float:
     month = datetime.now().strftime("%Y-%m")
-    total = 0.0
+    total = float(store.get("recheck_cost_" + month, "0") or 0)  # 장중 AI 재점검
     for r in store.rows("select reports from ai_runs where substr(started_at,1,7)=?", (month,)):
         try:
             total += float(json.loads(r["reports"] or "{}").get("cost_usd") or 0)

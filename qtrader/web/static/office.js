@@ -267,6 +267,7 @@ function updateOverlay() {
 
 function renderStages() {
   const r = office.run;
+  if (r?.id === "live") { window.liveHudRefresh && window.liveHudRefresh(); return; } // 실시간 사무실은 따로 그린다
   const st = r?.stages || {};
   $("#stage-line").innerHTML = office.stages.map((s, i) => `<div class="stg ${st[s.key] || "idle"}"><span>${i + 1}</span>${esc(s.name)}</div>`).join("");
   const hud = $("#office-hud");

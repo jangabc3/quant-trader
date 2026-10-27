@@ -304,7 +304,8 @@
         <label class="check"><input type="checkbox" id="live-confirmed"> 실전 주문을 허용합니다. 손실 책임이 저에게 있음을 이해했습니다.</label>
         <div class="pin-panel" id="pin-panel">
           <div><b><i data-lucide="lock-keyhole"></i> 실전 주문 PIN</b> <span class="badge" id="pin-badge">확인 중</span>
-            <p class="note">실전 모드로 바꾸기·자동매매 켜기·주문 승인·즉시 실행·주문 취소 전에 PIN 을 묻습니다. 숫자 4~8자리, 이 PC 에 해시로만 저장돼요.</p></div>
+            <p class="note">실전 모드로 바꾸기·실전 자동매매 켜기·직접 주문·주문 취소 전에 PIN 을 묻습니다. <b>자동매매가 스스로 내는 주문에는 묻지 않아요.</b> 숫자 4~8자리, 이 PC 에 해시로만 저장돼요.</p>
+            <label class="check"><input type="checkbox" id="pin-enabled"> 실전 주문에 PIN 사용 (끄려면 지금 PIN 이 필요해요)</label></div>
           <form class="form-row" id="pin-form">
             <label id="pin-old-wrap" class="hidden">지금 PIN <input id="pin-old" type="password" inputmode="numeric" maxlength="8" autocomplete="off"></label>
             <label>새 PIN <input id="pin-new" type="password" inputmode="numeric" maxlength="8" autocomplete="off" required></label>
@@ -439,6 +440,7 @@
 <script src="/static/dash.js?v=__BUILD__"></script>
 <script src="/static/office.js?v=__BUILD__"></script>
 <script src="/static/office-demo.js?v=__BUILD__"></script>
+<script src="/static/office-live.js?v=__BUILD__"></script>
 <script src="/static/result.js?v=__BUILD__"></script>
 <script src="/static/tools.js?v=__BUILD__"></script>
 <script src="/static/chat.js?v=__BUILD__"></script>

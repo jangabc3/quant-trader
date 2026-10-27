@@ -93,3 +93,17 @@ def test_manual_order_paper(client, isolated_home):
     big = client.post("/api/order", json={"symbol": "005930", "side": "buy", "qty": 10**6}, headers=client.h)
     assert big.status_code == 400 and "한도" in big.json()["detail"]
     assert client.get("/api/trades/why").json()[0]["summary"] == "직접 주문"
+
+
+def test_pin_switch_off_needs_pin_then_skips(client):
+    assert client.post("/api/pin", json={"new": "482916"}, headers=client.h).json()["set"]
+    pinlock.lock_now()
+    cfg = client.get("/api/config").json()
+    cfg["security"] = {"pin": False}
+    assert client.put("/api/config", json=cfg, headers=client.h).status_code == 428  # 끄려면 PIN 필요
+    assert client.put("/api/config", json=cfg, headers=client.h | {"x-qtrader-pin": "482916"}).status_code == 200
+    pinlock.lock_now()
+    cfg = client.get("/api/config").json()
+    cfg["mode"], cfg["live_confirmed"] = "toss_real", True
+    assert client.put("/api/config", json=cfg, headers=client.h).status_code == 200  # 꺼져 있으면 묻지 않는다
+    assert client.get("/api/pin").json()["enabled"] is False
