@@ -19,9 +19,10 @@ function obWelcome() {
     <p>자동매매를 시작하기 전에 <b>투자 성향</b>을 알려 주세요. 증권사 앱의 투자 성향 진단처럼 8개 질문에 답하면,
     사람마다 다른 기준(한 종목 비중, 하루 손실 한도, 매수 조건)으로 자동매매가 맞춰집니다.</p>
     <p class="note">1분 정도 걸립니다. 결과는 설정에서 언제든 다시 바꿀 수 있어요.</p></div>
-    <div class="ob-actions"><button id="ob-skip">나중에 할게요</button><button class="primary" id="ob-go"><i data-lucide="arrow-right"></i> 시작하기</button></div>`);
+    <div class="ob-actions">${ob.meta.investor?.type ? `<button id="ob-cancel">취소</button>` : `<span class="note">검사를 마쳐야 자동매매를 켤 수 있어요</span>`}
+      <button class="primary" id="ob-go"><i data-lucide="arrow-right"></i> 검사 시작</button></div>`);
   $("#ob-go").onclick = () => { ob.i = 0; obQuestion(); };
-  $("#ob-skip").onclick = async () => { await api("/api/profile/skip", { method: "POST" }).catch(() => {}); obClose(); };
+  if ($("#ob-cancel")) $("#ob-cancel").onclick = obClose;
 }
 
 function obQuestion() {
@@ -38,8 +39,14 @@ function obQuestion() {
   $("#ob-back").onclick = () => { if (ob.i) { ob.i--; obQuestion(); } };
 }
 
+const CRIT_GROUPS = [["money", "wallet", "돈 관리", "얼마나 사고, 하루에 얼마까지 잃어도 되는지"],
+  ["buy", "search-check", "살 때 조건", "하나라도 어기면 사지 않아요"], ["sell", "shield-check", "팔 때 · 안전장치", "손실을 작게 끊는 규칙"]];
 function criteriaHtml(list) {
-  return `<div class="crit">${list.map((c) => `<div class="crit-row"><i data-lucide="${c.icon}"></i><span>${esc(c.k)}</span><b>${esc(c.v)}</b><em>${esc(c.why)}</em></div>`).join("")}</div>`;
+  return `<div class="crit-groups">${CRIT_GROUPS.map(([g, icon, title, sub]) => {
+    const rows = list.filter((c) => (c.g || "buy") === g);
+    return rows.length ? `<section class="crit-card"><header><i data-lucide="${icon}"></i><div><b>${title}</b><span>${sub}</span></div></header>
+      ${rows.map((c) => `<div class="crit-item" title="${esc(c.why)}"><i data-lucide="${c.icon}"></i><div><span>${esc(c.k)}</span><em>${esc(c.why)}</em></div><b>${esc(c.v)}</b></div>`).join("")}</section>` : "";
+  }).join("")}</div>`;
 }
 window.criteriaHtml = criteriaHtml;
 
@@ -60,13 +67,22 @@ async function obSubmit() {
 
 function obGuide() {
   const k = state.status?.keys || {};
-  const step = (n, done, title, desc, btn, act) => `<div class="ob-step ${done ? "done" : ""}"><span class="num">${done ? "✓" : n}</span>
-    <div><b>${title}</b><p class="note">${desc}</p></div>${btn ? `<button data-act="${act}">${btn}</button>` : ""}</div>`;
-  obShell(`<h2>3단계로 시작해요</h2>
-    ${step(1, k.toss && k.anthropic, "API 키 연결", "토스증권(시세·주문)과 Claude(AI 회의·큐비) 키를 설정에 저장합니다. 이 PC에만 저장돼요.", "설정 열기", "cfg")}
-    ${step(2, state.status?.mode === "paper", "가상매매로 먼저", "처음 몇 주는 실제 시세로 내 PC 안에서만 체결되는 가상매매로 결과를 확인하세요. 지금 가상매매 모드입니다.", "", "")}
-    ${step(3, false, "첫 AI 투자 회의", "관심 있는 종목을 골라 AI 회의를 열면, 사는 가격·손절·익절·수량과 근거가 나옵니다.", "AI 사무실로", "office")}
-    <div class="ob-actions"><button class="primary" id="ob-done">시작하기</button></div>`);
+  const paper = state.status?.mode === "paper";
+  const steps = [
+    [k.toss && k.anthropic, "key-round", "키 연결", "토스증권(시세·주문)과 Claude(AI 회의) 키를 저장합니다. 이 PC 안에만 보관돼요.", "설정 열기", "cfg"],
+    [paper, "flask-conical", "가상매매로 연습", paper ? "지금 가상매매 모드예요. 실제 시세로 내 PC 안에서만 체결됩니다. 2~4주 결과를 먼저 보세요."
+      : "지금 실전 모드예요. 처음에는 설정 → 운용 모드에서 가상매매를 권합니다.", paper ? "" : "모드 바꾸기", "cfg"],
+    [false, "building-2", "첫 AI 투자 회의", "종목을 골라 회의를 열면 사는 가격·손절·익절·수량과 근거가 나와요.", "AI 사무실로", "office"],
+  ];
+  const doneN = steps.filter((x) => x[0]).length;
+  const tail = (done, btn, act) => done ? `<span class="chip-ok">완료</span>`
+    : btn ? `<button data-act="${act}">${btn} <i data-lucide="chevron-right"></i></button>` : "";
+  obShell(`<div class="note">시작 준비 ${doneN} / 3</div><h2>3단계로 시작해요</h2>
+    <div class="ob-prog"><i style="width:${doneN / 3 * 100}%"></i></div>
+    <ol class="ob-steps">${steps.map(([done, icon, title, desc, btn, act], n) => `<li class="ob-step ${done ? "done" : ""}">
+      <span class="num">${done ? `<i data-lucide="check"></i>` : n + 1}</span>
+      <div class="ob-step-body"><b><i data-lucide="${icon}"></i>${title}</b><p>${desc}</p></div>${tail(done, btn, act)}</li>`).join("")}</ol>
+    <div class="ob-actions"><button class="primary" id="ob-done"><i data-lucide="check"></i> 확인했어요</button></div>`);
   $$("#onboard [data-act]").forEach((b) => b.onclick = () => { obClose(); openTab(b.dataset.act); });
   $("#ob-done").onclick = obClose;
 }
@@ -94,7 +110,7 @@ window.renderCriteria = async () => {
 (async () => {
   try {
     ob.meta = await api("/api/profile");
-    if (!ob.meta.investor) obWelcome();
+    if (!ob.meta.investor?.type) obWelcome();
   } catch {}
 })();
 document.addEventListener("tab", (e) => { if (["cfg", "dash"].includes(e.detail)) window.renderCriteria(); });

@@ -130,3 +130,38 @@ async function loadCompare(run) {
   box.querySelectorAll("[data-run]").forEach((tr) => tr.onclick = () => window.showRunById && window.showRunById(tr.dataset.run));
   icons();
 }
+
+// 오늘 자동매매 흐름: 회의 -> 체크리스트 -> 승인 -> 주문 -> 장중 감시 -> 마감 요약
+async function renderFlow() {
+  const s = state.status, c = state.config;
+  if (!s || !$("#flow")) return;
+  const m = dash.market, mi = s.markets[m];
+  const [runs, appr, orders, plans] = await Promise.all([api("/api/ai/runs?limit=60").catch(() => []),
+    api("/api/approvals?status=pending").catch(() => []), api("/api/orders?limit=80").catch(() => []), api("/api/plans").catch(() => [])]);
+  const today = new Date().toLocaleDateString("sv-SE", { timeZone: m === "KR" ? "Asia/Seoul" : "America/New_York" });
+  const mRuns = runs.filter((r) => r.trade_date === today && (m === "KR" ? /^\d/.test(r.symbol) : !/^\d/.test(r.symbol)));
+  const mOrd = orders.filter((o) => o.trade_date === today && o.market === m);
+  const mPlans = plans.filter((p) => p.market === m);
+  const ai = mi?.strategy === "ai";
+  const rt = mi?.run_time || "-";
+  const before = c?.ai?.run_before_minutes ?? 40;
+  const ran = mOrd.length > 0;
+  const steps = [
+    ["users", "AI 회의", ai ? `실행 ${before}분 전부터 종목마다` : "규칙 전략이라 회의 없음", ai ? (mRuns.length ? `${mRuns.length}종목 완료` : "대기") : "건너뜀", mRuns.length ? "done" : ai ? "wait" : "skip"],
+    ["list-checks", "체크리스트 · 비중", `${rt} · 규칙을 모두 넘은 종목만`, ran ? "계산함" : "대기", ran ? "done" : "wait"],
+    ["hand", "승인", c?.ai?.require_approval ? "내가 근거 보고 승인" : "자동 (승인 안 함)", appr.length ? `${appr.length}건 기다림` : "없음", appr.length ? "now" : ran ? "done" : "wait"],
+    ["send", "주문", s.mode === "paper" ? "가상 체결 (내 PC 안)" : "증권사로 실제 주문", mOrd.length ? `${mOrd.length}건` : "없음", mOrd.length ? "done" : "wait"],
+    ["radar", "장중 손절·익절 감시", "2분마다 가격 확인", mPlans.length ? `${mPlans.length}종목 감시` : "감시할 종목 없음", mi?.open && mPlans.length ? "now" : mPlans.length ? "done" : "wait"],
+    ["newspaper", "마감 요약", "장 마감 5분 뒤", "", "wait"],
+  ];
+  $("#flow").innerHTML = steps.map(([icon, t, sub, st, k], i) => `<div class="fstep ${k}"><span class="fi"><i data-lucide="${icon}"></i></span>
+    <b>${i + 1}. ${t}</b><em>${esc(sub)}</em>${st ? `<span class="fst">${esc(st)}</span>` : ""}</div>`).join("");
+  $("#flow-sub").textContent = `${MODE_NAME[s.mode]} · ${s.auto_trading ? "자동매매 켜짐" : "자동매매 꺼짐"} · 다음 실행 ${(mi?.next_run || "").replace("T", " ").slice(5, 16)}`;
+  $("#flow-cta").innerHTML = s.mode === "paper" && !s.auto_trading
+    ? `<div class="flow-cta"><div><b>가상매매로 연습해 보세요</b><span class="note">실제 시세로 내 PC 안에서만 사고팔아요. 돈은 움직이지 않습니다. '미리보기'로 오늘 무엇을 살지 먼저 볼 수도 있어요.</span></div>
+       <button class="primary" id="flow-start"><i data-lucide="play"></i> 가상매매 자동매매 시작</button></div>` : "";
+  if ($("#flow-start")) $("#flow-start").onclick = () => $("#auto-btn").click();
+  icons();
+}
+const _loadDashExtras = window.loadDashExtras;
+window.loadDashExtras = async () => { await Promise.all([_loadDashExtras(), renderFlow()]); };

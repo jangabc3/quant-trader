@@ -82,7 +82,7 @@ details.adv[open] > summary { margin-bottom: 8px; }
 @media (max-width: 900px) { .mode-cards { grid-template-columns: repeat(2, 1fr); } }
 
 /* 등락률 칸, 관심 줄, 토스트 */
-.rate { color: #fff; font-weight: 700; min-width: 84px; }
+.rate { font-weight: 700; min-width: 72px; display: inline-block; text-align: right; font-variant-numeric: tabular-nums; }
 .watch-lbl { display: inline-flex; gap: 6px; align-items: center; font-weight: 700; color: #ff8a9a; margin-right: 4px; }
 .watch-lbl.note { color: var(--muted); font-weight: 400; }
 #toasts { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 60; display: grid; gap: 8px; }
@@ -90,3 +90,65 @@ details.adv[open] > summary { margin-bottom: 8px; }
   padding: 11px 16px; border-radius: 12px; box-shadow: 0 12px 30px rgba(0,0,0,.45); font-size: 14px; animation: toast-in .25s ease-out; }
 .toast.out { opacity: 0; transform: translateY(8px); transition: .35s; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(10px); } }
+
+/* 등락: 토스증권 색 (상승 #F04452, 하락 #3182F6), 배경 없이 글자색만 */
+.up, .rate.up { color: #f04452 !important; } .down, .rate.down { color: #3182f6 !important; } .rate:not(.up):not(.down) { color: var(--muted); }
+table.rank { border-collapse: separate; border-spacing: 0; }
+table.rank th { font-size: 12px; color: var(--muted); font-weight: 500; padding: 10px 8px; border-bottom: 1px solid var(--line); }
+table.rank td { padding: 12px 8px; border-bottom: 1px solid rgba(255,255,255,.04); font-variant-numeric: tabular-nums; }
+table.rank tbody tr { transition: background .15s; }
+table.rank tbody tr:hover { background: rgba(255,255,255,.035); }
+table.rank td.px { font-weight: 700; font-size: 15px; }
+table.rank .rate { font-size: 15px; }
+table.rank .rk { font-weight: 700; color: var(--muted); }
+table.rank .nm { font-size: 15px; }
+.ai-btn { opacity: .0; transition: opacity .15s; }
+table.rank tr:hover .ai-btn, .ai-btn:focus { opacity: 1; }
+@media (hover: none) { .ai-btn { opacity: 1; } }
+.sector { position: relative; overflow: hidden; background: var(--panel2) !important; color: var(--text) !important; border: 1px solid var(--line) !important; text-align: left; }
+.sector b { color: var(--text); font-weight: 600; }
+.sector .sbar { position: absolute; left: 0; bottom: 0; height: 3px; width: var(--a); background: currentColor; }
+.sector.up .sbar { background: #f04452; } .sector.down .sbar { background: #3182f6; }
+.sector:hover { border-color: #3a4656 !important; filter: none; transform: translateY(-1px); }
+
+/* AI 사무실: 이름표는 겹치지 않는 작은 명찰, 진행 상태는 사무실 밖 위쪽 */
+.office-status { display: grid; grid-template-columns: minmax(240px, 300px) 1fr; gap: 10px; margin-bottom: 10px; align-items: stretch; }
+.office-status .stage-line { margin: 0; }
+.office-hud { position: static !important; display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px !important; border-radius: 12px !important;
+  background: var(--panel) !important; border: 1px solid var(--line) !important; color: var(--text) !important; font-size: 13px; line-height: 1.5; }
+.office-hud small { color: var(--muted) !important; }
+.office-hud .hud-dot { width: 10px; height: 10px; border-radius: 50%; background: #6b7785; margin-top: 5px; flex: none; }
+.office-hud.running .hud-dot { background: #e9a23b; box-shadow: 0 0 0 0 rgba(233,162,59,.6); animation: hudPulse 1.4s infinite; }
+.office-hud.done .hud-dot { background: #2fbf71; } .office-hud.error .hud-dot { background: #f04452; }
+@keyframes hudPulse { 70% { box-shadow: 0 0 0 8px rgba(233,162,59,0); } 100% { box-shadow: 0 0 0 0 rgba(233,162,59,0); } }
+.agent .tag { top: calc(100% + 1px) !important; display: flex; flex-direction: column; align-items: center; gap: 0; padding: .25cqw .7cqw .3cqw;
+  background: rgba(18,12,8,.86); border: 1px solid rgba(243,227,195,.22); border-radius: .8cqw; box-shadow: 0 2px 6px rgba(0,0,0,.35); }
+.agent .tag b { font-size: clamp(8px, 1.35cqw, 13px) !important; line-height: 1.25; text-shadow: none !important; font-weight: 700; letter-spacing: -.01em; }
+.agent .tag span { font-size: clamp(7px, 1.05cqw, 11px) !important; line-height: 1.2; color: #d9c49a !important; text-shadow: none !important; }
+.agent.sel .tag { border-color: #ffd34d; } .agent.sel .tag b { color: #ffd34d !important; }
+.agent .hit:hover ~ .tag { border-color: rgba(255,211,77,.7); }
+.room-label { top: auto; padding: .2cqw .9cqw !important; border-radius: .6cqw !important; font-size: clamp(8px, 1.35cqw, 13px) !important; letter-spacing: -.01em;
+  background: rgba(18,12,8,.9) !important; border: 1px solid rgba(243,227,195,.25); }
+.agent .bubble { font-size: clamp(8px, 1.2cqw, 12px) !important; line-height: 1.35; padding: .5cqw .8cqw !important; border-radius: .8cqw !important; box-shadow: 0 4px 12px rgba(0,0,0,.35); }
+@media (max-width: 900px) { .office-status { grid-template-columns: 1fr; } }
+
+/* 모션 */
+nav { position: relative; }
+#nav-ink { position: absolute; left: 0; bottom: 0; height: 2px; border-radius: 3px; background: var(--blue); transition: transform .35s cubic-bezier(.2,.8,.2,1), width .35s cubic-bezier(.2,.8,.2,1); pointer-events: none; }
+button { transition: transform .12s ease, background .15s, border-color .15s, color .15s, box-shadow .15s; }
+button:active:not(:disabled) { transform: scale(.97); }
+button.primary:hover { box-shadow: 0 6px 18px rgba(49,130,246,.35); }
+.panel, .kpi, .hold, .idx-card, .card { transition: transform .2s ease, border-color .2s, box-shadow .2s; }
+.hold:hover, .idx-card:hover, .kpi:hover { transform: translateY(-2px); border-color: #34445a; box-shadow: 0 10px 26px rgba(0,0,0,.35); }
+.flash-up { animation: flashUp .9s ease-out; } .flash-down { animation: flashDown .9s ease-out; }
+@keyframes flashUp { 0% { background: rgba(240,68,82,.35); } 100% { background: transparent; } }
+@keyframes flashDown { 0% { background: rgba(49,130,246,.35); } 100% { background: transparent; } }
+td.px span { padding: 2px 4px; border-radius: 4px; }
+.toast { animation: toastIn .35s cubic-bezier(.2,.8,.2,1); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(14px) scale(.96); } to { opacity: 1; transform: none; } }
+details > summary { transition: color .15s; }
+details[open] > :not(summary) { animation: openDown .28s ease-out; }
+@keyframes openDown { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.skeleton { background: linear-gradient(90deg, var(--panel2) 25%, #222c38 37%, var(--panel2) 63%); background-size: 400% 100%; animation: shimmer 1.3s infinite; border-radius: 8px; }
+@keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

@@ -95,9 +95,14 @@ DEFAULT = {
         {"name": "조선비즈 증권", "url": "https://biz.chosun.com/arc/outboundfeeds/rss/category/stock/?outputType=xml", "cat": "kr"},
         {"name": "파이낸셜뉴스 증권", "url": "https://www.fnnews.com/rss/r20/fn_realnews_stock.xml", "cat": "kr"},
         {"name": "인베스팅닷컴", "url": "https://kr.investing.com/rss/news_25.rss", "cat": "global"},
-        {"name": "뉴욕증시", "url": "https://news.google.com/rss/search?hl=ko&gl=KR&ceid=KR:ko&q=%EB%89%B4%EC%9A%95%EC%A6%9D%EC%8B%9C", "cat": "global"},
-        {"name": "미국증시·나스닥", "url": "https://news.google.com/rss/search?hl=ko&gl=KR&ceid=KR:ko&q=%EB%AF%B8%EA%B5%AD%EC%A6%9D%EC%8B%9C+OR+%EB%82%98%EC%8A%A4%EB%8B%A5+OR+S%26P500", "cat": "global"},
-        {"name": "미국 빅테크", "url": "https://news.google.com/rss/search?hl=ko&gl=KR&ceid=KR:ko&q=%EC%97%94%EB%B9%84%EB%94%94%EC%95%84+OR+%ED%85%8C%EC%8A%AC%EB%9D%BC+OR+%EC%95%A0%ED%94%8C+%EC%A3%BC%EA%B0%80", "cat": "global"},
+        {"name": "인베스팅닷컴 주식", "url": "https://kr.investing.com/rss/stock.rss", "cat": "global"},
+        {"name": "조선비즈 국제", "url": "https://biz.chosun.com/arc/outboundfeeds/rss/category/international/?outputType=xml", "cat": "global", "filter": True},
+        {"name": "한국경제 국제", "url": "https://www.hankyung.com/feed/international", "cat": "global", "filter": True},
+        {"name": "매일경제 국제", "url": "https://www.mk.co.kr/rss/30300018/", "cat": "global", "filter": True},
+        {"name": "뉴욕증시·나스닥", "url": "https://news.google.com/rss/search?hl=ko&gl=KR&ceid=KR:ko&q=%EB%89%B4%EC%9A%95%EC%A6%9D%EC%8B%9C%20OR%20%EB%82%98%EC%8A%A4%EB%8B%A5%20%EB%A7%88%EA%B0%90%20OR%20%EB%8B%A4%EC%9A%B0%EC%A7%80%EC%88%98%20OR%20S%26P500%20when%3A2d", "cat": "global"},
+        {"name": "월가·연준", "url": "https://news.google.com/rss/search?hl=ko&gl=KR&ceid=KR:ko&q=%EC%9B%94%EA%B0%80%20OR%20%EC%97%B0%EC%A4%80%20OR%20%ED%8C%8C%EC%9B%94%20OR%20%EB%AF%B8%EA%B5%AD%20%EA%B5%AD%EC%B1%84%20when%3A2d", "cat": "global"},
+        {"name": "미국 빅테크", "url": "https://news.google.com/rss/search?hl=ko&gl=KR&ceid=KR:ko&q=%EC%97%94%EB%B9%84%EB%94%94%EC%95%84%20OR%20%ED%85%8C%EC%8A%AC%EB%9D%BC%20OR%20%EC%95%A0%ED%94%8C%20OR%20%EB%A7%88%EC%9D%B4%ED%81%AC%EB%A1%9C%EC%86%8C%ED%94%84%ED%8A%B8%20OR%20%ED%8C%94%EB%9E%80%ED%8B%B0%EC%96%B4%20%EC%A3%BC%EA%B0%80%20when%3A2d", "cat": "global"},
+        {"name": "서학개미·해외주식", "url": "https://news.google.com/rss/search?hl=ko&gl=KR&ceid=KR:ko&q=%EC%84%9C%ED%95%99%EA%B0%9C%EB%AF%B8%20OR%20%ED%95%B4%EC%99%B8%EC%A3%BC%EC%8B%9D%20OR%20%EB%AF%B8%EA%B5%AD%20ETF%20when%3A3d", "cat": "global"},
     ]},
     # 미국 재무제표(SEC EDGAR)는 요청에 연락처가 필요하다
     "sec_contact": "",
@@ -140,7 +145,10 @@ def load() -> dict:
     old = {"https://kr.investing.com/rss/news_25.rss", "https://kr.investing.com/rss/news.rss"}
     feeds = cfg.get("news", {}).get("feeds") or []
     english = {"https://www.cnbc.com/id/100003114/device/rss/rss.html", "https://feeds.content.dowjones.io/public/rss/mw_topstories"}
-    if feeds and ({f.get("url") for f in feeds} <= old or any(f.get("url") in english for f in feeds) or not all("cat" in f for f in feeds)):
+    names = {f.get("name") for f in feeds}
+    legacy = {"뉴욕증시", "미국증시·나스닥"} & names and "월가·연준" not in names
+    if feeds and ({f.get("url") for f in feeds} <= old or legacy or any(("cnbc.com" in (f.get("url") or "")) or ("dowjones" in (f.get("url") or "")) or f.get("url") in english for f in feeds)
+                  or not all("cat" in f for f in feeds)):
         cfg["news"]["feeds"] = copy.deepcopy(DEFAULT["news"]["feeds"])
     return cfg
 

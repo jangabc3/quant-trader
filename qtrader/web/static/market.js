@@ -106,10 +106,9 @@ async function loadWatch() {
   } catch { $("#watch").innerHTML = ""; }
 }
 
+// 토스증권처럼 등락률은 배경 없이 빨강(상승)·파랑(하락) 글자로
 function rateCell(r) {
-  const a = Math.min(Math.abs(r) / 0.1, 1);
-  const bg = r > 0 ? `rgba(240,68,82,${0.55 + a * 0.45})` : r < 0 ? `rgba(49,130,246,${0.55 + a * 0.45})` : "#3a4350";
-  return `<span class="rate" style="background:${bg}">${r > 0 ? "▲ " : r < 0 ? "▼ " : ""}${pct(r).replace("+", "")}</span>`;
+  return `<span class="rate ${cls(r)}">${pct(r)}</span>`;
 }
 
 async function loadRankings() {
@@ -121,11 +120,14 @@ async function loadRankings() {
       <td class="rk">${x.rank}</td>
       <td><button class="heart ${watch.has(x.symbol) ? "on" : ""}" data-heart="${esc(x.symbol)}" title="관심 종목">♥</button></td>
       <td class="clickable" data-open="${esc(x.symbol)}"><div class="namecell">${logo(x.symbol, x.name)}<div><div class="nm">${esc(x.name)}</div><div class="sym">${esc(x.symbol)}</div></div></div></td>
-      <td class="r">${money(x.price, x.currency)}</td>
+      <td class="r px"><span data-key="p:${esc(x.symbol)}" data-val="${x.price}">${money(x.price, x.currency)}</span></td>
       <td class="r">${rateCell(x.change_rate)}</td>
       <td class="r">${x.currency === "USD" ? "$" + bigKRW(x.amount) : bigKRW(x.amount) + "원"}</td>
       <td class="r"><button class="ai-btn" data-ai="${esc(x.symbol)}">AI 분석</button></td></tr>`).join("")
       || `<tr><td colspan="7" class="note">순위 데이터가 없습니다.</td></tr>`;
+    const key = mkt.kind + mkt.market + mkt.duration;
+    if (key !== mkt.lastKey) { mkt.lastKey = key; animateIn("#rank-body tr", { step: 18 }); }
+    flashChanges($("#rank-body"));
   } catch (e) { $("#rank-body").innerHTML = `<tr><td colspan="7" class="note">${esc(e.message)}</td></tr>`; }
 }
 
@@ -183,9 +185,8 @@ async function loadSectors() {
     const items = r.items.slice().sort((a, b) => b.changeRate - a.changeRate);
     el.innerHTML = items.map((x) => {
       const a = Math.min(Math.abs(x.changeRate) / 0.04, 1);
-      const bg = x.changeRate >= 0 ? `rgba(240,68,82,${0.12 + a * 0.6})` : `rgba(49,130,246,${0.12 + a * 0.6})`;
-      return `<button class="sector" data-sector="${esc(x.sectorId)}" data-sname="${esc(x.name)}" style="background:${bg}">
-        <b>${esc(x.name)}</b><span>${pct(x.changeRate)}</span></button>`;
+      return `<button class="sector ${cls(x.changeRate)}" data-sector="${esc(x.sectorId)}" data-sname="${esc(x.name)}" style="--a:${(a * 100).toFixed(0)}%">
+        <b>${esc(x.name)}</b><span class="${cls(x.changeRate)}">${pct(x.changeRate)}</span><i class="sbar"></i></button>`;
     }).join("") || `<p class="note">섹터 데이터가 없습니다.</p>`;
     $("#sec-note").textContent = (r.demo ? "체험용 · " : "") + "칸을 누르면 그 섹터 종목이 보입니다";
   } catch (e) { el.innerHTML = `<p class="note">${esc(e.message)}</p>`; }

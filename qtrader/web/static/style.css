@@ -103,7 +103,7 @@ footer { color: var(--muted); font-size: 12px; text-align: center; padding: 20px
 table.rank td { padding: 8px; }
 table.rank .rk { color: var(--muted); width: 36px; }
 table.rank .nm { font-weight: 600; } table.rank .sym { color: var(--muted); font-size: 11px; }
-.rate { display: inline-block; min-width: 76px; text-align: right; padding: 3px 8px; border-radius: 6px; font-weight: 600; color: #fff; }
+.rate { display: inline-block; min-width: 72px; text-align: right; font-weight: 700; }
 .heart { background: none; border: 0; color: #4a5562; padding: 0 4px; font-size: 15px; }
 .heart.on { color: var(--red); }
 .ai-btn { font-size: 12px; padding: 3px 10px; background: rgba(49,130,246,.15); border-color: rgba(49,130,246,.4); color: #b7cfff; }
