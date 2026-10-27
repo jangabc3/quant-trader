@@ -1,4 +1,5 @@
-"""시장별 실행 시각에 하루 한 번 엔진을 돌린다. 자동매매가 켜져 있을 때만."""
+"""시장별 실행 시각에 하루 한 번 엔진을 돌리고, 장중에는 2분마다 감시·손절·익절과 (켜면) 장중 회의 -> 한 종목 매수를 한다.
+자동매매가 켜져 있을 때만."""
 from __future__ import annotations
 
 import json
@@ -172,8 +173,12 @@ class Scheduler:
                                                           f"{x['symbol']} @ {x['price']:,} ({x['status']})", "exit")
                         if cfg["markets"][m.value].get("strategy") == "ai":
                             from . import live
-                            live.run_rechecks(ctx, m)
+                            rk = f"_recheck_{m.value}"
+                            if time.monotonic() - getattr(self, rk, float("-inf")) >= 60 * int(cfg["ai"].get("recheck_every_min", 2)) - 5:
+                                setattr(self, rk, time.monotonic())
+                                live.run_rechecks(ctx, m)
                             self._new_candidates(ctx, m)
+                            self._intraday(ctx, m)
                     if after_close(m) and (cfg.get("compare") or {}).get("enabled"):
                         from . import compare
                         compare.snapshot(ctx, m)
@@ -237,23 +242,104 @@ class Scheduler:
         self._last_exit = 0.0  # 곧바로 체결 확인·손절 점검
 
     def _new_candidates(self, ctx, m: Market) -> None:
-        """15분마다 숫자 규칙을 다시 돌려, 새로 통과한 종목을 오늘 회의 후보에 올린다 (매수는 정기 실행 때만)."""
+        """N분마다(ai.intraday_every_min, 기본 15) 숫자 규칙을 다시 돌려, 새로 통과한 종목을 오늘 회의 후보에 올린다.
+        장중 계속(ai.intraday)을 켜면 _intraday 가 이 후보로 회의를 열고 바로 산다. 끄면 정기 실행 때만 검토한다."""
         import json as _json
         from . import live
         key = f"_cand_{m.value}"
-        if time.monotonic() - getattr(self, key, 0) < 900:
+        every = 60 * int(ctx.cfg["ai"].get("intraday_every_min", 15))
+        if time.monotonic() - getattr(self, key, float("-inf")) < every:
             return
         setattr(self, key, time.monotonic())
         today = trade_date(m)
         pk = f"picks_{m.value}_{today}"
         picks = _json.loads(ctx.store.get(pk) or "[]")
         have = {p["symbol"] for p in picks}
-        fresh = [c for c in live.next_candidates(ctx, m) if not c["missing"] and c["symbol"] not in have]
+        fresh = [c for c in live.next_candidates(ctx, m, ttl=every) if not c["missing"] and c["symbol"] not in have]
         if fresh and len(picks) < int(ctx.cfg["ai"]["max_symbols_per_day"]):
             add = fresh[: int(ctx.cfg["ai"]["max_symbols_per_day"]) - len(picks)]
             picks += [{"symbol": c["symbol"], "score": c["score"], "reason": "장중 새로 규칙 통과", "held": False, "fails": []} for c in add]
             ctx.store.set(pk, _json.dumps(picks, ensure_ascii=False))
-            ctx.store.log("info", f"live.{m.value}", "새 후보: " + ", ".join(c["symbol"] for c in add) + " (다음 정기 회의·실행 때 검토)")
+            when = "곧 장중 회의" if ctx.cfg["ai"].get("intraday", True) else "다음 정기 회의·실행 때 검토"
+            ctx.store.log("info", f"live.{m.value}", "새 후보: " + ", ".join(c["symbol"] for c in add) + f" ({when})")
+
+    def _intraday(self, ctx, m: Market) -> list[dict]:
+        """장중 계속 사기 (ai.intraday): 끝난 장중 회의는 그 종목만 바로 사고(engine.buy_one), N분마다 새 후보 하나로 회의를 연다.
+        비용 한도: 하루 회의 수(ai.max_symbols_per_day, 정기 회의와 합산)·월 비용 상한, 같은 종목은 하루 한 번, 회의는 한 번에 하나."""
+        import json as _json
+        from . import extras
+        from .agents import meeting
+        from .engine import buy_one
+
+        ai = ctx.cfg["ai"]
+        if not ai.get("intraday", True):
+            return []
+        today = trade_date(m)
+        key = f"intraday_{m.value}_{today}"
+        state = _json.loads(ctx.store.get(key) or "{}")
+        out = []
+        # 1) 결론이 난 회의 -> 그 종목만 매수
+        for sym, e in state.items():
+            if e.get("state") != "meeting":
+                continue
+            run = meeting.get_run(e["run_id"]) or next((r for r in ctx.store.ai_runs(50, sym) if r["id"] == e["run_id"]), None)
+            if run and run["status"] == "running":
+                continue
+            if not run or run["status"] != "done":
+                e.update(state="error", note=(run or {}).get("error") or "회의가 끝나지 못함 (프로그램이 다시 시작됨)")
+                continue
+            try:
+                res = buy_one(ctx, m, sym)
+            except Exception as ex:
+                res = {"status": "error", "message": str(ex), "qty": 0}
+                ctx.store.log("error", f"intraday.{m.value}", f"{sym} 장중 매수 실패: {ex}")
+            e.update(state={"filled": "bought", "submitted": "bought", "pending_approval": "approval"}.get(res["status"], "skipped"),
+                     note=res.get("message", ""), qty=res.get("qty", 0))
+            out.append(res | {"symbol": sym})
+            if res["status"] in ("filled", "submitted", "pending_approval"):
+                f = (run.get("final") or {})
+                head = "🛒 장중 매수" if res["status"] != "pending_approval" else "📝 장중 매수 승인 대기"
+                extras.notify(ctx.store, ctx.cfg, f"{head} {sym} {res['qty']}주 — AI 회의 {f.get('rating')} "
+                              f"(확신 {float(f.get('confidence') or 0):.0%}) · {f.get('headline', '')}", "order")
+        ctx.store.set(key, _json.dumps(state, ensure_ascii=False))
+        # 2) 새 회의 열기: N분에 하나, 회의는 한 번에 하나
+        ik = f"_intraday_{m.value}"
+        if time.monotonic() - getattr(self, ik, float("-inf")) < 60 * int(ai.get("intraday_every_min", 15)) - 5:
+            return out
+        if ctx.kill or any(r["status"] == "running" for r in meeting.live_runs()):
+            return out
+        met = {r["symbol"] for r in ctx.store.ai_runs(200) if r["trade_date"] == today}
+        if len(met) >= int(ai["max_symbols_per_day"]):
+            return out
+        cap = float(ai.get("monthly_cost_cap_krw") or 0)
+        if cap and extras.month_cost_krw(ctx.store) >= cap:
+            return out
+        from .screener import todays
+        try:
+            picks = todays(ctx, m, today, int(ai["max_symbols_per_day"])) if ai.get("auto_pick", True) else \
+                [{"symbol": s} for s in ctx.cfg["markets"][m.value]["universe"]]
+        except Exception as ex:
+            ctx.store.log("warn", f"intraday.{m.value}", f"후보 고르기 실패: {ex}")
+            return out
+        try:
+            held = set(ctx.broker.account(m).positions)
+        except Exception:
+            held = set()
+        bought = ctx.store.ordered_today(ctx.broker.name, m.value, today)
+        sym = next((p["symbol"] for p in picks if p["symbol"] not in (met | set(state) | held | bought) and not p.get("held")), None)
+        if not sym:
+            return out
+        setattr(self, ik, time.monotonic())
+        ctx.store.log("info", f"ai.{m.value}", f"{sym} 장중 AI 회의 시작 (결론이 매수이고 체크리스트를 통과하면 바로 삽니다)")
+        try:
+            run = meeting.start(sym, ctx.data, ctx.store, ctx.cfg, toss=getattr(ctx.data, "client", None)
+                                if getattr(ctx.data, "name", "") == "toss" else None)
+        except ValueError as ex:  # 월 비용 상한 등
+            ctx.store.log("warn", f"ai.{m.value}", str(ex))
+            return out
+        state[sym] = {"run_id": run["id"], "state": "meeting", "at": datetime.now(TZ[m]).strftime("%H:%M")}
+        ctx.store.set(key, _json.dumps(state, ensure_ascii=False))
+        return out
 
     @staticmethod
     def _session_open(ctx, m: Market) -> bool:

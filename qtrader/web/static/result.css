@@ -243,6 +243,18 @@ table.refs td { white-space: normal; font-size: 13px; vertical-align: top; }
 .pk-st { font-size: 11.5px; text-align: center; padding: 3px 0; border-radius: 99px; background: var(--panel2); color: var(--muted); white-space: nowrap; }
 .pk-st.done { color: #2fbf71; background: rgba(47,191,113,.12); } .pk-st.held { color: #e9a23b; background: rgba(233,162,59,.12); }
 .pk-none { margin: 4px 0; }
+/* 장중 회의 -> 매수 흐름판 */
+.live-board .lb-flow { grid-column: 1 / -1; }
+.lb-steps { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.lb-steps > div { flex: 1 1 140px; display: grid; grid-template-columns: 18px 1fr; column-gap: 6px; padding: 8px 10px; border-radius: 10px; background: var(--panel2); font-size: 12.5px; }
+.lb-steps > div svg { width: 16px; height: 16px; color: var(--blue); grid-row: span 2; margin-top: 2px; } .lb-steps span { color: var(--muted); font-size: 11.5px; }
+.lb-steps .lb-arrow { width: 14px; height: 14px; color: var(--muted); flex: 0 0 auto; }
+.lb-items { display: flex; flex-wrap: wrap; gap: 6px; }
+.lb-item { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 99px; border: 1px solid var(--line); font-size: 12px; cursor: pointer; max-width: 100%; }
+.lb-item svg { width: 13px; height: 13px; } .lb-item time { color: var(--muted); font-variant-numeric: tabular-nums; } .lb-item span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-item.meeting { border-color: var(--blue); } .lb-item.meeting svg { color: var(--blue); }
+.lb-item.bought { border-color: #2fbf71; } .lb-item.bought svg { color: #2fbf71; }
+.lb-item.approval svg, .lb-item.error svg { color: #e9a23b; }
 
 /* 왜 후보가 적은지 */
 .pk-why { margin: 8px 0 0; font-size: 12px; }

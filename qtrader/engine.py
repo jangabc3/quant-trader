@@ -550,3 +550,121 @@ def run_market(ctx: Context, market: Market, dry_run: bool = False, force: bool 
                                        for o, w in checked.blocked],
         "kill_switch": kill, "data_errors": errors, "dry_run": dry_run,
     }
+
+
+def intraday_allowed(ctx: Context, market: Market, today: str) -> set[str]:
+    """장중 매수를 허용하는 종목: 설정 종목 + (AI 가 고르기를 켰으면) 오늘 후보·오늘 회의한 종목."""
+    import json as _json
+    allowed = set(ctx.cfg["markets"][market.value]["universe"])
+    if ctx.cfg["ai"].get("auto_pick", True):
+        allowed |= {p["symbol"] for p in _json.loads(ctx.store.get(f"picks_{market.value}_{today}") or "[]")}
+        allowed |= {r["symbol"] for r in ctx.store.ai_runs(200) if r["trade_date"] == today and r["market"] == market.value}
+    return allowed
+
+
+def buy_one(ctx: Context, market: Market, symbol: str) -> dict:
+    """장중 회의 결론으로 이 한 종목만 산다.
+
+    run_market(목표 비중 전체를 맞추는 리밸런싱)과 달리 다른 보유 종목은 건드리지 않고, 절대 팔지 않는다.
+    매수 체크리스트(ai_targets)와 같은 리스크 검사(check_orders: 허용 종목·킬 스위치·오늘 중복·현금)를 거치고,
+    한 종목 비중·전체 투자 비중·한 번 주문 금액 한도, 승인 대기 설정, 미국 달러 정책도 정기 실행과 똑같이 따른다."""
+    cfg, store = ctx.cfg, ctx.store
+    mc = cfg["markets"][market.value]
+    acct_id = ctx.broker.name
+    today = trade_date(market)
+    src = f"intraday.{market.value}"
+
+    def skip(why: str, status: str = "skipped") -> dict:
+        store.log("info", src, f"{symbol} 장중 매수 안 함: {why}")
+        return {"symbol": symbol, "side": "buy", "qty": 0, "status": status, "message": why}
+
+    if mc.get("strategy") != "ai":
+        return skip("AI 전략이 아닌 시장")
+    errors: list[str] = []
+    p = panel(ctx.data, market, [symbol], cfg["history_days"], errors)
+    if symbol not in p:
+        return skip("시세 자료를 받지 못함 " + "; ".join(errors), "error")
+    tc = getattr(ctx.data, "client", None) if getattr(ctx.data, "name", "") == "toss" else None
+
+    def warns(sym):
+        try:
+            return tc.warnings(sym) if tc else []
+        except Exception:
+            return []
+    from .principles import index_bars
+    raw, _keep, notes = ai_targets(store, cfg, p, today, acct_id, market.value, warns, index_bars(ctx.data, market))
+    note = notes[0] if notes else {}
+    if note.get("rating") not in ("Buy", "Overweight") or raw.get(symbol, 0) <= 0:
+        return skip(note.get("action") or "회의 결과 없음")  # 매도 의견이어도 여기서는 팔지 않는다 (손절·재점검이 맡음)
+
+    lim = RiskLimits.from_config(cfg, market)
+    w = cap_weights({symbol: raw[symbol]}, lim)[symbol]
+    acct = ctx.broker.account(market)
+    allowed = intraday_allowed(ctx, market, today)
+    mine = allowed | {pl["symbol"] for pl in store.active_plans(acct_id, market.value)}
+    invested = sum(pos.value for s, pos in acct.positions.items() if s in mine)
+    capital = min(float(mc["budget"]), acct.cash + invested)
+    pos = acct.positions.get(symbol)
+    try:
+        px = float(pos.last_price if pos and pos.last_price else ctx.data.price(market, symbol))
+    except Exception:
+        px = 0.0
+    px = px or float(p[symbol]["close"].iloc[-1])
+    held = pos.qty if pos else 0
+    room = max(0.0, capital * lim.max_exposure - invested)  # 전체 투자 비중 한도 안에서만
+    want = math.floor(min(capital * w, held * px + room) / px)
+    qty = clamp_qty(want - held, px, lim)
+    if qty <= 0:
+        return skip(f"살 수량이 없음 (목표 {w:.1%}, 투자 비중·주문 금액 한도)")
+    order_px = round(px * (1 + mc.get("limit_offset", 0.0)), 2) if market == Market.US else px
+    d = store.latest_decision(symbol, today) or {}
+    req = OrderRequest(market, symbol, Side.BUY, qty, order_px, "ai",
+                       order_reason(note, d.get("plan"), f"장중 회의 매수 · 목표 {w:.1%} 보유 {held} -> {held + qty}"))
+
+    kill = check_loss(ctx, market)  # 하루 손실 한도를 넘었으면 여기서 킬 스위치가 켜진다
+    chk = check_orders([req], lim, allowed, kill, store.ordered_today(acct_id, market.value, today), acct.cash)
+    if chk.blocked:
+        why = chk.blocked[0][1]
+        store.log("warn", src, f"차단 buy {symbol} x{qty}: {why}")
+        return {"symbol": symbol, "side": "buy", "qty": qty, "status": "blocked", "message": why}
+
+    if cfg["ai"].get("require_approval", False):
+        store.expire_approvals(market.value, today)
+        if symbol in store.pending_symbols(acct_id, market.value, today):
+            return skip("이미 승인 대기 중")
+        aid = store.add_approval(trade_date=today, account=acct_id, market=market.value, symbol=symbol, side="buy",
+                                 qty=qty, price=order_px, strategy="ai", reason=req.reason)
+        store.log("info", src, f"승인 대기 #{aid} buy {symbol} x{qty}")
+        return {"symbol": symbol, "side": "buy", "qty": qty, "price": order_px, "status": "pending_approval",
+                "message": f"승인 대기 #{aid}"}
+
+    if (market == Market.US and acct_id == "toss" and cfg.get("fx_policy", "preferential_only") == "preferential_only"):
+        try:
+            usd = float(ctx.broker.client.buying_power("USD"))
+        except Exception:
+            usd = float("inf")
+        if req.notional > usd:
+            store.log("warn", src, f"{symbol} 달러 부족(${req.notional - usd:,.0f})으로 사지 않았습니다. 환전 우대로 환전해 주세요")
+            return {"symbol": symbol, "side": "buy", "qty": qty, "price": order_px, "status": "skipped_fx",
+                    "message": "달러 부족 · 환전 필요"}
+
+    # 장중 매수는 바로 지정가로 (미국 LOC 는 장 마감까지 기다리므로 쓰지 않는다)
+    r = ctx.broker.order(req, loc=False) if isinstance(ctx.broker, TossBroker) else ctx.broker.order(req)
+    status = ("filled" if r.filled_qty else "submitted") if r.ok else "rejected"
+    store.add_order(trade_date=today, account=acct_id, market=market.value, symbol=symbol, side="buy", qty=qty,
+                    price=order_px, status=status, broker_order_id=r.broker_order_id, strategy="ai",
+                    message=f"{req.reason} | {r.message}")
+    store.log("info" if r.ok else "error", src, f"{status} buy {symbol} x{qty} @ {order_px:,.2f} {r.message}")
+    if r.ok and acct_id == "toss":
+        try:  # 바로 체결됐는지 확인 -> 체결되면 손절·익절 계획과 토스 보호(OCO)까지 (_plan_after_fill)
+            sync_orders(ctx)
+        except Exception as e:
+            store.log("warn", "sync", f"체결 확인 실패: {e}")
+    elif r.ok:
+        remember_plan(store, acct_id, market.value, req, today)
+        try:
+            from . import guard
+            guard.sync(ctx)
+        except Exception as e:
+            store.log("warn", "guard", f"매수 뒤 보호 걸기 실패: {e}")
+    return {"symbol": symbol, "side": "buy", "qty": qty, "price": order_px, "status": status, "message": r.message}
