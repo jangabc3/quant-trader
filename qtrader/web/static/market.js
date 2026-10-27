@@ -101,17 +101,49 @@ async function loadWatch() {
     const rows = await api("/api/market/watch");
     $("#watch").innerHTML = rows.length ? `<span class="watch-lbl"><i data-lucide="heart"></i> 관심 종목</span>` + rows.map((w) => `<button class="chip" data-open="${esc(w.symbol)}">
       ${logo(w.symbol, w.name, 20)}<span>${esc(w.name)}</span><b>${money(w.price, w.symbol.match(/^\d/) ? "KR" : "US")}</b><b class="${cls(w.change_rate)}">${pct(w.change_rate)}</b></button>`).join("") : "";
-    if (!rows.length) $("#watch").innerHTML = `<span class="watch-lbl note"><i data-lucide="heart"></i> 순위에서 ♥ 를 누르면 여기 관심 종목으로 모입니다</span>`;
+    if (!rows.length) $("#watch").innerHTML = `<span class="watch-lbl note"><i data-lucide="heart"></i> 아래 실시간 차트에서 ♥ 를 누르면 여기와 '♥ 관심' 탭에 모입니다</span>`;
     icons();
   } catch { $("#watch").innerHTML = ""; }
 }
 
 // 토스증권처럼 등락률은 배경 없이 빨강(상승)·파랑(하락) 글자로
+// ♥ 를 누르면 하트가 '관심' 탭으로 날아간다
+function flyHeart(from) {
+  const to = document.querySelector("#rank-kind .watch-tab");
+  if (!to || !window.anime || REDUCED) return;
+  const a = from.getBoundingClientRect(), b = to.getBoundingClientRect();
+  const h = document.createElement("div");
+  h.className = "fly-heart"; h.textContent = "♥";
+  h.style.left = a.left + "px"; h.style.top = a.top + "px";
+  document.body.appendChild(h);
+  anime({ targets: h, translateX: b.left - a.left + 10, translateY: [{ value: -40, duration: 260, easing: "easeOutQuad" }, { value: b.top - a.top, duration: 420, easing: "easeInQuad" }],
+    scale: [1.6, 0.8], duration: 680, complete: () => { h.remove(); to.classList.add("pop"); setTimeout(() => to.classList.remove("pop"), 400); } });
+}
+
 function rateCell(r) {
   return `<span class="rate ${cls(r)}">${pct(r)}</span>`;
 }
 
+async function loadWatchTable() {
+  const rows = await api("/api/market/watch").catch(() => []);
+  $("#rank-time").textContent = rows.some((r) => r.demo) ? "체험용 시세" : "";
+  $("#rank-body").innerHTML = rows.map((x, i) => {
+    const cur = /^\d/.test(x.symbol) ? "KR" : "US";
+    return `<tr><td class="rk">${i + 1}</td>
+      <td><button class="heart on" data-heart="${esc(x.symbol)}" title="관심 종목에서 빼기">♥</button></td>
+      <td class="clickable" data-open="${esc(x.symbol)}"><div class="namecell">${logo(x.symbol, x.name)}<div><div class="nm">${esc(x.name)}</div><div class="sym">${esc(x.symbol)}</div></div></div></td>
+      <td class="r px"><span data-key="p:${esc(x.symbol)}" data-val="${x.price}">${money(x.price, cur)}</span></td>
+      <td class="r">${rateCell(x.change_rate)}</td><td class="r note">-</td>
+      <td class="r"><button class="ai-btn" data-ai="${esc(x.symbol)}">AI 분석</button></td></tr>`;
+  }).join("") || `<tr><td colspan="7"><div class="empty"><i data-lucide="heart"></i><p>아직 관심 종목이 없어요</p>
+    <span class="note">다른 순위 탭에서 종목 옆 ♥ 를 누르면 여기에 모입니다.</span></div></td></tr>`;
+  animateIn("#rank-body tr", { step: 18 });
+  flashChanges($("#rank-body"));
+  icons();
+}
+
 async function loadRankings() {
+  if (mkt.kind === "watch") return loadWatchTable();
   try {
     const r = await api(`/api/market/rankings?kind=${mkt.kind}&market=${mkt.market}&duration=${mkt.duration}&count=30`);
     $("#rank-time").textContent = (r.demo ? "체험용 · " : "") + (r.rankedAt ? r.rankedAt.slice(11, 16) + " 기준" : "");
@@ -159,7 +191,9 @@ document.addEventListener("click", async (e) => {
     c.watchlist = [...list];
     try {
       state.config = await api("/api/config", { method: "PUT", body: c }); heart.classList.toggle("on"); loadWatch();
-      toast(list.has(s) ? `관심 종목에 담았어요. 시장 화면 위쪽 '관심' 줄과 AI 자동 회의 후보에서 볼 수 있어요` : "관심 종목에서 뺐어요", list.has(s) ? "heart" : "heart-off");
+      if (list.has(s)) flyHeart(heart);
+      toast(list.has(s) ? "관심 종목에 담았어요. 실시간 차트의 '♥ 관심' 탭에서 모아 볼 수 있어요" : "관심 종목에서 뺐어요", list.has(s) ? "heart" : "heart-off");
+      if (mkt.kind === "watch") loadWatchTable();
     }
     catch (err) { alert(err.message); }
   }

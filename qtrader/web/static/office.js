@@ -255,7 +255,9 @@ function updateOverlay() {
     const id = el.dataset.agent;
     const a = office.run?.agents?.[id];
     const b = el.querySelector(".bubble");
-    let text = a?.bubble || "";
+    // 겹치지 않게: 일하는 사람과 지금 고른 사람만 말풍선
+    const show = a?.status === "working" || office.selected === id || (id === "assistant" && window.chatBusy);
+    let text = show ? a?.bubble || "" : "";
     b.textContent = text;
     b.classList.toggle("hidden", !text);
     b.classList.toggle("working", a?.status === "working" || (id === "assistant" && window.chatBusy));

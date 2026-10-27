@@ -234,8 +234,20 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
 
     @app.get("/api/market/watch")
     def market_watch():
+        syms = config_mod.load().get("watchlist", [])
+        t = toss()
+        if t is None:  # 토스 키가 없으면 체험용 시세로라도 보여 준다
+            out = []
+            for s in syms:
+                try:
+                    d = stockdata.summary(None, s)
+                    out.append({"symbol": s, "name": d["name"], "price": d["price"], "change": d["change"],
+                                "change_rate": d["change_rate"], "demo": True})
+                except Exception:
+                    continue
+            return out
         try:
-            return market_mod.watch_quotes(toss(), config_mod.load().get("watchlist", []))
+            return market_mod.watch_quotes(t, syms)
         except Exception as e:
             raise HTTPException(502, str(e))
 
@@ -470,6 +482,34 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         cfg["alerts"] = al
         config_mod.save(cfg)
         return al
+
+    # 매매 이유 보고: 자동 주문 뒤 '왜, 무슨 근거로' 샀고 팔았는지
+    @app.get("/api/trades/why")
+    def trades_why(limit: int = 20):
+        import json as _json
+        c = ctx()
+        rows = c.store.rows("select * from orders where account=? and status in ('filled','submitted') and side in ('buy','sell') "
+                            "order by id desc limit ?", (c.broker.name, limit))
+        out = []
+        for o in rows:
+            parts = (o.get("message") or "").split(" | ")
+            item = {"id": o["id"], "date": o["trade_date"], "ts": o.get("ts"), "market": o["market"], "symbol": o["symbol"],
+                    "side": o["side"], "qty": o["qty"], "price": o["price"], "status": o["status"], "strategy": o.get("strategy"),
+                    "summary": parts[0], "detail": parts[1:-1], "run": None}
+            if o.get("strategy") == "ai" and o["side"] == "buy":
+                r = c.store.rows("select id, final, reports from ai_runs where symbol=? and status='done' and trade_date<=? "
+                                 "order by finished_at desc limit 1", (o["symbol"], o["trade_date"]))
+                if r:
+                    f = _json.loads(r[0]["final"] or "{}") or {}
+                    rep = _json.loads(r[0]["reports"] or "{}") or {}
+                    cl = rep.get("checklist") or {}
+                    item["run"] = {"id": r[0]["id"], "name": rep.get("name"), "rating": f.get("rating"),
+                                   "rating_ko": RATING_KO.get(f.get("rating") or "", ""), "confidence": f.get("confidence"),
+                                   "headline": f.get("headline"), "reasons": (f.get("reasons") or [])[:4], "worry": f.get("worry"),
+                                   "passed": [x["name"] for x in cl.get("rules", []) if x.get("ok")],
+                                   "rules": len(cl.get("rules", [])), "plan": rep.get("plan")}
+            out.append(item)
+        return out
 
     # AI 비용·회의 비교
     @app.get("/api/ai/cost")

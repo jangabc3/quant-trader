@@ -183,6 +183,7 @@ LOOSE = {"require_trend": False, "require_momentum": False, "max_rsi": 101, "max
 def loose_cfg():
     cfg = config.load()
     cfg["ai"]["rules"] = LOOSE
+    cfg["ai"]["require_approval"] = True  # 승인 흐름을 시험한다 (기본값은 자동 주문)
     return cfg
 
 
@@ -410,3 +411,19 @@ def test_secrets_endpoint(client, fake_vault):
     assert r["keys"]["anthropic"]
     assert client.delete("/api/secrets/toss", headers=client.h).json()["keys"]["toss"] is False
     assert client.put("/api/secrets", json={"kind": "x", "key": "k" * 20}, headers=client.h).status_code == 400
+
+
+def test_auto_order_reports_why(isolated_home):
+    """승인 없이 바로 주문하고, '왜 사고팔았나요'에 회의 근거가 붙는다."""
+    from qtrader.web.app import create_app
+    cfg = loose_cfg()
+    cfg["ai"]["require_approval"] = False
+    cfg["markets"]["KR"]["strategy"] = "ai"
+    config.save(cfg)
+    write_demo_csv(isolated_home / "data", cfg)
+    ctx = build_context()
+    meeting.start("005930", ctx.data, ctx.store, ctx.cfg, llm=FakeLLM("Buy", 0.9), background=False)
+    r = run_market(ctx, Market.KR)
+    assert [(o["symbol"], o["side"], o["status"]) for o in r["orders"]] == [("005930", "buy", "filled")]
+    why = TestClient(create_app()).get("/api/trades/why").json()
+    assert why[0]["symbol"] == "005930" and why[0]["run"]["rating"] == "Buy" and why[0]["run"]["plan"]["stop"] > 0

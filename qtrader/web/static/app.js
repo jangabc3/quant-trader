@@ -168,6 +168,7 @@ $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") $("#
 // 탭
 function openTab(name) {
   state.tab = name;
+  document.body.dataset.tab = name; // 종목 검색은 시장·종목·뉴스에서만
   $$("nav button").forEach((x) => x.classList.toggle("on", x.dataset.tab === name));
   $$(".tab").forEach((t) => t.classList.toggle("hidden", t.id !== "tab-" + name));
   if (name === "cfg") loadConfig();
@@ -434,7 +435,7 @@ async function loadConfig() {
   $("#ai-mode").value = c.ai.mode || "fast";
   $("#ai-quick").value = c.ai.quick_model || ""; $("#ai-deep").value = c.ai.deep_model || c.ai.model || "";
   $("#ai-effort").value = c.ai.effort; $("#ai-profile").value = c.ai.profile || "";
-  $("#ai-approve").checked = c.ai.require_approval !== false;
+  $("#ai-approve").checked = !!c.ai.require_approval;
   $("#ai-exit").checked = c.ai.auto_exit !== false;
   $("#ai-debate").value = c.ai.debate_rounds;
   $("#ai-before").value = c.ai.run_before_minutes; $("#ai-max").value = c.ai.max_symbols_per_day;
