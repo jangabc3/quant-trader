@@ -616,7 +616,7 @@ const KEY_LABELS = {
   toss: ["Client ID", "Client Secret", "", "토스증권 WTS → 설정 → Open API 에서 발급. 허용 IP 에 이 PC 공인 IP 를 등록해야 주문돼요."],
   anthropic: ["API 키", null, "sk-ant-로 시작하는 키", "console.anthropic.com → API Keys → Create Key. 처음 한 번만 보이니 바로 복사하세요."],
   dart: ["인증키 (40자리)", null, "영문·숫자 40자리", "opendart.fss.or.kr → 인증키 신청/관리 → 인증키 신청 (무료)."],
-  telegram: ["봇 토큰", null, "123456789:AAH... 처럼 생긴 값", "텔레그램 @BotFather 에게 /newbot. 대화방 번호는 '5. 알림·이 PC'에 넣어요."],
+  telegram: ["봇 토큰", null, "123456789:AAH... 처럼 생긴 값", "텔레그램 @BotFather 에게 /newbot. 저장한 뒤 내 봇에게 아무 말이나 보내고, '5. 알림·이 PC'에서 '대화방 번호 자동으로 찾기'를 누르세요."],
   kis_demo: ["앱키", "앱시크릿", "", "KIS Developers 에서 모의투자 앱키 발급."],
   kis_real: ["앱키", "앱시크릿", "", "KIS Developers 에서 실전 앱키 발급."],
 };

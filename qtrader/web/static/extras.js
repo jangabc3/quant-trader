@@ -229,3 +229,16 @@ function renderDayReport(rep, m) {
   if (fresh && dr != null) countTo($("#dr-ret"), dr * 100, { decimals: 2, format: (v) => (v > 0 ? "+" : "") + v.toFixed(2) + "%" });
   icons();
 }
+
+// 텔레그램 대화방 번호: 내 봇에게 온 메시지에서 찾아 저장 (다른 봇이 필요 없음)
+$("#tg-find")?.addEventListener("click", async (e) => {
+  const b = e.currentTarget;
+  b.disabled = true;
+  try {
+    const r = await api("/api/telegram/find-chat", { method: "POST" });
+    $("#tg-chat").value = r.chat_id;
+    if (state.config) state.config.notify = { ...(state.config.notify || {}), telegram_chat_id: r.chat_id };
+    toast(`찾았어요: ${r.name || "내 대화방"} (${r.chat_id}). 저장했고, 텔레그램으로 확인 메시지를 보냈어요`, "check");
+  } catch (err) { toast(err.message, "alert-triangle"); }
+  b.disabled = false;
+});
