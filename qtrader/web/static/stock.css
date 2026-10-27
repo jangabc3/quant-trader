@@ -80,3 +80,35 @@ ul.why { margin: 8px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.7;
   .st-info, .ratio-grid { grid-template-columns: repeat(3, 1fr); }
   .gsearch { order: 9; max-width: none; flex-basis: 100%; }
 }
+
+/* 주문창 (토스증권처럼) */
+.ticket { display: flex; flex-direction: column; gap: 12px; }
+.tk-side { display: grid !important; grid-template-columns: 1fr 1fr; padding: 4px; }
+.tk-side button { padding: 10px; font-size: 15px; font-weight: 800; border-radius: 9px; }
+.tk-side button.buy.on { background: #f04452; color: #fff; } .tk-side button.sell.on { background: #3182f6; color: #fff; }
+.tk-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--muted); }
+.tk-type button { padding: 5px 12px; font-size: 13px; } .tk-type button:disabled { opacity: .35; cursor: not-allowed; }
+.tk-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.tk-input { display: grid; grid-template-columns: 40px 1fr 40px; background: #0f141b; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; transition: border-color .15s; }
+.tk-input:focus-within { border-color: #3182f6; }
+.tk-input input { border: 0; background: transparent; text-align: right; font-size: 17px; font-weight: 700; color: var(--text); padding: 10px 6px; font-variant-numeric: tabular-nums; min-width: 0; }
+.tk-input input:focus { outline: none; } .tk-input input:disabled { color: var(--muted); }
+.tk-input button { border: 0; border-radius: 0; background: transparent; font-size: 18px; color: var(--muted); padding: 0; }
+.tk-input button:hover { background: var(--panel2); color: var(--text); }
+.tk-pcts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.tk-pcts button { padding: 7px 0; font-size: 12.5px; border-radius: 9px; }
+.tk-sum { margin: 0; display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.tk-sum > div { display: flex; justify-content: space-between; } .tk-sum dt { color: var(--muted); } .tk-sum dd { margin: 0; font-variant-numeric: tabular-nums; }
+.tk-sum .tot { padding-top: 8px; border-top: 1px solid var(--line); font-size: 15px; } .tk-sum .tot dd { font-weight: 800; }
+.tk-go { width: 100%; padding: 14px; font-size: 16px; font-weight: 800; border: 0; border-radius: 12px; color: #fff; }
+.tk-go.buy { background: #f04452; } .tk-go.sell { background: #3182f6; }
+.tk-go:hover:not(:disabled) { filter: brightness(1.08); } .tk-go:disabled { opacity: .4; cursor: not-allowed; }
+.tk-note { margin: 0; font-size: 12px; }
+.ob-row[data-px] { cursor: pointer; } .ob-row[data-px]:hover .ob-px { background: rgba(255,255,255,.06); border-radius: 4px; }
+.tk-confirm { width: min(380px, 86vw); display: flex; flex-direction: column; gap: 12px; }
+.tk-c-head { display: flex; gap: 10px; align-items: center; } .tk-c-head b { display: block; font-size: 16px; }
+.tk-confirm h3 { margin: 4px 0; font-size: 19px; line-height: 1.4; }
+.tk-c-btns { display: grid; grid-template-columns: 1fr 2fr; gap: 8px; } .tk-c-btns button { padding: 13px; border-radius: 12px; }
+.tk-done { text-align: center; padding: 10px 6px; width: min(340px, 84vw); }
+.tk-check { width: 64px; height: 64px; margin: 4px auto 10px; border-radius: 50%; background: #2fbf71; color: #fff; display: grid; place-items: center; font-size: 34px; font-weight: 900; }
+.tk-done .primary { width: 100%; padding: 12px; margin-top: 8px; }

@@ -250,3 +250,9 @@ body[data-tab=office] .gsearch, body[data-tab=dash] .gsearch, body[data-tab=calc
 @media (max-width: 900px) { .news-bar { grid-template-columns: 1fr auto; grid-template-areas: "cat refresh" "q q" "src src" "time time"; } .news-q { max-width: none; } }
 
 nav { scrollbar-width: none; } nav::-webkit-scrollbar { display: none; }
+
+/* 지수 카드 아래 칸: 줄바꿈 없이 한 줄 */
+.idx-card .flows { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.idx-card .flows .flow { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.idx-card .flows .flow span { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.idx-card .flows .flow b { font-size: 14px; white-space: nowrap; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }

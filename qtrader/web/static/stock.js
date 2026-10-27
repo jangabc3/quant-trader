@@ -20,6 +20,7 @@ window.openStock = async (symbol) => {
   ["#st-ob", "#st-trades", "#st-fin", "#st-flows", "#st-news", "#st-ai-hist"].forEach((id) => ($(id).innerHTML = "<p class='note'>불러오는 중...</p>"));
   await loadSummary();
   buildChart(); loadCandles();
+  window.ticketLoad && ticketLoad(st.symbol);
   loadOrderbook(); loadTrades(); loadFin(); loadFlows(); loadNews(); loadAiHist(); loadExtra();
   st.timers.push(setInterval(() => { if (state.tab === "stock" && !document.hidden) { loadSummary(); loadOrderbook(); } }, 3000));
   st.timers.push(setInterval(() => { if (state.tab === "stock" && !document.hidden) loadTrades(); }, 5000));
@@ -125,7 +126,7 @@ async function loadOrderbook() {
     const prev = st.sum?.prev_close;
     const row = (x, side) => {
       const r = prev ? x.price / prev - 1 : 0;
-      return `<div class="ob-row ${side}${Math.abs(x.price - st.last) < 1e-9 ? " cur" : ""}">
+      return `<div data-px="${x.price}" title="이 가격으로 주문" class="ob-row ${side}${Math.abs(x.price - st.last) < 1e-9 ? " cur" : ""}">
         <span class="ob-vol ${side === "ask" ? "" : "hide"}"><i style="width:${x.volume / max * 100}%"></i>${side === "ask" ? Number(x.volume).toLocaleString() : ""}</span>
         <span class="ob-px ${cls(r)}">${pxFmt(x.price)}<small>${pct(r)}</small></span>
         <span class="ob-vol right ${side === "bid" ? "" : "hide"}"><i style="width:${x.volume / max * 100}%"></i>${side === "bid" ? Number(x.volume).toLocaleString() : ""}</span></div>`;
@@ -286,3 +287,5 @@ $("#st-extra-tab").addEventListener("click", (e) => {
   $$("#st-extra-tab button").forEach((x) => x.classList.toggle("on", x === b));
   drawExtra();
 });
+
+$("#st-ob").addEventListener("click", (e) => { const r = e.target.closest("[data-px]"); if (r && window.ticketSetPrice) ticketSetPrice(Number(r.dataset.px)); });

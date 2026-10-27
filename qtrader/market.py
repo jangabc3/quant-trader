@@ -53,8 +53,11 @@ def names(t: Toss, symbols: list[str]) -> dict[str, str]:
 def _change(t: Toss, symbol: str, indicator: bool) -> dict:
     df = t.candles(symbol, "1d", 2, indicator=indicator)
     last, prev = float(df["close"].iloc[-1]), float(df["close"].iloc[-2]) if len(df) > 1 else float(df["close"].iloc[-1])
+    row = df.iloc[-1]
     return {"symbol": symbol, "name": NAMES.get(symbol, symbol), "price": last,
-            "change": last - prev, "change_rate": (last / prev - 1) if prev else 0.0}
+            "change": last - prev, "change_rate": (last / prev - 1) if prev else 0.0,
+            "prev": prev, "high": float(row.get("high", last)), "low": float(row.get("low", last)),
+            "volume": float(row.get("volume", 0) or 0)}
 
 
 def _intraday(t: Toss, symbol: str) -> list[dict]:
@@ -97,7 +100,7 @@ def overview(t: Toss | None) -> dict:
         with ThreadPoolExecutor(6) as pool:
             idx = {s: pool.submit(_change, t, s, True) for s in ("KOSPI", "KOSDAQ")}
             us = {s: pool.submit(_change, t, s, False) for s in US_PROXIES}
-            spark = {s: pool.submit(_intraday, t, s) for s in ("KOSPI", "KOSDAQ")}
+            spark = {s: pool.submit(_intraday, t, s) for s in ("KOSPI", "KOSDAQ", *US_PROXIES)}
             flows = {s: pool.submit(_flows, t, s) for s in ("KOSPI", "KOSDAQ")}
             fx = pool.submit(t.exchange_rate)
             bonds = pool.submit(t.indicator_prices, [s for s in INDICATORS if s.startswith("KR_BOND")])
@@ -119,7 +122,7 @@ def overview(t: Toss | None) -> dict:
             f = safe(fx, {}) or {}
             return {
                 "demo": False, "asof": datetime.now(KST).isoformat(timespec="seconds"), "session": safe(sess, ""),
-                "indices": indices, "us": [x for x in (safe(us[s]) for s in US_PROXIES) if x],
+                "indices": indices, "us": [x | {"spark": safe(spark[x["symbol"]], [])} for x in (safe(us[s]) for s in US_PROXIES) if x],
                 "fx": {"rate": num(f.get("rate")), "change": num(f.get("basisPoint")), "dir": f.get("rateChangeType")},
                 "bonds": [{"symbol": b["symbol"], "name": NAMES.get(b["symbol"], b["symbol"]),
                            "value": num(b.get("lastPrice"))} for b in (safe(bonds, []) or [])],
@@ -188,9 +191,13 @@ def demo_overview() -> dict:
                                           "institution": int(rng.integers(-5000, 5000)), "unit": "억원"}}
 
     def us(sym, base):
-        ch = float(rng.normal(0, 0.01))
-        return {"symbol": sym, "name": NAMES[sym], "price": round(base * (1 + ch), 2), "change": base * ch,
-                "change_rate": ch}
+        steps = rng.normal(0, base * 0.0004, 390).cumsum()
+        start = int(datetime.now(KST).replace(hour=22, minute=30, second=0, microsecond=0).timestamp()) - 86400
+        spark = [{"time": start + i * 60, "value": round(base + float(v), 2)} for i, v in enumerate(steps)]
+        last = spark[-1]["value"]
+        vals = [p["value"] for p in spark]
+        return {"symbol": sym, "name": NAMES[sym], "price": last, "change": last - base, "change_rate": last / base - 1,
+                "prev": base, "high": max(vals), "low": min(vals), "volume": float(rng.integers(20, 90)) * 1e6, "spark": spark}
 
     return {"demo": True, "asof": datetime.now(KST).isoformat(timespec="seconds"), "session": "체험용 데이터",
             "indices": [idx("KOSPI", 3200.0), idx("KOSDAQ", 880.0)],

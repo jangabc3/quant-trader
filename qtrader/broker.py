@@ -45,6 +45,8 @@ class PaperBroker:
         c = Costs.default(req.market)
         px = req.price if req.price > 0 else self.price(req.market, req.symbol)
         px = px * (1 + c.slippage) if req.side == Side.BUY else px * (1 - c.slippage)
+        if req.price > 0:  # 지정가보다 불리하게 체결되지 않는다
+            px = min(px, req.price) if req.side == Side.BUY else max(px, req.price)
         acct = self.account(req.market)
         gross = px * req.qty
         if req.side == Side.BUY:
@@ -83,7 +85,10 @@ class TossBroker:
 
     def order(self, req: OrderRequest) -> OrderResult:
         from datetime import date
+        import uuid
 
+        if req.strategy == "manual":  # 사용자가 직접 누른 주문: 같은 주문을 또 낼 수 있게 매번 새 번호, 일반 지정가
+            return self.client.order(req, client_order_id="qm" + uuid.uuid4().hex[:30], loc=False)
         coid = f"qt{date.today():%y%m%d}{req.market.value}{req.side.value[0]}{req.qty}-{req.symbol.replace(':', '')}"
         return self.client.order(req, client_order_id=coid, loc=self.us_loc)
 

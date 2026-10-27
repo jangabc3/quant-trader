@@ -58,16 +58,19 @@ async function renderIndices() {
     ov.indices.forEach((i) => sparkChart($("#spark-" + i.symbol), i.spark || [], i.change >= 0));
   } else {
     const us = Object.fromEntries((ov.us || []).map((u) => [u.symbol, u]));
+    const stat = (k, v) => `<div class="flow"><span>${k}</span><b>${v}</b></div>`;
+    const usd = (v) => v ? "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 }) : "-";
     box.innerHTML = US_IDX.map(([s, n, t]) => {
       const u = us[s] || { price: 0, change: 0, change_rate: 0 };
-      return idxCard(s, n, t, u.price, u.change, u.change_rate, `<div class="flow"><span>지수 대신 대표 ETF 시세</span><b class="note">토스증권 기준</b></div>`, s);
+      return idxCard(s, n, t, u.price, u.change, u.change_rate,
+        stat("전일 종가", usd(u.prev)) + stat("고가", `<span class="up">${usd(u.high)}</span>`) + stat("저가", `<span class="down">${usd(u.low)}</span>`), s);
     }).join("");
     for (const [s] of US_IDX) {
-      try {
-        const c = await api(`/api/stock/${s}/candles?interval=5m&count=78`);
-        const pts = c.candles.map((x) => ({ time: x.time, value: x.close }));
-        sparkChart($("#spark-" + s), pts, (us[s]?.change ?? 0) >= 0);
-      } catch {}
+      let pts = us[s]?.spark || [];
+      if (!pts.length) {
+        try { pts = (await api(`/api/stock/${s}/candles?interval=5m&count=78`)).candles.map((x) => ({ time: x.time, value: x.close })); } catch {}
+      }
+      sparkChart($("#spark-" + s), pts, (us[s]?.change ?? 0) >= 0);
     }
   }
   $$("#idx-group button").forEach((b) => b.classList.toggle("on", b.dataset.v === mkt.group));
@@ -76,7 +79,7 @@ async function renderIndices() {
 function renderOverview(ov) {
   mkt.ov = ov;
   if (!mkt.group) mkt.group = liveGroup();
-  $("#mkt-session").textContent = mkt.group === "KR" ? (ov.session || "국내 시장") : "미국 정규장 한국 시각 22:30~05:00 (서머타임 해제 시 23:30~06:00)";
+  $("#mkt-session").textContent = mkt.group === "KR" ? (ov.session || "국내 시장") : "미국 정규장 · 한국 시각 22:30~05:00 (겨울 23:30~06:00) · 지수 대신 대표 ETF";
   $("#mkt-asof").textContent = ov.asof ? ov.asof.slice(11, 19) + " 기준" : "";
   $("#mkt-demo").classList.toggle("hidden", !ov.demo);
   renderIndices();

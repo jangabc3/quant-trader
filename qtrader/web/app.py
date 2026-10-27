@@ -63,6 +63,13 @@ class DecideIn(BaseModel):
     approve: bool
 
 
+class OrderIn(BaseModel):
+    symbol: str
+    side: str
+    qty: int
+    price: float = 0  # 0 = 시장가
+
+
 class PinIn(BaseModel):
     new: str
     old: str = ""
@@ -482,6 +489,70 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         cfg["alerts"] = al
         config_mod.save(cfg)
         return al
+
+    # 직접 주문 (종목 화면의 구매·판매)
+    def _market_of(sym: str) -> Market:
+        return Market.KR if sym[:1].isdigit() else Market.US
+
+    @app.get("/api/order/info/{symbol}")
+    def order_info(symbol: str):
+        from ..backtest import Costs
+        c = ctx()
+        sym = symbol.upper()
+        m = _market_of(sym)
+        try:
+            price = float(c.data.price(m, sym))
+        except Exception:
+            price = None
+        try:
+            a = c.broker.account(m)
+            cash, pos = a.cash, a.positions.get(sym)
+        except Exception as e:
+            raise HTTPException(400, f"계좌를 불러오지 못했습니다: {e}")
+        sellable = pos.qty if pos else 0
+        if c.broker.name == "toss":
+            try:
+                cash = c.broker.client.buying_power("KRW" if m == Market.KR else "USD") or cash
+                sellable = int(c.broker.client.sellable_quantity(sym))
+            except Exception:
+                pass
+        co = Costs.default(m)
+        return {"symbol": sym, "market": m.value, "price": price, "cash": cash, "qty": pos.qty if pos else 0,
+                "avg_price": pos.avg_price if pos else None, "sellable": sellable, "fee": co.fee, "sell_tax": co.sell_tax,
+                "max_order": c.cfg["risk"]["max_order_value"][m.value], "live": c.broker.live, "broker": c.broker.name,
+                "mode": c.cfg["mode"], "market_order": m == Market.KR or c.broker.name == "paper",
+                "kill_switch": c.kill}
+
+    @app.post("/api/order", dependencies=[Depends(need_token)])
+    def place_order(body: OrderIn, x_qtrader_pin: str = Header("")):
+        from ..engine import trade_date
+        from ..models import OrderRequest, Side
+        c = ctx()
+        sym = body.symbol.strip().upper()
+        m = _market_of(sym)
+        if body.side not in ("buy", "sell") or body.qty <= 0 or body.price < 0:
+            raise HTTPException(400, "구분·수량·가격을 확인하세요")
+        if body.price == 0 and m == Market.US and c.broker.name != "paper":
+            raise HTTPException(400, "미국 주식은 지정가로만 주문할 수 있습니다")
+        try:
+            ref = body.price or float(c.data.price(m, sym))
+        except Exception:
+            raise HTTPException(400, "현재가를 몰라 시장가 주문을 낼 수 없습니다. 지정가로 주문하세요")
+        limit = float(c.cfg["risk"]["max_order_value"][m.value])
+        if body.qty * ref > limit:
+            raise HTTPException(400, f"1회 주문 한도({limit:,.0f}{'원' if m == Market.KR else '$'})를 넘습니다. 설정 → 고급 → 주문 한도에서 바꿀 수 있어요")
+        if c.broker.live:
+            live_pin(x_qtrader_pin)
+        req = OrderRequest(m, sym, Side(body.side), int(body.qty), float(body.price), "manual", "직접 주문")
+        r = c.broker.order(req)
+        status = ("filled" if r.filled_qty else "submitted") if r.ok else "rejected"
+        c.store.add_order(trade_date=trade_date(m), account=c.broker.name, market=m.value, symbol=sym, side=body.side,
+                          qty=body.qty, price=r.filled_price or body.price or ref, status=status,
+                          broker_order_id=r.broker_order_id, strategy="manual", message=f"직접 주문 | {r.message}")
+        c.store.log("info" if r.ok else "error", "manual", f"직접 {'매수' if body.side == 'buy' else '매도'} {sym} x{body.qty} -> {status} {r.message}")
+        if not r.ok:
+            raise HTTPException(400, r.message or "주문이 거부되었습니다")
+        return {"ok": True, "status": status, "message": r.message, "price": r.filled_price or body.price or ref, "order_id": r.broker_order_id}
 
     # 매매 이유 보고: 자동 주문 뒤 '왜, 무슨 근거로' 샀고 팔았는지
     @app.get("/api/trades/why")

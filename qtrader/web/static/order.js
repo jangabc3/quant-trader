@@ -1,0 +1,134 @@
+"use strict";
+// 종목 화면의 주문창: 구매·판매, 지정가·시장가, 호가 단위 ±, 수량 비율 버튼, 확인 시트. 실전 계좌면 PIN 을 묻는다.
+
+const tk = { side: "buy", type: "limit", info: null, price: 0, qty: 0, sym: null };
+
+// 국내 호가 단위 (2023 개편 기준)
+function tickKR(p) {
+  return p < 2000 ? 1 : p < 5000 ? 5 : p < 20000 ? 10 : p < 50000 ? 50 : p < 200000 ? 100 : p < 500000 ? 500 : 1000;
+}
+const tkKR = () => tk.info?.market === "KR";
+const tkStep = (p) => tkKR() ? tickKR(p) : 0.01;
+const tkRound = (p) => tkKR() ? Math.round(p / tickKR(p)) * tickKR(p) : Math.round(p * 100) / 100;
+const tkMoney = (v) => money(v, tk.info?.market || "KR");
+
+function ticketShell() {
+  const box = $("#ticket");
+  box.innerHTML = `
+    <div class="tk-side seg"><button data-side="buy" class="buy on">구매</button><button data-side="sell" class="sell">판매</button></div>
+    <div class="tk-row"><span>주문 유형</span><div class="seg tk-type"><button data-type="limit" class="on">지정가</button><button data-type="market">시장가</button></div></div>
+    <label class="tk-field"><span>가격</span><div class="tk-input"><button type="button" data-step="price:-1">−</button>
+      <input id="tk-price" inputmode="decimal" autocomplete="off"><button type="button" data-step="price:1">＋</button></div></label>
+    <label class="tk-field"><span>수량</span><div class="tk-input"><button type="button" data-step="qty:-1">−</button>
+      <input id="tk-qty" inputmode="numeric" autocomplete="off" placeholder="0"><button type="button" data-step="qty:1">＋</button></div></label>
+    <div class="tk-pcts">${[10, 25, 50, 100].map((p) => `<button type="button" data-pct="${p}">${p === 100 ? "최대" : p + "%"}</button>`).join("")}</div>
+    <dl class="tk-sum">
+      <div><dt id="tk-avail-k">주문 가능</dt><dd id="tk-avail">-</dd></div>
+      <div><dt>예상 수수료${tkKR() ? "·세금" : ""}</dt><dd id="tk-fee">-</dd></div>
+      <div class="tot"><dt>총 주문 금액</dt><dd id="tk-total">0</dd></div>
+    </dl>
+    <button class="tk-go buy" id="tk-go">구매하기</button>
+    <p class="note tk-note" id="tk-note"></p>`;
+  box.querySelector(".tk-side").onclick = (e) => { const b = e.target.closest("[data-side]"); if (b) { tk.side = b.dataset.side; ticketDraw(); } };
+  box.querySelector(".tk-type").onclick = (e) => {
+    const b = e.target.closest("[data-type]");
+    if (!b || (b.dataset.type === "market" && !tk.info?.market_order)) return toast("미국 주식은 지정가로만 주문할 수 있어요", "info");
+    tk.type = b.dataset.type; ticketDraw();
+  };
+  box.addEventListener("click", (e) => {
+    const s = e.target.closest("[data-step]");
+    if (s) {
+      const [k, d] = s.dataset.step.split(":");
+      if (k === "price") tk.price = Math.max(0, tkRound((tk.price || tk.info?.price || 0) + Number(d) * tkStep(tk.price || tk.info?.price || 1)));
+      else tk.qty = Math.max(0, (tk.qty || 0) + Number(d));
+      ticketDraw();
+    }
+    const p = e.target.closest("[data-pct]");
+    if (p) { tk.qty = Math.floor(maxQty() * Number(p.dataset.pct) / 100); ticketDraw(); }
+  });
+  $("#tk-price").oninput = (e) => { tk.price = Number(e.target.value.replace(/,/g, "")) || 0; ticketDraw(false); };
+  $("#tk-qty").oninput = (e) => { tk.qty = Math.floor(Number(e.target.value.replace(/,/g, "")) || 0); ticketDraw(false); };
+  $("#tk-go").onclick = confirmOrder;
+}
+
+function unitPrice() { return tk.type === "market" ? tk.info?.price || 0 : tk.price; }
+function maxQty() {
+  const i = tk.info, p = unitPrice();
+  if (!i) return 0;
+  if (tk.side === "sell") return i.sellable || 0;
+  return p > 0 ? Math.floor(Math.min(i.cash, i.max_order) / (p * (1 + i.fee))) : 0;
+}
+
+function ticketDraw(syncInputs = true) {
+  const i = tk.info;
+  if (!i) return;
+  const buy = tk.side === "buy", p = unitPrice(), gross = p * tk.qty;
+  const fee = gross * i.fee + (buy ? 0 : gross * i.sell_tax);
+  $$("#ticket .tk-side button").forEach((b) => b.classList.toggle("on", b.dataset.side === tk.side));
+  $$("#ticket .tk-type button").forEach((b) => { b.classList.toggle("on", b.dataset.type === tk.type); b.disabled = b.dataset.type === "market" && !i.market_order; });
+  $("#tk-price").disabled = tk.type === "market";
+  if (syncInputs) {
+    $("#tk-price").value = tk.type === "market" ? "시장가" : tkKR() ? Math.round(tk.price).toLocaleString() : tk.price.toFixed(2);
+    $("#tk-qty").value = tk.qty ? tk.qty.toLocaleString() : "";
+  }
+  $("#tk-avail-k").textContent = buy ? "주문 가능 금액" : "판매 가능 수량";
+  $("#tk-avail").textContent = buy ? tkMoney(i.cash) : `${(i.sellable || 0).toLocaleString()}주` + (i.avg_price ? ` · 평균 ${tkMoney(i.avg_price)}` : "");
+  $("#tk-fee").textContent = tkMoney(fee);
+  $("#tk-total").textContent = tkMoney(buy ? gross + fee : gross - fee);
+  const go = $("#tk-go");
+  go.className = "tk-go " + (buy ? "buy" : "sell");
+  go.textContent = buy ? "구매하기" : "판매하기";
+  const over = tk.qty > maxQty();
+  go.disabled = !tk.qty || !p || over;
+  $("#tk-note").innerHTML = over ? `<span class="down">${buy ? "주문 가능 금액(또는 1회 주문 한도)을 넘었어요" : "판매 가능 수량을 넘었어요"}</span>`
+    : `${i.live ? "<b class='up'>실전 계좌</b> · 실제 돈으로 주문됩니다" : "가상 계좌 · 내 PC 안에서만 체결됩니다"}${i.kill_switch ? " · 긴급 정지는 자동매매만 막고 직접 주문은 막지 않아요" : ""}`;
+}
+
+async function ticketLoad(sym) {
+  tk.sym = sym;
+  try {
+    const i = await api("/api/order/info/" + encodeURIComponent(sym));
+    if (tk.sym !== sym) return;
+    const first = !tk.info || tk.info.symbol !== sym;
+    tk.info = i;
+    if (first) { tk.price = i.price ? tkRound(i.price) : 0; tk.qty = 0; tk.type = "limit"; ticketShell(); }
+    if (!i.market_order && tk.type === "market") tk.type = "limit";
+    ticketDraw(first);
+  } catch (e) { $("#ticket").innerHTML = `<p class="note">${esc(e.message)}</p>`; }
+}
+window.ticketLoad = ticketLoad;
+// 호가를 누르면 그 가격으로
+window.ticketSetPrice = (p) => { if (!tk.info) return; tk.type = "limit"; tk.price = tkRound(p); ticketDraw(); $("#tk-qty").focus(); };
+
+function confirmOrder() {
+  const i = tk.info, buy = tk.side === "buy", p = unitPrice(), gross = p * tk.qty;
+  const name = st.sum?.name || i.symbol;
+  modal(`<div class="tk-confirm ${buy ? "buy" : "sell"}">
+    <div class="tk-c-head">${logo(i.symbol, name, 40)}<div><b>${esc(name)}</b><span class="note">${esc(i.symbol)}</span></div></div>
+    <h3>${tk.qty.toLocaleString()}주를 ${tk.type === "market" ? "시장가로" : tkMoney(p) + "에"} ${buy ? "구매" : "판매"}할까요?</h3>
+    <dl class="tk-sum"><div><dt>주문 유형</dt><dd>${tk.type === "market" ? "시장가" : "지정가"}</dd></div>
+      <div><dt>${tk.type === "market" ? "예상 가격" : "주문 가격"}</dt><dd>${tkMoney(p)}</dd></div>
+      <div><dt>수량</dt><dd>${tk.qty.toLocaleString()}주</dd></div>
+      <div class="tot"><dt>총 ${buy ? "주문" : "판매"} 금액</dt><dd>${tkMoney(gross)}</dd></div>
+      <div><dt>계좌</dt><dd>${i.live ? "<b class='up'>실전</b> " : "가상 "}${esc(MODE_NAME[i.mode] || i.mode)}</dd></div></dl>
+    ${i.live ? `<p class="note">실제 돈이 움직입니다. 확인을 누르면 PIN 을 물을 수 있어요.</p>` : ""}
+    <div class="tk-c-btns"><button id="tk-cancel">취소</button><button class="tk-go ${buy ? "buy" : "sell"}" id="tk-ok">${buy ? "구매" : "판매"} 확인</button></div></div>`);
+  $("#tk-cancel").onclick = () => $("#modal").classList.add("hidden");
+  $("#tk-ok").onclick = async (e) => {
+    e.target.disabled = true; e.target.textContent = "주문 보내는 중...";
+    try {
+      const r = await api("/api/order", { method: "POST", body: { symbol: i.symbol, side: tk.side, qty: tk.qty, price: tk.type === "market" ? 0 : p } });
+      $("#modal-body").innerHTML = `<div class="tk-done"><div class="tk-check">✓</div><h3>${r.status === "filled" ? (buy ? "구매 완료" : "판매 완료") : "주문 접수"}</h3>
+        <p>${esc(name)} ${tk.qty.toLocaleString()}주 · ${tkMoney(r.price)}</p>
+        <p class="note">${r.status === "filled" ? "체결됐어요. 내 계좌에서 확인할 수 있어요." : "증권사에 접수됐어요. 체결되면 알림으로 알려 드릴게요."}</p>
+        <button class="primary" id="tk-close">확인</button></div>`;
+      window.anime && anime({ targets: ".tk-check", scale: [0.2, 1], rotate: [-30, 0], duration: 520, easing: "easeOutBack" });
+      $("#tk-close").onclick = () => $("#modal").classList.add("hidden");
+      tk.qty = 0;
+      ticketLoad(i.symbol);
+    } catch (err) {
+      e.target.disabled = false; e.target.textContent = buy ? "구매 확인" : "판매 확인";
+      toast(err.message, "alert-triangle");
+    }
+  };
+}
