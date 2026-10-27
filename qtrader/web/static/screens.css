@@ -55,22 +55,31 @@
 .calc-out .big-res b { font-size: 34px; }
 .calc-out em { display: block; font-style: normal; color: var(--muted); font-size: 12px; margin-top: 2px; }
 
-/* 뉴스 카드 */
-.news-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
-.news-src-chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.news-src-chips button { font-size: 12px; padding: 4px 10px; border-radius: 99px; background: transparent; border-color: var(--line); }
+/* 뉴스: 국내 | 해외 두 줄 목록 */
+.news-bar { display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 10px; align-items: center; margin-bottom: 14px; }
+.news-src-chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 2px 0; }
+.news-src-chips::-webkit-scrollbar { display: none; }
+.news-src-chips button { flex: none; font-size: 12px; padding: 5px 12px; border-radius: 99px; background: transparent; border-color: var(--line); color: var(--muted); }
 .news-src-chips button.on { background: var(--c); border-color: var(--c); color: #fff; }
-.news-hero { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
-.news-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
-.ncard { display: flex; flex-direction: column; gap: 6px; padding: 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line);
-  border-top: 3px solid var(--c); color: var(--text); text-decoration: none; transition: transform .15s, border-color .15s; min-height: 108px; }
-.ncard:hover { transform: translateY(-2px); border-color: #34445a; border-top-color: var(--c); }
-.ncard.big { min-height: 150px; background: linear-gradient(160deg, color-mix(in srgb, var(--c) 18%, var(--panel)), var(--panel) 60%); }
-.ncard.big .ntitle { font-size: 17px; -webkit-line-clamp: 3; }
-.nmeta { display: flex; justify-content: space-between; align-items: center; font-size: 11px; }
-.nsrc { color: #fff; background: var(--c); padding: 1px 8px; border-radius: 99px; font-weight: 700; }
-.ntitle { font-size: 14px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.nsum { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.news-q { width: 220px; }
+.news-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+.news-cols.one { grid-template-columns: 1fr; }
+.ncol { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius, 14px); overflow: hidden; }
+.ncol > header { display: flex; align-items: baseline; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 1; }
+.ncol > header b { font-size: 16px; }
+.nlist { display: flex; flex-direction: column; }
+.ncol.wide .nlist { display: grid; grid-template-columns: 1fr 1fr; }
+.nrow { display: flex; flex-direction: column; gap: 5px; padding: 14px 18px; border-bottom: 1px solid var(--line); color: var(--text); text-decoration: none;
+  border-left: 3px solid transparent; transition: background .15s, border-color .15s; }
+.nrow:hover { background: var(--panel2); border-left-color: var(--c); }
+.nrow-meta { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+.nsrc { color: #fff; background: var(--c); padding: 1px 8px; border-radius: 99px; font-weight: 700; font-size: 11px; }
+.ntitle { font-size: 15px; line-height: 1.45; font-weight: 700; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.nsum { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.nmore { width: 100%; border: 0; border-radius: 0; padding: 12px; background: transparent; color: var(--blue); font-weight: 700; }
+.nmore:hover { background: var(--panel2); }
+.pad { padding: 18px; }
+@media (max-width: 900px) { .news-cols, .ncol.wide .nlist { grid-template-columns: 1fr; } .news-bar { grid-template-columns: 1fr; } .news-q { width: 100%; } }
 
 /* 섹터 히트맵 */
 .sector-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px; }
@@ -154,3 +163,61 @@ table.cmp tr[data-run] { cursor: pointer; }
 table.cmp tr.cur td { background: rgba(49,130,246,.08); }
 table.cmp td.note { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 700px) { .rz { grid-template-columns: 1fr; } table.cmp td.note { display: none; } }
+
+/* 매매 기준: 세 묶음 카드 */
+.crit-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.ob-box .crit-groups { grid-template-columns: 1fr; }
+.crit-card { background: #0f141b; border: 1px solid var(--line); border-radius: 14px; padding: 6px 0; }
+.crit-card header { display: flex; gap: 10px; align-items: center; padding: 10px 14px 12px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.crit-card header > svg { width: 30px; height: 30px; padding: 6px; border-radius: 9px; background: rgba(49,130,246,.14); color: var(--blue); flex: none; }
+.crit-card header b { display: block; font-size: 15px; } .crit-card header span { font-size: 12px; color: var(--muted); }
+.crit-item { display: grid; grid-template-columns: 18px 1fr auto; gap: 10px; align-items: center; padding: 9px 14px; }
+.crit-item + .crit-item { border-top: 1px solid rgba(255,255,255,.04); }
+.crit-item > svg { width: 16px; height: 16px; color: var(--muted); }
+.crit-item span { font-size: 13px; color: var(--text); display: block; }
+.crit-item em { display: block; font-style: normal; font-size: 11.5px; color: var(--muted); line-height: 1.4; margin-top: 1px; }
+.crit-item > b { font-size: 14px; white-space: nowrap; text-align: right; color: #e8edf3; }
+.inv-head { padding: 12px 14px; background: rgba(49,130,246,.07); border: 1px solid rgba(49,130,246,.22); border-radius: 12px; }
+@media (max-width: 1100px) { .crit-groups { grid-template-columns: 1fr; } }
+
+/* 3단계 안내 */
+.ob-steps { list-style: none; padding: 0; margin: 16px 0 0; position: relative; }
+.ob-steps::before { content: ""; position: absolute; left: 28px; top: 28px; bottom: 28px; width: 2px; background: var(--line); }
+.ob-steps .ob-step { position: relative; grid-template-columns: 40px 1fr auto; background: #0f141b; padding: 14px; }
+.ob-steps .num { width: 28px; height: 28px; z-index: 1; }
+.ob-steps .num svg { width: 16px; height: 16px; }
+.ob-step-body b { display: flex; gap: 6px; align-items: center; font-size: 15px; } .ob-step-body b svg { width: 16px; height: 16px; color: var(--blue); }
+.ob-step-body p { margin: 4px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.ob-step.done { border-color: rgba(47,191,113,.35); }
+.chip-ok { font-size: 12px; font-weight: 700; color: #2fbf71; background: rgba(47,191,113,.12); padding: 4px 10px; border-radius: 99px; }
+.ob-step button { display: flex; align-items: center; gap: 2px; white-space: nowrap; } .ob-step button svg { width: 14px; height: 14px; }
+
+/* 실전 주문 PIN */
+.pin-panel { margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #0f141b; }
+.pin-panel b { display: inline-flex; gap: 6px; align-items: center; } .pin-panel b svg { width: 16px; height: 16px; color: var(--blue); }
+.pin-panel input { width: 120px; letter-spacing: 4px; }
+#pin-ask { position: fixed; inset: 0; z-index: 90; background: rgba(5,8,12,.72); backdrop-filter: blur(4px); display: grid; place-items: center; }
+#pin-ask.hidden { display: none; }
+.pin-box { width: min(360px, 92vw); background: var(--panel); border: 1px solid #2c3a4d; border-radius: 18px; padding: 24px; text-align: center;
+  box-shadow: 0 30px 80px rgba(0,0,0,.6); animation: toastIn .3s cubic-bezier(.2,.8,.2,1); }
+.pin-box > svg { width: 34px; height: 34px; color: var(--blue); }
+.pin-box h3 { margin: 6px 0; } .pin-box input { width: 100%; text-align: center; font-size: 24px; letter-spacing: 10px; padding: 10px; margin: 8px 0 12px; }
+.pin-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+/* 오늘 자동매매 흐름 */
+.flow { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; position: relative; }
+.fstep { position: relative; display: flex; flex-direction: column; gap: 3px; padding: 12px; border-radius: 12px; background: #0f141b; border: 1px solid var(--line); min-height: 112px; }
+.fstep:not(:last-child)::after { content: ""; position: absolute; right: -8px; top: 26px; width: 8px; height: 2px; background: var(--line); }
+.fstep .fi { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--panel2); color: var(--muted); margin-bottom: 4px; }
+.fstep .fi svg { width: 16px; height: 16px; }
+.fstep b { font-size: 13px; } .fstep em { font-style: normal; font-size: 11.5px; color: var(--muted); line-height: 1.4; }
+.fst { margin-top: auto; align-self: flex-start; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: var(--panel2); color: var(--muted); }
+.fstep.done { border-color: rgba(47,191,113,.35); } .fstep.done .fi { background: rgba(47,191,113,.14); color: #2fbf71; } .fstep.done .fst { color: #2fbf71; background: rgba(47,191,113,.12); }
+.fstep.now { border-color: rgba(233,162,59,.55); box-shadow: 0 0 0 3px rgba(233,162,59,.08); } .fstep.now .fi { background: rgba(233,162,59,.16); color: #e9a23b; }
+.fstep.now .fst { color: #e9a23b; background: rgba(233,162,59,.12); } .fstep.skip { opacity: .55; }
+.flow-cta { display: flex; gap: 14px; align-items: center; justify-content: space-between; margin-top: 12px; padding: 14px; border-radius: 12px;
+  background: linear-gradient(90deg, rgba(49,130,246,.12), rgba(49,130,246,.03)); border: 1px solid rgba(49,130,246,.3); }
+.flow-cta b { display: block; margin-bottom: 2px; }
+.icon-btn { padding: 8px; display: grid; place-items: center; }
+@media (max-width: 1100px) { .flow { grid-template-columns: repeat(3, minmax(0, 1fr)); } .fstep::after { display: none; } }
+@media (max-width: 600px) { .flow { grid-template-columns: 1fr 1fr; } .flow-cta { flex-direction: column; align-items: stretch; } }

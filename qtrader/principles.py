@@ -57,6 +57,35 @@ REFERENCES = [
      "성과 = 예측력(IC) × √독립적인 판단 수. 한 번의 확신보다 꾸준한 작은 우위", "분산 투자와 종목당 비중 상한"),
     ("chan", "Ernest Chan (2008, 2013)", "Quantitative Trading / Algorithmic Trading", "Wiley (서적)",
      "개인 퀀트의 실전 절차: 검증, 리스크 관리, 켈리 기반 자금 관리", "손절·포지션 크기·일일 손실 한도"),
+    # 추세·시장 국면
+    ("century", "Hurst, Ooi & Pedersen (2017)", "A Century of Evidence on Trend-Following Investing", "Journal of Portfolio Management",
+     "1880년대부터 100년 넘게 여러 자산에서 추세 추종이 꾸준히 성과를 냄. 큰 하락장에서 특히 손실을 줄임", "200일선 추세 규칙"),
+    ("states", "Cooper, Gutierrez & Hameed (2004)", "Market States and Momentum", "Journal of Finance",
+     "모멘텀 수익은 시장이 오른 뒤에만 나타나고, 시장이 하락 국면이면 사라짐", "지수가 200일선 아래면 신규 매수 비중 절반 (안정형은 매수 중단)"),
+    ("moments", "Barroso & Santa-Clara (2015)", "Momentum Has Its Moments", "Journal of Financial Economics",
+     "변동성으로 비중을 조절한 모멘텀은 수익은 비슷하고 급락(크래시)은 크게 줄어듦", "목표 변동성으로 종목 비중 축소"),
+    # 변동성
+    ("ivol", "Ang, Hodrick, Xing & Zhang (2006)", "The Cross-Section of Volatility and Expected Returns", "Journal of Finance",
+     "변동성이 큰 종목일수록 이후 수익률이 오히려 낮음", "연 변동성 상한"),
+    ("lowvol", "Baker, Bradley & Wurgler (2011)", "Benchmarks as Limits to Arbitrage: Understanding the Low-Volatility Anomaly", "Financial Analysts Journal",
+     "저변동성 주식이 장기적으로 고변동성 주식보다 위험 대비 성과가 좋음", "변동성 상한과 변동성 목표 비중"),
+    # 행동재무
+    ("disposition", "Odean (1998)", "Are Investors Reluctant to Realize Their Losses?", "Journal of Finance",
+     "개인은 이익 난 주식은 너무 빨리 팔고 손실 난 주식은 너무 오래 들고 있음 (처분 효과)", "손절가에 닿으면 사람 판단 없이 자동 매도"),
+    # 검증·과최적화
+    ("mp", "McLean & Pontiff (2016)", "Does Academic Research Destroy Stock Return Predictability?", "Journal of Finance",
+     "논문으로 알려진 이상 현상은 발표 뒤 수익이 크게 줄어듦", "한 신호를 맹신하지 않고 여러 규칙을 모두 통과할 때만 매수"),
+    ("replicate", "Hou, Xue & Zhang (2020)", "Replicating Anomalies", "Review of Financial Studies",
+     "발표된 이상 현상 대부분이 소형주 영향을 걸러내면 재현되지 않음", "검증이 많이 된 모멘텀·추세·수익성·저변동성만 사용"),
+    ("crisis", "Jensen, Kelly & Pedersen (2023)", "Is There a Replication Crisis in Finance?", "Journal of Finance",
+     "제대로 검증하면 주요 팩터 다수는 재현되며, 비슷한 팩터를 묶어 쓰면 더 안정적", "여러 팩터를 함께 보는 체크리스트"),
+    ("pbo", "Bailey, Borwein, López de Prado & Zhu (2017)", "The Probability of Backtest Overfitting", "Journal of Computational Finance",
+     "여러 번 시험해 고른 전략은 과거에만 잘 맞을 확률이 높음", "백테스트 대신 가상매매·실전 기록으로 판단"),
+    # AI·머신러닝
+    ("ml", "Gu, Kelly & Xiu (2020)", "Empirical Asset Pricing via Machine Learning", "Review of Financial Studies",
+     "머신러닝이 수익률 예측을 개선하지만 가장 중요한 신호는 모멘텀·유동성·변동성", "AI 판단도 모멘텀·변동성 규칙을 통과해야 매수"),
+    ("llm", "Lopez-Lira & Tang (2023)", "Can ChatGPT Forecast Stock Price Movements?", "SSRN 작업 논문",
+     "대형 언어 모델의 뉴스 해석이 단기 수익률을 일부 예측하지만, 효과는 작고 시간이 지나며 줄어듦", "뉴스 분석은 참고, 팩트체크·숫자 규칙 없이 단독 근거로 쓰지 않음"),
 ]
 REF = {r[0]: r for r in REFERENCES}
 
@@ -92,7 +121,20 @@ DEFAULT_RULES = {
     "cooldown_days": 5,  # 손절 후 같은 종목 재매수 대기
     "require_trend": True,
     "require_momentum": True,
+    "market_filter": "half",  # 지수가 200일선 아래면: half=비중 절반, block=신규 매수 중단, off=보지 않음
 }
+# 시장 국면을 볼 대표 지수 ETF
+INDEX_ETF = {"KR": "069500", "US": "SPY"}
+
+
+def index_bars(data, market) -> pd.DataFrame | None:
+    """시장 국면 판단용 지수 ETF 일봉. 못 받으면 None (규칙을 건너뛴다)."""
+    try:
+        m = getattr(market, "value", market)
+        b = data.bars(market, INDEX_ETF[m], 400)
+        return b if b is not None and len(b) >= 200 else None
+    except Exception:
+        return None
 
 
 def market_signals(bars: pd.DataFrame) -> dict:
@@ -106,7 +148,8 @@ def market_signals(bars: pd.DataFrame) -> dict:
 
 
 def checklist(final: dict | None, check: dict | None, bars: pd.DataFrame, warnings: list[dict] | None = None,
-              rules: dict | None = None, new_buys_today: int = 0, recent_stop: bool = False) -> dict:
+              rules: dict | None = None, new_buys_today: int = 0, recent_stop: bool = False,
+              market_bars: pd.DataFrame | None = None) -> dict:
     """매수 전 체크리스트. 모두 통과해야 매수 가능."""
     R = DEFAULT_RULES | (rules or {})
     s = market_signals(bars)
@@ -143,14 +186,26 @@ def checklist(final: dict | None, check: dict | None, bars: pd.DataFrame, warnin
                     f"{new_buys_today}건", f"{R['max_new_buys_per_day']}건 미만", "odean"))
     out.append(Rule("cooldown", "최근 손절 종목 재매수 아님", not recent_stop, "최근 손절" if recent_stop else "해당 없음",
                     f"손절 후 {R['cooldown_days']}거래일 대기", "prospect"))
+    regime_cut = 1.0
+    mf = R.get("market_filter", "half")
+    if market_bars is not None and mf != "off":
+        mc = market_bars["close"]
+        m_last, m_sma = float(mc.iloc[-1]), float(ind.sma(mc, 200).iloc[-1])
+        down = m_last < m_sma
+        out.append(Rule("regime", "시장 국면 (지수 > 200일선)", not (down and mf == "block"),
+                        f"{'하락' if down else '상승'} 국면 ({m_last / m_sma - 1:+.1%})",
+                        "하락 국면이면 매수 중단" if mf == "block" else "하락 국면이면 비중 절반", "states"))
+        if down:
+            regime_cut = 0.5
     passed = all(r.ok for r in out)
     # 포지션 크기: 절반 켈리와 변동성 목표 중 작은 값
     p = conf
     kelly = max(0.0, p - (1 - p) / rr) if rr > 0 else 0.0
     vol_w = min(1.0, R["target_vol"] / s["vol"]) if s["vol"] > 0 else 1.0
-    size = min(kelly / 2, vol_w)
+    size = min(kelly / 2, vol_w) * regime_cut
     return {"passed": passed, "rules": [r.to_dict() for r in out], "signals": {k: round(v, 4) for k, v in s.items()},
-            "size": {"half_kelly": round(kelly / 2, 4), "vol_target": round(vol_w, 4), "weight_factor": round(size, 4)}}
+            "size": {"half_kelly": round(kelly / 2, 4), "vol_target": round(vol_w, 4), "regime": regime_cut,
+                     "weight_factor": round(size, 4)}}
 
 
 def trade_plan(final: dict | None, last: float, budget: float, max_weight: float, size_factor: float,

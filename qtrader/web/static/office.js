@@ -38,7 +38,7 @@ const LOOKS = {
   gold: ["#c9a227", "#e8e0d0"], pink: ["#e07ab0", "#3a2010"], white: ["#d8dde3", "#5a3a20"],
 };
 const SHORT = { chart: "기술", fund: "재무", earn: "실적", news: "뉴스", flow: "수급", checker: "팩트체크", bull: "강세", bear: "약세",
-  lead: "리서치 팀장", trader: "트레이더", aggr: "공격형", neut: "중립형", cons: "보수형", pm: "포트폴리오 매니저" };
+  lead: "리서치 팀장", trader: "주문 설계", aggr: "공격형", neut: "중립형", cons: "보수형", pm: "최종 결정" };
 const SKIN = "#f2c9a0";
 const RATING_COLOR = { Buy: "#f04452", Overweight: "#f08a5e", Hold: "#8b98a5", Underweight: "#5a9bff", Sell: "#3182f6" };
 const RATING_KO = { Buy: "매수", Overweight: "비중확대", Hold: "보유", Underweight: "비중축소", Sell: "매도" };
@@ -268,12 +268,13 @@ function renderStages() {
   const st = r?.stages || {};
   $("#stage-line").innerHTML = office.stages.map((s, i) => `<div class="stg ${st[s.key] || "idle"}"><span>${i + 1}</span>${esc(s.name)}</div>`).join("");
   const hud = $("#office-hud");
-  if (!r) { hud.innerHTML = `<div>회의 대기 중</div><div class="note">종목을 입력하고 회의를 시작하세요</div>`; return; }
+  if (!r) { hud.innerHTML = `<span class="hud-dot"></span><div><b>회의 대기 중</b><div class="note">종목을 입력하고 회의를 시작하세요</div></div>`; return; }
   const end = r.finished_at ? Date.parse(r.finished_at) : Date.now();
   const sec = Math.max(0, Math.round((end - Date.parse(r.started_at)) / 1000));
   const state = r.status === "running" ? `<b class="blink">● 회의 중</b> ${esc(r.stage)}` : r.status === "done" ? "<b>회의 완료</b>" : `<b class="down">오류</b> ${esc(r.error || "")}`;
-  hud.innerHTML = `<div>${esc(r.name || r.symbol)} <small>${esc(r.symbol)}</small></div><div>${state}</div>
-    <div class="note">${r.mode === "precise" ? "정밀" : "빠른"} 회의 · ${Math.floor(sec / 60)}분 ${sec % 60}초 · Claude ${r.calls || 0}회 · 약 ${Math.round((r.cost_usd || 0) * 1400).toLocaleString()}원</div>`;
+  hud.className = "office-hud " + r.status;
+  hud.innerHTML = `<span class="hud-dot"></span><div><b>${esc(r.name || r.symbol)}</b> <small>${esc(r.symbol)}</small><div>${state}</div>
+    <div class="note">${r.mode === "precise" ? "정밀" : "빠른"} 회의 · ${Math.floor(sec / 60)}분 ${sec % 60}초 · Claude ${r.calls || 0}회 · 약 ${Math.round((r.cost_usd || 0) * 1400).toLocaleString()}원</div></div>`;
   renderPlanPop(r);
 }
 

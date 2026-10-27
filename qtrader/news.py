@@ -76,20 +76,61 @@ def fetch(url: str, source: str, ttl: float = 300, session=None) -> list[dict]:
     return items
 
 
-def feeds(cfg_feeds: list[dict] | None = None, limit: int = 500, session=None) -> dict:
+# 해외증시 기사로 보는 낱말 (국제 섹션처럼 정치 기사가 섞인 피드를 거르고, 국내 피드의 미국 증시 기사를 옮긴다)
+GLOBAL_WORDS = re.compile(r"뉴욕증시|뉴욕 증시|미국 ?증시|미국 ?주식|미장|나스닥|다우|S&P|월가|월스트리트|연준|파월|FOMC|미 국채|"
+                          r"서학개미|해외주식|빅테크|엔비디아|테슬라|애플|마이크로소프트|아마존|알파벳|구글|메타|브로드컴|TSMC|"
+                          r"팔란티어|앤트로픽|오픈AI|ETF|환율|국제유가|금값|중국증시|닛케이|유럽증시|증시|주가|株")
+
+
+def _tidy(x: dict) -> dict:
+    """구글 뉴스: 제목 끝 '- 언론사' 를 떼어 출처로, 제목만 되풀이한 요약은 지운다."""
+    title, src = x["title"], x.get("source") or ""
+    m = re.match(r"^(.*\S)\s+-\s+([^-]{1,40})$", title)
+    if "news.google." in (x.get("link") or "") and m:
+        title, src = m.group(1), m.group(2).strip()
+    if src.startswith("http"):
+        src = re.sub(r"^https?://(www\.)?|/.*$", "", src)
+    summ = x.get("summary") or ""
+    if summ.replace(" ", "").startswith(title.replace(" ", "")[:20]):
+        summ = ""
+    return x | {"title": title, "source": src or x.get("source"), "summary": summ}
+
+
+def feeds(cfg_feeds: list[dict] | None = None, limit: int = 300, session=None) -> dict:
+    """limit 은 국내·해외 각각의 최대 건수."""
+    from concurrent.futures import ThreadPoolExecutor
+
     items, errors = [], []
-    for f in cfg_feeds or DEFAULT_FEEDS:
-        try:
-            got = fetch(f["url"], f["name"], session=session)
-            items += [x | {"cat": f.get("cat", "kr"), "feed": f["name"]} for x in got]
-        except Exception as e:  # 한 피드 실패가 전체를 막지 않게
-            errors.append(f"{f['name']}: {e}")
-    seen, uniq = set(), []
+    flist = cfg_feeds or DEFAULT_FEEDS
+
+    def one(f):
+        return f, fetch(f["url"], f["name"], session=session)
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futs = [ex.submit(one, f) for f in flist]
+        for fu, f in zip(futs, flist):
+            try:
+                _, got = fu.result()
+            except Exception as e:  # 한 피드 실패가 전체를 막지 않게
+                errors.append(f"{f['name']}: {e}")
+                continue
+            for x in got:
+                text = x["title"]
+                cat = f.get("cat", "kr")
+                if f.get("filter") and not GLOBAL_WORDS.search(text):
+                    continue  # 국제 섹션의 증시와 무관한 기사
+                if cat == "kr" and re.search(r"뉴욕증시|뉴욕 증시|미국 ?증시|나스닥|월가|서학개미", x["title"]):
+                    cat = "global"
+                items.append(_tidy(x) | {"cat": cat, "feed": f["name"]})
+    seen, uniq, count = set(), [], {"kr": 0, "global": 0}
     for x in sorted(items, key=lambda x: x["time"] or "", reverse=True):
-        if x["link"] not in seen:
-            seen.add(x["link"])
-            uniq.append(x)
-    return {"items": uniq[:limit], "errors": errors}
+        key = re.sub(r"\s+-\s+[^-]+$", "", x["title"]).replace(" ", "")[:40]  # 구글 뉴스의 '- 언론사' 꼬리 무시
+        if x["link"] in seen or key in seen or count[x["cat"]] >= limit:
+            continue
+        seen.update((x["link"], key))
+        count[x["cat"]] += 1
+        uniq.append(x)
+    return {"items": uniq, "errors": errors}
 
 
 def stock_news(query: str, limit: int = 20, session=None) -> list[dict]:

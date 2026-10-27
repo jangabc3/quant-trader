@@ -22,8 +22,37 @@ async function api(path, opts = {}) {
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+  const detail = typeof data.detail === "string" ? data.detail : "";
+  if (res.status === 428 && detail.startsWith("PIN:")) {
+    // 실전 주문 PIN: 입력받아 같은 요청을 다시 보낸다
+    const msg = detail.split(":").slice(2).join(":");
+    const pin = await askPin(msg);
+    if (!pin) throw new Error("PIN 입력을 취소했습니다");
+    return api(path, { ...opts, headers: { ...(opts.headers || {}), "x-qtrader-pin": pin } });
+  }
+  if (!res.ok) throw new Error(detail.startsWith("PIN:") ? detail.split(":").slice(2).join(":") : detail || `HTTP ${res.status}`);
   return data;
+}
+
+// PIN 입력 창 (숫자 4~8자리)
+function askPin(msg) {
+  return new Promise((resolve) => {
+    let box = document.getElementById("pin-ask");
+    if (!box) { box = document.createElement("div"); box.id = "pin-ask"; document.body.appendChild(box); }
+    box.innerHTML = `<form class="pin-box"><i data-lucide="lock-keyhole"></i><h3>실전 주문 PIN</h3>
+      <p class="${msg.includes("틀렸") ? "down" : "note"}">${esc(msg)}</p>
+      <input type="password" inputmode="numeric" autocomplete="off" maxlength="8" pattern="[0-9]*" placeholder="••••••" required>
+      <div class="pin-btns"><button type="button" data-x>취소</button><button class="primary">확인</button></div>
+      <p class="note">실제 돈이 움직이는 작업이라 한 번 더 확인합니다. 맞히면 5분 동안은 다시 묻지 않아요.</p></form>`;
+    box.classList.remove("hidden");
+    window.lucide && lucide.createIcons();
+    const input = box.querySelector("input");
+    setTimeout(() => input.focus(), 30);
+    const done = (v) => { box.classList.add("hidden"); resolve(v); };
+    box.querySelector("[data-x]").onclick = () => done(null);
+    box.querySelector("form").onsubmit = (e) => { e.preventDefault(); done(input.value.trim()); };
+    box.onkeydown = (e) => { if (e.key === "Escape") done(null); };
+  });
 }
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -76,6 +105,41 @@ function countTo(el, value, opts = {}) {
 }
 function icons() { window.lucide && lucide.createIcons(); }
 
+// 모션: 목록이 아래에서 차례로 떠오르게 (움직임 줄이기 설정이면 생략)
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
+function animateIn(sel, opts = {}) {
+  if (REDUCED || !window.anime) return;
+  const els = [...document.querySelectorAll(sel)].slice(0, opts.max || 24);
+  if (!els.length) return;
+  anime({ targets: els, opacity: [0, 1], translateY: [opts.y ?? 8, 0], delay: anime.stagger(opts.step || 22), duration: 360, easing: "easeOutCubic" });
+}
+window.animateIn = animateIn;
+
+// 값이 바뀐 칸을 잠깐 빨강/파랑으로 깜빡 (토스증권 시세처럼)
+const lastVals = new Map();
+function flashChanges(root, sel = "[data-val]") {
+  root.querySelectorAll(sel).forEach((el) => {
+    const k = el.dataset.key, v = Number(el.dataset.val), old = lastVals.get(k);
+    if (old != null && v !== old && !REDUCED) {
+      el.classList.remove("flash-up", "flash-down"); void el.offsetWidth;
+      el.classList.add(v > old ? "flash-up" : "flash-down");
+    }
+    lastVals.set(k, v);
+  });
+}
+window.flashChanges = flashChanges;
+
+// 상단 탭 아래 움직이는 밑줄
+function moveInk() {
+  const on = $("nav button.on"), nav = $("nav");
+  if (!on || !nav) return;
+  let ink = $("#nav-ink");
+  if (!ink) { ink = document.createElement("i"); ink.id = "nav-ink"; nav.appendChild(ink); }
+  ink.style.width = on.offsetWidth + "px";
+  ink.style.transform = `translateX(${on.offsetLeft}px)`;
+}
+window.addEventListener("resize", moveInk);
+
 function banner(msg, kind = "") {
   const b = $("#banner");
   b.className = "banner " + kind + (msg ? "" : " hidden");
@@ -110,7 +174,8 @@ function openTab(name) {
   document.dispatchEvent(new CustomEvent("tab", { detail: name }));
   // 화면 전환 애니메이션 (anime.js)
   const sec = $("#tab-" + name);
-  if (window.anime && sec) anime({ targets: sec.querySelectorAll(":scope > .panel, :scope > div > .panel, :scope .idx-card"),
+  moveInk();
+  if (window.anime && sec && !REDUCED) anime({ targets: sec.querySelectorAll(":scope > .panel, :scope > div > .panel, :scope .idx-card"),
     opacity: [0, 1], translateY: [10, 0], delay: anime.stagger(30), duration: 380, easing: "easeOutQuad" });
   setTimeout(icons, 0);
 }
@@ -185,16 +250,16 @@ function renderStatus(s) {
   mb.className = "badge " + (LIVE.has(s.mode) ? "red" : s.mode === "kis_demo" ? "amber" : "green");
   $("#auto-badge").textContent = s.auto_trading ? "자동매매 실행 중" : "자동매매 꺼짐";
   $("#auto-badge").className = "badge " + (s.auto_trading ? "green" : "");
-  $("#kill-badge").textContent = s.kill_switch ? "킬 스위치 켜짐" : "킬 스위치 꺼짐";
+  $("#kill-badge").textContent = s.kill_switch ? "긴급 정지 중" : "긴급 정지 꺼짐";
   $("#kill-badge").className = "badge " + (s.kill_switch ? "red" : "");
   $("#auto-btn").innerHTML = s.auto_trading ? '<i data-lucide="pause"></i> 자동매매 중지' : '<i data-lucide="play"></i> 자동매매 시작';
-  $("#kill-btn").innerHTML = s.kill_switch ? '<i data-lucide="octagon-x"></i> 킬 스위치 끄기' : '<i data-lucide="octagon-x"></i> 킬 스위치';
+  $("#kill-btn").innerHTML = s.kill_switch ? '<i data-lucide="play-circle"></i> 긴급 정지 풀기' : '<i data-lucide="octagon-x"></i> 긴급 정지';
   $("#kill-btn").classList.toggle("on", s.kill_switch);
   const ac = $("#auto-card");
   if (ac) {
     ac.classList.toggle("on", s.auto_trading);
     ac.classList.toggle("killed", s.kill_switch);
-    $("#auto-title").textContent = s.kill_switch ? "킬 스위치 켜짐 · 신규 매수 중단" : s.auto_trading ? "자동매매 실행 중" : "자동매매 꺼짐";
+    $("#auto-title").textContent = s.kill_switch ? "긴급 정지 중 · 새로 사지 않음 (손절·익절은 계속)" : s.auto_trading ? "자동매매 실행 중" : "자동매매 꺼짐";
     const next = Object.entries(s.markets).filter(([, x]) => x.enabled).map(([m, x]) =>
       `${MARKET_NAME[m]} ${STRAT_NAME[x.strategy] || x.strategy} · 다음 ${x.next_run.replace("T", " ").slice(5, 16)}`).join(" / ");
     $("#auto-sub").textContent = `${MODE_NAME[s.mode]} · ${next || "사용 중인 시장 없음"}`;
@@ -320,13 +385,21 @@ $("#auto-btn").onclick = async () => {
     const rules = c.markets.KR.strategy === "ai" || c.markets.US.strategy === "ai"
       ? "\n· AI 회의 결과가 매수여도 체크리스트(추세·모멘텀·과열·변동성·손익비·팩트체크)를 모두 넘어야 삽니다.\n· 산 종목은 손절가·익절가에 닿으면 자동으로 팝니다." + (c.ai.require_approval ? "\n· 주문은 승인 대기에 먼저 올라오고, 근거를 보고 승인해야 나갑니다." : "")
       : "";
-    if (!confirm(`${MODE_NAME[s.mode]} 계좌로 자동매매를 시작합니다.\n\n${lines.join("\n")}${rules}\n\n종목당 최대 ${Math.round(c.risk.max_weight * 100)}%, 하루 손실 ${Math.round(c.risk.daily_loss_limit * 100)}% 에 닿으면 킬 스위치가 켜집니다. 계속할까요?`)) return;
+    if (!confirm(`${MODE_NAME[s.mode]} 계좌로 자동매매를 시작합니다.\n\n${lines.join("\n")}${rules}\n\n종목당 최대 ${Math.round(c.risk.max_weight * 100)}%, 하루 손실 ${Math.round(c.risk.daily_loss_limit * 100)}% 에 닿으면 긴급 정지(새로 사지 않음)가 켜집니다. 계속할까요?`)) return;
     if (LIVE.has(s.mode) && prompt("실전 자동매매입니다. 진행하려면 '실전주문' 이라고 입력하세요.") !== "실전주문") return;
   }
   await api("/api/auto", { method: "POST", body: { on } }).catch((e) => alert(e.message));
   refresh();
 };
+$("#kill-help").onclick = () => modal(`<h3><i data-lucide="octagon-x"></i> 긴급 정지 (킬 스위치)</h3>
+  <p>자동매매의 <b>비상 브레이크</b>입니다. 켜면 그 순간부터 <b>새로 사는 주문만</b> 모두 멈춥니다.</p>
+  <ul><li>이미 가진 종목의 <b>손절·익절 매도는 계속</b>됩니다. 손실을 키우지 않기 위해서예요.</li>
+  <li>하루 손실 한도(설정의 '하루 손실 한도')를 넘으면 <b>자동으로 켜집니다</b>. 장중에도 2분마다 확인합니다.</li>
+  <li>시장이 크게 흔들리거나, 이상한 주문이 보이거나, 잠시 쉬고 싶을 때 직접 눌러도 됩니다.</li>
+  <li>다시 사게 하려면 '긴급 정지 풀기'를 누르세요. 자동으로 풀리지 않습니다.</li></ul>
+  <p class="note">자동매매 켜기·끄기와는 별개입니다. 자동매매를 끄면 손절·익절 감시도 멈추고, 긴급 정지는 사는 것만 멈춥니다.</p>`) || icons();
 $("#kill-btn").onclick = async () => {
+  if (!state.status.kill_switch && !confirm("긴급 정지를 켭니다. 새로 사는 주문만 멈추고, 손절·익절 매도는 계속됩니다.")) return;
   await api("/api/kill-switch", { method: "POST", body: { on: !state.status.kill_switch } }).catch((e) => alert(e.message));
   refresh();
 };
@@ -370,6 +443,8 @@ async function loadConfig() {
   $("#rl-conf").value = R.min_confidence; $("#rl-rr").value = R.min_reward_risk; $("#rl-rsi").value = R.max_rsi;
   $("#rl-vol").value = R.max_vol; $("#rl-fact").value = R.min_fact_ok; $("#rl-buys").value = R.max_new_buys_per_day;
   $("#rl-cool").value = R.cooldown_days; $("#rl-trend").checked = R.require_trend; $("#rl-mom").checked = R.require_momentum;
+  $("#rl-market").value = R.market_filter || "half";
+  loadPin();
   const ruleKeys = Object.keys(state.strategies);
   const stratSelect = (cur) => `<option value="ai" ${cur === "ai" ? "selected" : ""}>${STRAT_NAME.ai} (추천)</option>
     <optgroup label="고급 · 단순 규칙 (AI 검증 없음)">${ruleKeys.map((k) => `<option value="${k}" ${k === cur ? "selected" : ""}>${STRAT_NAME[k] || k}</option>`).join("")}</optgroup>`;
@@ -451,7 +526,7 @@ $("#cfg-save").onclick = async () => {
     rules: { min_confidence: Number($("#rl-conf").value), min_reward_risk: Number($("#rl-rr").value),
       max_rsi: Number($("#rl-rsi").value), max_vol: Number($("#rl-vol").value), min_fact_ok: Number($("#rl-fact").value),
       max_new_buys_per_day: Number($("#rl-buys").value), cooldown_days: Number($("#rl-cool").value),
-      require_trend: $("#rl-trend").checked, require_momentum: $("#rl-mom").checked },
+      require_trend: $("#rl-trend").checked, require_momentum: $("#rl-mom").checked, market_filter: $("#rl-market").value },
   });
   $$("#market-cfg [data-market]").forEach((el) => {
     const mc = c.markets[el.dataset.market];
@@ -467,6 +542,24 @@ $("#cfg-save").onclick = async () => {
     $("#cfg-msg").textContent = "저장했습니다.";
     refresh();
   } catch (e) { $("#cfg-msg").textContent = "저장 실패: " + e.message; }
+};
+
+async function loadPin() {
+  const p = await api("/api/pin").catch(() => ({ set: false }));
+  $("#pin-badge").textContent = p.set ? "설정됨" : "아직 없음";
+  $("#pin-badge").className = "badge " + (p.set ? "green" : "amber");
+  $("#pin-old-wrap").classList.toggle("hidden", !p.set);
+  $("#pin-save").textContent = p.set ? "PIN 바꾸기" : "PIN 정하기";
+}
+$("#pin-form").onsubmit = async (e) => {
+  e.preventDefault();
+  if ($("#pin-new").value !== $("#pin-new2").value) return toast("새 PIN 두 번이 서로 다릅니다", "alert-triangle");
+  try {
+    await api("/api/pin", { method: "POST", body: { new: $("#pin-new").value, old: $("#pin-old").value } });
+    ["#pin-old", "#pin-new", "#pin-new2"].forEach((s) => ($(s).value = ""));
+    toast("실전 주문 PIN 을 저장했어요", "lock-keyhole");
+    loadPin();
+  } catch (err) { toast(err.message, "alert-triangle"); }
 };
 
 $("#key-save").onclick = async () => {
@@ -485,6 +578,7 @@ $("#key-del").onclick = async () => {
 
 // 시작
 (async () => {
+  setTimeout(moveInk, 200); document.fonts?.ready.then(moveInk);
   state.strategies = await api("/api/strategies");
   await refresh();
   setInterval(refresh, 15000);

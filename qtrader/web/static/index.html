@@ -143,12 +143,11 @@
     <div class="news-bar">
       <div class="seg" id="news-cat"><button data-v="all" class="on">전체</button><button data-v="kr">국내증시</button><button data-v="global">해외증시</button></div>
       <div class="news-src-chips" id="news-src"></div>
-      <input id="news-q" placeholder="제목 검색 (예: 반도체, 금리)" style="width:220px">
+      <input id="news-q" class="news-q" placeholder="제목 검색 (예: 반도체, 금리)">
       <button id="news-refresh"><i data-lucide="refresh-cw"></i> 새로고침</button>
       <span class="note" id="news-time"></span>
     </div>
-    <div id="news-hero" class="news-hero"></div>
-    <div id="news-list" class="news-grid"></div>
+    <div id="news-list" class="news-cols"></div>
     <p class="note">제목과 링크만 보여주고 본문은 원문 사이트에서 봅니다. 저작권은 각 언론사·제공자에게 있습니다.</p>
   </section>
 
@@ -160,11 +159,10 @@
       <select id="meet-runs"></select>
       <span id="meet-stage" class="note"></span>
     </div>
-    <div class="stage-line" id="stage-line"></div>
+    <div class="office-status"><div class="office-hud" id="office-hud"></div><div class="stage-line" id="stage-line"></div></div>
     <div class="office-wrap" id="office-wrap">
       <canvas id="office" width="640" height="360"></canvas>
       <div id="office-overlay"></div>
-      <div class="office-hud" id="office-hud"></div>
       <div class="plan-pop hidden" id="plan-pop"></div>
     </div>
     <div id="result" class="result"></div>
@@ -184,12 +182,18 @@
         <div><span class="dot"></span><b id="auto-title">자동매매 꺼짐</b><span class="note" id="auto-sub"></span></div>
         <div class="auto-btns">
           <button id="auto-btn" class="primary"><i data-lucide="play"></i> 자동매매 시작</button>
-          <button id="kill-btn" class="danger"><i data-lucide="octagon-x"></i> 킬 스위치</button>
+          <button id="kill-btn" class="danger" title="긴급 정지: 새로 사는 것만 즉시 멈춥니다. 손절·익절 매도는 계속됩니다"><i data-lucide="octagon-x"></i> 긴급 정지</button>
+          <button id="kill-help" class="icon-btn" title="긴급 정지(킬 스위치)란?"><i data-lucide="circle-help"></i></button>
           <button id="dry-btn" title="주문 없이 오늘 무엇을 살지 계산"><i data-lucide="flask-conical"></i> 미리보기</button>
           <details class="more-menu"><summary title="고급"><i data-lucide="more-horizontal"></i></summary>
             <div><button id="run-btn" class="danger-soft" title="실행 시각을 기다리지 않고 지금 한 번 주문까지 실행"><i data-lucide="zap"></i> 지금 바로 실행 (주문 나감)</button></div></details>
         </div>
       </div>
+    </div>
+    <div class="panel flow-panel" id="flow-panel">
+      <h3><i data-lucide="workflow"></i> 오늘 자동매매 흐름 <small id="flow-sub">매 거래일 이 순서로 움직입니다</small></h3>
+      <div class="flow" id="flow"></div>
+      <div id="flow-cta"></div>
     </div>
     <div class="kpis" id="kpis"></div>
     <details class="panel adv"><summary><i data-lucide="list-checks"></i> 자동매매는 이 기준으로 사고팝니다 <small>투자 성향에 맞춘 기준 · 눌러서 펼치기</small></summary><div class="criteria-box"></div></details>
@@ -287,6 +291,16 @@
             <label class="mode-card live"><input type="radio" name="mode" value="kis_real"><b>한국투자증권 실전</b><span>실제 돈으로 주문</span></label>
           </div></details>
         <label class="check"><input type="checkbox" id="live-confirmed"> 실전 주문을 허용합니다. 손실 책임이 저에게 있음을 이해했습니다.</label>
+        <div class="pin-panel" id="pin-panel">
+          <div><b><i data-lucide="lock-keyhole"></i> 실전 주문 PIN</b> <span class="badge" id="pin-badge">확인 중</span>
+            <p class="note">실전 모드로 바꾸기·자동매매 켜기·주문 승인·즉시 실행·주문 취소 전에 PIN 을 묻습니다. 숫자 4~8자리, 이 PC 에 해시로만 저장돼요.</p></div>
+          <form class="form-row" id="pin-form">
+            <label id="pin-old-wrap" class="hidden">지금 PIN <input id="pin-old" type="password" inputmode="numeric" maxlength="8" autocomplete="off"></label>
+            <label>새 PIN <input id="pin-new" type="password" inputmode="numeric" maxlength="8" autocomplete="off" required></label>
+            <label>한 번 더 <input id="pin-new2" type="password" inputmode="numeric" maxlength="8" autocomplete="off" required></label>
+            <button class="primary" id="pin-save">PIN 정하기</button>
+          </form>
+        </div>
       </div>
 
       <div class="panel">
@@ -393,6 +407,7 @@
             </div>
             <label class="check"><input type="checkbox" id="rl-trend"> 200일선 위에서만 매수</label>
             <label class="check"><input type="checkbox" id="rl-mom"> 모멘텀이 양수일 때만 매수</label>
+            <label>시장 국면 (지수가 200일선 아래일 때) <select id="rl-market"><option value="half">신규 매수 비중 절반</option><option value="block">신규 매수 중단</option><option value="off">보지 않음</option></select></label>
           </div>
         </div>
       </details>

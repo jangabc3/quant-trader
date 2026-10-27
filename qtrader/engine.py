@@ -89,7 +89,7 @@ def build_context(cfg: dict | None = None, store: Store | None = None) -> Contex
 
 
 def ai_targets(store: Store, cfg: dict, panel_: dict, today: str, account: str = "", market: str = "KR",
-               warnings_for=None) -> tuple[dict, set, list]:
+               warnings_for=None, market_bars=None) -> tuple[dict, set, list]:
     """오늘 AI 회의 결정으로 목표 비중을 만든다.
     - 결정이 없거나 Hold·확신 부족: 보유 유지(keep)
     - 매수 계열인데 체크리스트(뇌동매매 방지 규칙)를 하나라도 못 넘으면: 신규 매수 없이 보유 유지
@@ -117,7 +117,7 @@ def ai_targets(store: Store, cfg: dict, panel_: dict, today: str, account: str =
             check = d.get("check") if isinstance(d.get("check"), dict) else None
             warns = warnings_for(s) if warnings_for else []
             stopped = store.recent_stop(account, market, s, cooldown) if account else False
-            cl = principles.checklist(f, check, panel_[s], warns, rules, new_buys, stopped)
+            cl = principles.checklist(f, check, panel_[s], warns, rules, new_buys, stopped, market_bars)
             note["checklist"] = cl
             if cl["passed"]:
                 target[s] = base * float(m) * min(1.0, cl["size"]["weight_factor"] * 4)
@@ -368,7 +368,8 @@ def run_market(ctx: Context, market: Market, dry_run: bool = False, force: bool 
                 return tc.warnings(sym) if tc else []
             except Exception:
                 return []
-        raw, keep, ai_notes = ai_targets(store, cfg, p, today, acct_id, market.value, warns)
+        from .principles import index_bars
+        raw, keep, ai_notes = ai_targets(store, cfg, p, today, acct_id, market.value, warns, index_bars(ctx.data, market))
     else:
         raw = strat.latest(p)
     target = cap_weights(raw, lim)

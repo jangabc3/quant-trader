@@ -32,15 +32,15 @@ TYPES = [  # (이름, 점수 하한, 설명)
 # 유형별 자동매매 기준
 PRESETS = {
     "안정형": {"max_weight": 0.10, "daily_loss_limit": 0.015, "rules": {"min_confidence": 0.75, "min_reward_risk": 2.5,
-             "max_vol": 0.30, "max_new_buys_per_day": 1, "max_rsi": 70, "require_trend": True, "require_momentum": True}},
+             "max_vol": 0.30, "max_new_buys_per_day": 1, "max_rsi": 70, "require_trend": True, "require_momentum": True, "market_filter": "block"}},
     "안정추구형": {"max_weight": 0.12, "daily_loss_limit": 0.02, "rules": {"min_confidence": 0.70, "min_reward_risk": 2.2,
-               "max_vol": 0.40, "max_new_buys_per_day": 2, "max_rsi": 72, "require_trend": True, "require_momentum": True}},
+               "max_vol": 0.40, "max_new_buys_per_day": 2, "max_rsi": 72, "require_trend": True, "require_momentum": True, "market_filter": "block"}},
     "위험중립형": {"max_weight": 0.15, "daily_loss_limit": 0.025, "rules": {"min_confidence": 0.65, "min_reward_risk": 2.0,
-               "max_vol": 0.50, "max_new_buys_per_day": 2, "max_rsi": 75, "require_trend": True, "require_momentum": True}},
+               "max_vol": 0.50, "max_new_buys_per_day": 2, "max_rsi": 75, "require_trend": True, "require_momentum": True, "market_filter": "half"}},
     "적극투자형": {"max_weight": 0.20, "daily_loss_limit": 0.03, "rules": {"min_confidence": 0.60, "min_reward_risk": 1.8,
-               "max_vol": 0.60, "max_new_buys_per_day": 3, "max_rsi": 78, "require_trend": True, "require_momentum": True}},
+               "max_vol": 0.60, "max_new_buys_per_day": 3, "max_rsi": 78, "require_trend": True, "require_momentum": True, "market_filter": "half"}},
     "공격투자형": {"max_weight": 0.25, "daily_loss_limit": 0.04, "rules": {"min_confidence": 0.55, "min_reward_risk": 1.6,
-               "max_vol": 0.75, "max_new_buys_per_day": 4, "max_rsi": 80, "require_trend": False, "require_momentum": True}},
+               "max_vol": 0.75, "max_new_buys_per_day": 4, "max_rsi": 80, "require_trend": False, "require_momentum": True, "market_filter": "half"}},
 }
 LOSS_TEXT = {1: "-5%", 2: "-10%", 3: "-20%", 4: "-30%", 5: "-40% 이상"}
 
@@ -90,11 +90,13 @@ def criteria(cfg: dict) -> list[dict]:
     risk = cfg["risk"]
     out = [
         {"icon": "pie-chart", "k": "한 종목 최대 비중", "v": f"{risk['max_weight']:.0%}", "why": "한 종목이 틀려도 계좌 전체가 크게 흔들리지 않게"},
-        {"icon": "shield-alert", "k": "하루 손실 한도", "v": f"-{risk['daily_loss_limit']:.1%}", "why": "넘으면 킬 스위치가 켜져 그날 신규 매수를 멈춤"},
+        {"icon": "shield-alert", "k": "하루 손실 한도", "v": f"-{risk['daily_loss_limit']:.1%}", "why": "넘으면 긴급 정지가 켜져 그날 새로 사지 않음 (손절·익절은 계속)"},
         {"icon": "brain", "k": "AI 확신도", "v": f"{r['min_confidence']:.0%} 이상", "why": "AI 회의의 최종 확신도가 이보다 낮으면 사지 않음"},
         {"icon": "scale", "k": "손익비", "v": f"{r['min_reward_risk']:.1f} : 1 이상", "why": "예상 이익이 예상 손실의 이 배수 이상일 때만"},
         {"icon": "trending-up", "k": "추세", "v": "200일선 위" if r["require_trend"] else "제한 없음", "why": "장기 하락 추세에서는 사지 않음 (Faber 2007)"},
         {"icon": "rocket", "k": "모멘텀", "v": "12개월 수익률 양수" if r["require_momentum"] else "제한 없음", "why": "최근 1년 오른 종목만 (Jegadeesh & Titman 1993)"},
+        {"icon": "cloud-sun", "k": "시장 국면", "v": {"block": "하락장엔 매수 중단", "half": "하락장엔 비중 절반", "off": "보지 않음"}[r.get("market_filter", "half")],
+         "why": "지수가 200일선 아래면 모멘텀이 잘 안 통함 (Cooper 외 2004)"},
         {"icon": "thermometer", "k": "과열", "v": f"RSI {r['max_rsi']:.0f} 미만", "why": "너무 급하게 오른 종목 추격 금지"},
         {"icon": "activity", "k": "변동성", "v": f"연 {r['max_vol']:.0%} 이하", "why": "지나치게 출렁이는 종목 제외"},
         {"icon": "badge-check", "k": "팩트체크", "v": f"확인 {r['min_fact_ok']:.0%} 이상, 틀린 주장 0", "why": "AI 근거가 사실인지 원자료로 확인"},
@@ -103,4 +105,8 @@ def criteria(cfg: dict) -> list[dict]:
         {"icon": "scissors", "k": "손절·익절", "v": "자동" if cfg["ai"].get("auto_exit", True) else "수동", "why": "회의가 정한 가격에 닿으면 자동으로 팔기"},
         {"icon": "hand", "k": "주문 승인", "v": "내가 승인" if cfg["ai"].get("require_approval", True) else "자동", "why": "AI 주문을 근거 확인 뒤 실행"},
     ]
+    group = {"한 종목 최대 비중": "money", "하루 손실 한도": "money", "하루 신규 매수": "money", "주문 승인": "money",
+             "손절·익절": "sell", "손절 후 재매수": "sell"}
+    for c in out:
+        c["g"] = group.get(c["k"], "buy")
     return out

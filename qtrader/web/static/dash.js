@@ -76,6 +76,7 @@ window.renderDash = (d) => {
         <div class="hold-pl"><b class="${cls(p.pnl)}">${pct(p.pnl)}</b><span class="note">${money(p.value, p.market)}</span></div></div>
       ${bar || `<div class="note">AI 계획 없음 (직접 산 종목이거나 규칙 전략)</div>`}</div>`;
   }).join("") : `<div class="empty"><i data-lucide="inbox"></i><p>보유 종목이 없습니다</p><span class="note">자동매매를 시작하거나 '미리보기'로 오늘 무엇을 살지 확인해 보세요.</span></div>`;
+  if (dash.animKey !== m) { dash.animKey = m; animateIn("#holdings .hold, #kpis .kpi", { y: 12 }); }
   renderOrders(d.orders.filter((o) => o.market === m || !o.market));
   renderEvents(d.events);
   icons();
