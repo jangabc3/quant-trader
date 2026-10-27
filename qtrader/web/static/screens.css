@@ -204,20 +204,49 @@ table.cmp td.note { max-width: 360px; overflow: hidden; text-overflow: ellipsis;
 .pin-box h3 { margin: 6px 0; } .pin-box input { width: 100%; text-align: center; font-size: 24px; letter-spacing: 10px; padding: 10px; margin: 8px 0 12px; }
 .pin-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
-/* 오늘 자동매매 흐름 */
-.flow { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; position: relative; }
-.fstep { position: relative; display: flex; flex-direction: column; gap: 3px; padding: 12px; border-radius: 12px; background: #0f141b; border: 1px solid var(--line); min-height: 112px; }
-.fstep:not(:last-child)::after { content: ""; position: absolute; right: -8px; top: 26px; width: 8px; height: 2px; background: var(--line); }
-.fstep .fi { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--panel2); color: var(--muted); margin-bottom: 4px; }
-.fstep .fi svg { width: 16px; height: 16px; }
-.fstep b { font-size: 13px; } .fstep em { font-style: normal; font-size: 11.5px; color: var(--muted); line-height: 1.4; }
-.fst { margin-top: auto; align-self: flex-start; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 99px; background: var(--panel2); color: var(--muted); }
-.fstep.done { border-color: rgba(47,191,113,.35); } .fstep.done .fi { background: rgba(47,191,113,.14); color: #2fbf71; } .fstep.done .fst { color: #2fbf71; background: rgba(47,191,113,.12); }
-.fstep.now { border-color: rgba(233,162,59,.55); box-shadow: 0 0 0 3px rgba(233,162,59,.08); } .fstep.now .fi { background: rgba(233,162,59,.16); color: #e9a23b; }
-.fstep.now .fst { color: #e9a23b; background: rgba(233,162,59,.12); } .fstep.skip { opacity: .55; }
-.flow-cta { display: flex; gap: 14px; align-items: center; justify-content: space-between; margin-top: 12px; padding: 14px; border-radius: 12px;
-  background: linear-gradient(90deg, rgba(49,130,246,.12), rgba(49,130,246,.03)); border: 1px solid rgba(49,130,246,.3); }
-.flow-cta b { display: block; margin-bottom: 2px; }
+/* 오늘 자동매매 흐름: 지금 상태 한 줄 + 단계 막대 */
+.flow { display: flex; flex-direction: column; gap: 14px; }
+.fl-now { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 12px; background: #0f141b; border: 1px solid var(--line); }
+.fl-now > div { flex: 1; } .fl-now b { display: block; font-size: 15px; } .fl-now span { color: var(--muted); font-size: 13px; }
+.fl-dot { width: 10px; height: 10px; border-radius: 50%; background: #6b7785; flex: none; }
+.fl-now.on .fl-dot { background: #2fbf71; animation: hudPulse 1.6s infinite; box-shadow: 0 0 0 0 rgba(47,191,113,.6); }
+.fl-bar { list-style: none; margin: 0; padding: 0 6px; display: flex; justify-content: space-between; position: relative; }
+.fl-bar::before { content: ""; position: absolute; left: 22px; right: 22px; top: 13px; height: 2px; background: var(--line); }
+.fl-bar li { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; font-size: 12.5px; color: var(--muted); }
+.fl-bar li i { font-style: normal; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--panel); border: 2px solid var(--line); font-weight: 800; font-size: 12px; z-index: 1; }
+.fl-bar li.done i { background: #2fbf71; border-color: #2fbf71; color: #04150b; } .fl-bar li.done { color: var(--text); }
+.fl-bar li.now i { border-color: #3182f6; color: #fff; background: #3182f6; box-shadow: 0 0 0 5px rgba(49,130,246,.18); } .fl-bar li.now { color: #fff; font-weight: 700; }
+.fl-stats { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; color: var(--muted); padding: 0 4px; } .fl-stats b { color: var(--text); font-size: 14px; }
+@media (max-width: 600px) { .fl-bar li span { font-size: 11px; text-align: center; } .fl-now { flex-wrap: wrap; } }
 .icon-btn { padding: 8px; display: grid; place-items: center; }
 @media (max-width: 1100px) { .flow { grid-template-columns: repeat(3, minmax(0, 1fr)); } .fstep::after { display: none; } }
 @media (max-width: 600px) { .flow { grid-template-columns: 1fr 1fr; } .flow-cta { flex-direction: column; align-items: stretch; } }
+
+/* 관심 종목 */
+#rank-kind .watch-tab { display: inline-flex; align-items: center; gap: 4px; }
+#rank-kind .watch-tab svg { width: 13px; height: 13px; color: #f04452; }
+#rank-kind .watch-tab.pop { animation: pop .4s ease-out; }
+@keyframes pop { 50% { transform: scale(1.18); } }
+.fly-heart { position: fixed; z-index: 99; color: #f04452; font-size: 18px; pointer-events: none; }
+
+/* 왜 사고팔았나요 */
+.why-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+.why { background: #0f141b; border: 1px solid var(--line); border-left: 3px solid #3182f6; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.why.buy { border-left-color: #f04452; }
+.why header { display: flex; gap: 10px; align-items: center; } .why header > div { flex: 1; } .why header b { display: block; }
+.why-tag { font-size: 12px; font-weight: 800; padding: 3px 10px; border-radius: 99px; background: var(--panel2); }
+.why-head { margin: 0; font-weight: 700; line-height: 1.5; }
+.why ul { margin: 0; padding-left: 18px; color: var(--text); font-size: 13px; line-height: 1.6; }
+.why-chips { display: flex; flex-wrap: wrap; gap: 6px; } .why-chips span { font-size: 12px; padding: 3px 9px; border-radius: 99px; background: var(--panel2); }
+.why-chips .ok { color: #2fbf71; }
+.why-worry { margin: 0; font-size: 12px; }
+.why-open { align-self: flex-start; display: inline-flex; align-items: center; gap: 2px; font-size: 13px; } .why-open svg { width: 14px; height: 14px; }
+
+body[data-tab=office] .gsearch, body[data-tab=dash] .gsearch, body[data-tab=calc] .gsearch, body[data-tab=cfg] .gsearch { display: none; }
+/* 뉴스: 언론사 칩은 둘째 줄에 모두 보이게 */
+.news-bar { grid-template-columns: auto 1fr auto auto; grid-template-areas: "cat q refresh time" "src src src src"; row-gap: 10px; }
+#news-cat { grid-area: cat; } .news-q { grid-area: q; width: 100%; max-width: 360px; justify-self: end; } #news-refresh { grid-area: refresh; } #news-time { grid-area: time; }
+.news-src-chips { grid-area: src; flex-wrap: wrap; overflow: visible; }
+@media (max-width: 900px) { .news-bar { grid-template-columns: 1fr auto; grid-template-areas: "cat refresh" "q q" "src src" "time time"; } .news-q { max-width: none; } }
+
+nav { scrollbar-width: none; } nav::-webkit-scrollbar { display: none; }

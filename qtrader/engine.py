@@ -406,7 +406,7 @@ def run_market(ctx: Context, market: Market, dry_run: bool = False, force: bool 
         store.log("warn", src, f"차단 {o.side.value} {o.symbol} x{o.qty}: {why}")
 
     results = []
-    need_ok = use_ai and cfg["ai"].get("require_approval", True) and not dry_run
+    need_ok = use_ai and cfg["ai"].get("require_approval", False) and not dry_run
     if need_ok:
         store.expire_approvals(market.value, today)
         waiting = store.pending_symbols(acct_id, market.value, today)

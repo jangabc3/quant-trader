@@ -73,6 +73,7 @@
         <h3 style="margin:0 8px 0 0">실시간 차트</h3>
         <div class="seg" id="rank-market"><button data-v="KR" class="on">국내</button><button data-v="US">해외</button></div>
         <div class="seg" id="rank-kind">
+          <button data-v="watch" class="watch-tab"><i data-lucide="heart"></i> 관심</button>
           <button data-v="toss_amount">토스증권 거래대금</button><button data-v="toss_volume">토스증권 거래량</button>
           <button data-v="amount" class="on">거래대금</button><button data-v="volume">거래량</button>
           <button data-v="gainers">급상승</button><button data-v="losers">급하락</button>
@@ -207,6 +208,10 @@
       <div class="panel"><h3><i data-lucide="pie-chart"></i> 자산 구성</h3><div id="alloc"></div></div>
     </div>
     <div class="panel">
+      <h3><i data-lucide="message-square-quote"></i> 왜 사고팔았나요 <small>자동매매가 주문한 뒤 근거를 여기 남깁니다</small></h3>
+      <div id="why-list" class="why-list"></div>
+    </div>
+    <div class="panel">
       <h3><i data-lucide="briefcase"></i> 보유 종목 <small>막대는 손절가 ~ 익절가 사이에서 지금 가격의 위치입니다</small></h3>
       <div id="holdings" class="holdings"></div>
     </div>
@@ -331,7 +336,7 @@
         <div class="form-row">
           <label>종목당 최대 비중 <input id="r-maxw" type="number" step="0.01" min="0.01" max="1"></label>
           <label>하루 손실 한도 (넘으면 매수 중단) <input id="r-loss" type="number" step="0.005" min="0.005" max="0.5"></label>
-          <label class="check"><input type="checkbox" id="ai-approve"> AI 주문은 내가 승인한 뒤에만</label>
+          <label class="check"><input type="checkbox" id="ai-approve"> AI 주문을 내가 승인한 뒤에만 (끄면 자동 주문, 근거는 뒤에 보고)</label>
           <label class="check"><input type="checkbox" id="ai-exit"> 손절·익절가에 닿으면 자동 매도</label>
         </div>
       </div>
@@ -425,6 +430,7 @@
 <script src="/static/news.js?v=__BUILD__"></script>
 <script src="/static/dash.js?v=__BUILD__"></script>
 <script src="/static/office.js?v=__BUILD__"></script>
+<script src="/static/office-demo.js?v=__BUILD__"></script>
 <script src="/static/result.js?v=__BUILD__"></script>
 <script src="/static/tools.js?v=__BUILD__"></script>
 <script src="/static/chat.js?v=__BUILD__"></script>

@@ -124,7 +124,14 @@ class Scheduler:
             if ctx.store.ran(trade_date(m), ctx.broker.name, m.value):
                 continue
             try:
-                out.append(run_market(ctx, m))
+                res = run_market(ctx, m)
+                out.append(res)
+                for o in res.get("orders", []):
+                    if o.get("status") in ("filled", "submitted"):
+                        why = (ctx.store.rows("select message from orders where symbol=? and trade_date=? order by id desc limit 1",
+                                              (o["symbol"], trade_date(m))) or [{}])[0].get("message", "")
+                        extras.notify(ctx.store, cfg, f"{'🛒 매수' if o['side'] == 'buy' else '💸 매도'} {o['symbol']} {o['qty']}주 — "
+                                      + " · ".join(why.split(" | ")[:2]), "order")
             except Exception as e:
                 ctx.store.log("error", f"scheduler.{m.value}", f"실행 실패: {e}")
                 # 같은 날 계속 재시도하며 주문이 쌓이지 않도록 실패도 실행으로 기록
