@@ -85,7 +85,7 @@ def apply(cfg: dict, answers: dict) -> tuple[dict, dict]:
 
 def criteria(cfg: dict) -> list[dict]:
     """지금 설정에서 자동매매가 따르는 기준을 사람이 읽는 문장으로."""
-    from .principles import DEFAULT_RULES
+    from .principles import DEFAULT_RULES, HOLDING
     r = DEFAULT_RULES | (cfg["ai"].get("rules") or {})
     risk = cfg["risk"]
     out = [
@@ -102,11 +102,12 @@ def criteria(cfg: dict) -> list[dict]:
         {"icon": "badge-check", "k": "팩트체크", "v": f"확인 {r['min_fact_ok']:.0%} 이상, 틀린 주장 0", "why": "AI 근거가 사실인지 원자료로 확인"},
         {"icon": "repeat", "k": "하루 신규 매수", "v": f"{r['max_new_buys_per_day']}종목까지", "why": "과잉 매매 방지 (Barber & Odean 2000)"},
         {"icon": "timer", "k": "손절 후 재매수", "v": f"{r['cooldown_days']}거래일 대기", "why": "손실 직후 감정적인 복수 매매 방지"},
+        {"icon": "calendar-clock", "k": "매매 기간", "v": HOLDING.get(cfg["ai"].get("holding", "long"), {}).get("name", "장기"), "why": "단기일수록 손절·익절이 좁고, 기한이 지나면 팝니다"},
         {"icon": "scissors", "k": "손절·익절", "v": "자동" if cfg["ai"].get("auto_exit", True) else "수동", "why": "회의가 정한 가격에 닿으면 자동으로 팔기"},
         {"icon": "hand", "k": "주문 승인", "v": "내가 승인" if cfg["ai"].get("require_approval", False) else "자동 · 근거는 뒤에 보고",
          "why": "자동으로 사고팔고, 왜 샀는지는 '왜 사고팔았나요'와 알림으로 알려 줌"},
     ]
-    group = {"한 종목 최대 비중": "money", "하루 손실 한도": "money", "하루 신규 매수": "money", "주문 승인": "money",
+    group = {"매매 기간": "sell", "한 종목 최대 비중": "money", "하루 손실 한도": "money", "하루 신규 매수": "money", "주문 승인": "money",
              "손절·익절": "sell", "손절 후 재매수": "sell"}
     for c in out:
         c["g"] = group.get(c["k"], "buy")

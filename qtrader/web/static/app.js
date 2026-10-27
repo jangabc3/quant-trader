@@ -60,7 +60,7 @@ const isUS = (m) => m === "US" || m === "USD";
 const money = (v, m) => v == null || isNaN(v) ? "-" : (isUS(m) ? "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 })
   : Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 0 }) + "원");
 const pct = (v) => v == null || isNaN(v) ? "-" : Math.abs(v) < 0.00005 ? "0.00%" : (v > 0 ? "+" : "") + (v * 100).toFixed(2) + "%";
-const cls = (v) => v > 0 ? "up" : v < 0 ? "down" : "";
+const cls = (v) => v > 0.00005 ? "up" : v < -0.00005 ? "down" : "";
 const bigKRW = (v) => {
   const a = Math.abs(v);
   if (a >= 1e12) return (v / 1e12).toFixed(1) + "조";
@@ -447,6 +447,7 @@ async function loadConfig() {
   $("#rl-cool").value = R.cooldown_days; $("#rl-trend").checked = R.require_trend; $("#rl-mom").checked = R.require_momentum;
   $("#rl-market").value = R.market_filter || "half";
   $("#pin-enabled").checked = c.security?.pin !== false;
+  $$("input[name=holding]").forEach((i) => (i.checked = i.value === (c.ai.holding || "long")));
   loadPin();
   const ruleKeys = Object.keys(state.strategies);
   const stratSelect = (cur) => `<option value="ai" ${cur === "ai" ? "selected" : ""}>${STRAT_NAME.ai} (추천)</option>
@@ -527,6 +528,7 @@ $("#cfg-save").onclick = async () => {
     run_before_minutes: Number($("#ai-before").value), max_symbols_per_day: Number($("#ai-max").value),
     min_confidence: Number($("#ai-conf").value), web_research: $("#ai-web").checked,
     monthly_cost_cap_krw: Number($("#ai-cap").value) || 0, auto_pick: $("#ai-autopick").checked,
+    holding: ($$("input[name=holding]").find((i) => i.checked) || {}).value || "long",
     rules: { min_confidence: Number($("#rl-conf").value), min_reward_risk: Number($("#rl-rr").value),
       max_rsi: Number($("#rl-rsi").value), max_vol: Number($("#rl-vol").value), min_fact_ok: Number($("#rl-fact").value),
       max_new_buys_per_day: Number($("#rl-buys").value), cooldown_days: Number($("#rl-cool").value),

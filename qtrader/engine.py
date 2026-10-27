@@ -97,7 +97,10 @@ def ai_targets(store: Store, cfg: dict, panel_: dict, today: str, account: str =
     from . import principles
     ai = cfg["ai"]
     mult = ai["rating_weights"]
-    rules = ai.get("rules") or {}
+    rules = dict(ai.get("rules") or {})
+    h = principles.HOLDING.get(ai.get("holding", "long"), principles.HOLDING["long"])
+    if h["buys"]:  # 단기일수록 하루에 조금 더 여러 종목을 작게 산다
+        rules["max_new_buys_per_day"] = int(rules.get("max_new_buys_per_day", principles.DEFAULT_RULES["max_new_buys_per_day"])) + h["buys"]
     cooldown = int(rules.get("cooldown_days", principles.DEFAULT_RULES["cooldown_days"]))
     universe = list(panel_)
     base = 1.0 / max(len(universe), 1)
@@ -266,6 +269,12 @@ def check_exits(ctx: Context, market: Market) -> list[dict]:
             continue
         px = pos.last_price or ctx.data.price(market, pl["symbol"])
         why = "stop" if px <= pl["stop"] else "take" if px >= pl["take"] else None
+        from .principles import HOLDING
+        days = HOLDING.get(ctx.cfg["ai"].get("holding", "long"), {}).get("days")
+        if not why and days:
+            age = (datetime.now(timezone.utc) - datetime.fromisoformat(pl["created_at"])).days
+            if age >= days * 7 / 5:  # 거래일 -> 달력일 대략
+                why = "time"
         if not why:
             continue
         pending = [o for o in store.rows("select * from orders where account=? and symbol=? and strategy='ai-exit' "
@@ -285,7 +294,7 @@ def check_exits(ctx: Context, market: Market) -> list[dict]:
             retry = len(pending)
         # 국내는 시장가, 미국은 지정가만 되므로 현재가보다 낮게 (재주문할수록 1%씩 더 낮게)
         price = round(px * (0.997 - 0.01 * retry), 2) if market == Market.US else 0
-        label = "손절" if why == "stop" else "익절"
+        label = {"stop": "손절", "take": "익절", "time": "기간 만료"}[why]
         req = OrderRequest(market, pl["symbol"], Side.SELL, pos.qty, price, "ai-exit",
                            f"{label}: 현재가 {px:,} / 손절가 {pl['stop']:,} / 익절가 {pl['take']:,}")
         r = ctx.broker.order(req)

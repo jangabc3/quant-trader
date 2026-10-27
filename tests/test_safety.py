@@ -149,3 +149,17 @@ def test_live_recheck_sells_only_on_trigger_and_caps(ctx):
     out = live.run_rechecks(ctx, Market.KR, llm=LLM())
     assert out[0]["action"] == "sell" and ctx.broker.sent[-1].side.value == "sell"
     assert live.run_rechecks(ctx, Market.KR, llm=LLM()) == [] and LLM.calls == 1  # 같은 종목은 하루 한 번
+
+
+def test_holding_modes_tighten_and_time_stop(ctx):
+    from qtrader import principles
+    f = principles.adjust_for_holding({"stop_loss_pct": 8, "take_profit_pct": 25, "horizon_days": 20}, "short")
+    assert f["stop_loss_pct"] == 2.5 and f["take_profit_pct"] == 5 and f["horizon_days"] == 3
+    assert principles.adjust_for_holding({"stop_loss_pct": 8}, "long") == {"stop_loss_pct": 8}
+    ctx.cfg["ai"]["holding"] = "short"
+    ctx.broker.positions["005930"] = Position(Market.KR, "005930", 5, 100.0, 101.0)
+    ctx.store.save_plan("toss", "KR", "005930", "r", 100, 97, 105)
+    assert check_exits(ctx, Market.KR) == []  # 아직 기한 전
+    old = (datetime.now(timezone.utc) - timedelta(days=6)).isoformat(timespec="seconds")
+    ctx.store.exec("update plans set created_at=?", (old,))
+    assert check_exits(ctx, Market.KR)[0]["reason"] == "time"

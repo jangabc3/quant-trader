@@ -197,3 +197,59 @@ def set_autostart(on: bool) -> bool:
 def autostart_on() -> bool:
     f = startup_file()
     return bool(f and f.exists())
+
+
+# 수익 리포트: 체결된 주문을 산 순서대로(선입선출) 짝지어 '한 번 사고판 거래'로 만든다
+EXIT_KO = {"stop": "손절", "take": "익절", "time": "기간 만료", "recheck": "AI 재점검", "manual": "직접 매도", "ai": "AI 판단"}
+
+
+def performance(store, account: str, market: str, prices: dict | None = None) -> dict:
+    from datetime import date as _date
+    rows = store.rows("select * from orders where account=? and market=? and status='filled' order by id", (account, market))
+    lots: dict[str, list[dict]] = {}
+    trades = []
+    for o in rows:
+        if o["side"] == "buy":
+            lots.setdefault(o["symbol"], []).append({"qty": o["qty"], "px": o["price"], "date": o["trade_date"]})
+            continue
+        left, msg = o["qty"], o.get("message") or ""
+        why = ("stop" if msg.startswith("손절") else "take" if msg.startswith("익절") else "time" if msg.startswith("기간")
+               else "recheck" if "재점검" in msg else "manual" if o.get("strategy") == "manual" else "ai")
+        while left > 0 and lots.get(o["symbol"]):
+            lot = lots[o["symbol"]][0]
+            q = min(left, lot["qty"])
+            pnl = q * (o["price"] - lot["px"])
+            days = (_date.fromisoformat(o["trade_date"]) - _date.fromisoformat(lot["date"])).days
+            trades.append({"symbol": o["symbol"], "qty": q, "buy_date": lot["date"], "sell_date": o["trade_date"],
+                           "buy": lot["px"], "sell": o["price"], "pnl": pnl, "pct": o["price"] / lot["px"] - 1 if lot["px"] else 0,
+                           "days": days, "why": EXIT_KO[why]})
+            lot["qty"] -= q
+            left -= q
+            if lot["qty"] <= 0:
+                lots[o["symbol"]].pop(0)
+    wins = [t for t in trades if t["pnl"] > 0]
+    losses = [t for t in trades if t["pnl"] <= 0]
+    realized = sum(t["pnl"] for t in trades)
+    # 누적 손익 곡선과 최대 낙폭
+    curve, cum, peak, mdd = [], 0.0, 0.0, 0.0
+    for t in sorted(trades, key=lambda x: x["sell_date"]):
+        cum += t["pnl"]
+        peak = max(peak, cum)
+        mdd = min(mdd, cum - peak)
+        if curve and curve[-1]["time"] == t["sell_date"]:
+            curve[-1]["value"] = cum
+        else:
+            curve.append({"time": t["sell_date"], "value": cum})
+    open_pnl = 0.0
+    for s, ls in lots.items():
+        px = (prices or {}).get(s)
+        if px:
+            open_pnl += sum(l["qty"] * (px - l["px"]) for l in ls)
+    gw, gl = sum(t["pnl"] for t in wins), -sum(t["pnl"] for t in losses)
+    return {"trades": list(reversed(trades)), "curve": curve, "summary": {
+        "realized": realized, "open": open_pnl, "total": realized + open_pnl, "count": len(trades),
+        "win_rate": len(wins) / len(trades) if trades else None,
+        "avg_win": gw / len(wins) if wins else 0, "avg_loss": -gl / len(losses) if losses else 0,
+        "profit_factor": gw / gl if gl else (None if not wins else float("inf")),
+        "mdd": mdd, "avg_days": sum(t["days"] for t in trades) / len(trades) if trades else None,
+        "best": max(trades, key=lambda t: t["pnl"]) if trades else None, "worst": min(trades, key=lambda t: t["pnl"]) if trades else None}}
