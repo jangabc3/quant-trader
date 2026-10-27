@@ -83,8 +83,10 @@ def telegram(cfg: dict) -> list[dict]:
     return out
 
 
-def telegram_find_chat(session=None) -> dict:
-    """내 봇에게 보낸 메시지에서 대화방 번호를 찾는다 (다른 봇 없이). 텔레그램은 최근 24시간 메시지만 알려 준다."""
+def telegram_find_chat(session=None, store=None) -> dict:
+    """내 봇에게 보낸 메시지에서 대화방 번호를 찾는다 (다른 봇 없이). 텔레그램은 최근 24시간 메시지만 알려 준다.
+    휴대폰 명령(telegram_bot)이 메시지를 먼저 받아 가면 getUpdates 에 안 남으므로, 그쪽이 적어 둔 대화방 기록도 함께 본다."""
+    from . import telegram_bot
     http = session or requests
     tok = vault.get("telegram_bot_token")
     if not tok:
@@ -93,15 +95,18 @@ def telegram_find_chat(session=None) -> dict:
     if not me.get("ok"):
         raise RuntimeError("봇 토큰이 맞지 않아요. @BotFather 가 준 토큰을 다시 복사해 저장해 주세요")
     bot = "@" + me["result"]["username"]
+    chats = {c["chat_id"]: {"chat_id": c["chat_id"], "name": c.get("name", "")}
+             for c in telegram_bot.recorded_chats(store or telegram_bot._store())}
     d = http.get(f"https://api.telegram.org/bot{tok}/getUpdates", timeout=10, params={"limit": 100}).json()
-    if not d.get("ok"):
+    if not d.get("ok") and not chats:
         raise RuntimeError(f"텔레그램 응답: {d.get('description', '알 수 없는 오류')}")
-    chats = {}
-    for u in d.get("result", []):
+    for u in d.get("result", []) if d.get("ok") else []:
         msg = u.get("message") or u.get("edited_message") or (u.get("my_chat_member") or {})
         ch = msg.get("chat") or {}
         if ch.get("type") == "private" and ch.get("id"):
-            chats[ch["id"]] = {"chat_id": str(ch["id"]), "name": " ".join(x for x in (ch.get("first_name"), ch.get("last_name")) if x) or ch.get("username") or ""}
+            cid = str(ch["id"])
+            chats.pop(cid, None)  # 가장 최근 것이 뒤로 가게
+            chats[cid] = {"chat_id": cid, "name": " ".join(x for x in (ch.get("first_name"), ch.get("last_name")) if x) or ch.get("username") or ""}
     if not chats:
         raise RuntimeError(f"아직 {bot} 에게 온 메시지가 없어요. 텔레그램에서 {bot} 를 열어 '시작'을 누르고 아무 말이나 보낸 뒤 다시 눌러 주세요")
     found = list(chats.values())[-1]  # 가장 최근에 말을 건 사람

@@ -592,7 +592,7 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         """내 봇 대화에서 대화방 번호를 찾아 저장하고, 확인 메시지를 보낸다."""
         from .. import checks
         try:
-            r = checks.telegram_find_chat()
+            r = checks.telegram_find_chat(store=Store(config_mod.home() / "qtrader.db"))
         except Exception as e:
             raise HTTPException(400, str(e))
         cfg = config_mod.load()
