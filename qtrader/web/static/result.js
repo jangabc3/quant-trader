@@ -76,32 +76,50 @@ function valuationBlock(vals) {
   }).join("")}</div>`;
 }
 
-async function drawChart(run, f) {
+// 차트: 기본은 '간단히' (캔들 + 20일선 + 매수·손절·익절 세 줄). '자세히'를 누르면 60·120일선, 지지·저항, 시나리오까지
+async function drawChart(run, f, detail = RES.detail) {
   const el = $("#res-chart");
   if (!el || !window.LightweightCharts) return;
-  let data;
-  try { data = await api(`/api/ai/chart/${encodeURIComponent(run.symbol)}?days=180`); } catch (e) { el.innerHTML = `<p class="note">${esc(e.message)}</p>`; return; }
+  RES.detail = detail;
+  $$("#res-chart-mode button").forEach((b) => b.classList.toggle("on", (b.dataset.v === "detail") === detail));
+  let data = RES.data?.sym === run.symbol ? RES.data : null;
+  if (!data) {
+    try { data = await api(`/api/ai/chart/${encodeURIComponent(run.symbol)}?days=180`); data.sym = run.symbol; RES.data = data; }
+    catch (e) { el.innerHTML = `<p class="note">${esc(e.message)}</p>`; return; }
+  }
   el.innerHTML = "";
+  const kr = run.market !== "US";
   const chart = LightweightCharts.createChart(el, {
     layout: { background: { color: "transparent" }, textColor: "#8b98a5" },
-    grid: { vertLines: { color: "#1e262f" }, horzLines: { color: "#1e262f" } },
+    grid: { vertLines: { visible: false }, horzLines: { color: "#1a2129" } },
     rightPriceScale: { borderColor: "#26303b" }, timeScale: { borderColor: "#26303b" }, autoSize: true,
+    localization: { priceFormatter: (v) => kr ? Math.round(v).toLocaleString() : v.toFixed(2) },
   });
   const c = chart.addCandlestickSeries({ upColor: "#f04452", downColor: "#3182f6", borderVisible: false, wickUpColor: "#f04452", wickDownColor: "#3182f6" });
   c.setData(data.candles);
-  [["sma20", "#ffd34d"], ["sma60", "#3fe07a"], ["sma120", "#c084fc"]].forEach(([k, col]) =>
-    chart.addLineSeries({ color: col, lineWidth: 1, priceLineVisible: false, lastValueVisible: false }).setData(data[k]));
+  const mas = detail ? [["sma20", "#ffd34d"], ["sma60", "#3fe07a"], ["sma120", "#c084fc"]] : [["sma20", "#ffd34d"]];
+  mas.forEach(([k, col]) => chart.addLineSeries({ color: col, lineWidth: 1, priceLineVisible: false, lastValueVisible: false }).setData(data[k]));
   const lastPx = data.candles.at(-1)?.close;
-  const line = (price, color, title, style = 2) => sane(price, lastPx) && c.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title });
-  (data.levels.support || []).forEach((p) => line(p, "#3182f6", "지지"));
-  (data.levels.resistance || []).forEach((p) => line(p, "#f04452", "저항"));
+  const line = (price, color, title, style = 2, width = 1) => sane(price, lastPx) && c.createPriceLine({ price, color, lineWidth: width, lineStyle: style, axisLabelVisible: true, title });
+  if (detail) {
+    (data.levels.support || []).slice(0, 2).forEach((p) => line(p, "#5a6b7d", "지지"));
+    (data.levels.resistance || []).slice(0, 2).forEach((p) => line(p, "#7d6b5a", "저항"));
+  }
   if (f) {
-    const mid = sane(f.entry_low, lastPx) && sane(f.entry_high, lastPx) ? (f.entry_low + f.entry_high) / 2 : lastPx;
-    line(f.entry_low, "#3fe07a", "진입 하단", 0); line(f.entry_high, "#3fe07a", "진입 상단", 0);
-    line(mid * (1 - f.stop_loss_pct / 100), "#ff6b6b", `손절 -${f.stop_loss_pct}%`, 0);
-    line(mid * (1 + f.take_profit_pct / 100), "#ffd34d", `익절 +${f.take_profit_pct}%`, 0);
-    if (f.scenarios?.bull) line(f.scenarios.bull.price, "#f08a5e", "강세 시나리오", 1);
-    if (f.scenarios?.bear) line(f.scenarios.bear.price, "#5a9bff", "약세 시나리오", 1);
+    const P = run.plan;
+    const mid = P?.entry || (sane(f.entry_low, lastPx) && sane(f.entry_high, lastPx) ? (f.entry_low + f.entry_high) / 2 : lastPx);
+    const lv = [P?.stop || mid * (1 - f.stop_loss_pct / 100), P?.take || mid * (1 + f.take_profit_pct / 100)].filter((v) => sane(v, lastPx));
+    // 손절·익절선이 화면 밖으로 나가지 않게 세로 범위를 넓힌다
+    c.applyOptions({ autoscaleInfoProvider: (orig) => {
+      const r = orig();
+      if (r && lv.length) { r.priceRange.minValue = Math.min(r.priceRange.minValue, ...lv) * 0.99; r.priceRange.maxValue = Math.max(r.priceRange.maxValue, ...lv) * 1.01; }
+      return r;
+    } });
+    line(mid, "#e8edf3", "매수", 2, 2);
+    line(P?.stop || mid * (1 - f.stop_loss_pct / 100), "#3182f6", `손절 -${f.stop_loss_pct}%`, 0, 2);
+    line(P?.take || mid * (1 + f.take_profit_pct / 100), "#f04452", `익절 +${f.take_profit_pct}%`, 0, 2);
+    if (detail && f.scenarios?.bull) line(f.scenarios.bull.price, "#f08a5e", "강세", 1);
+    if (detail && f.scenarios?.bear) line(f.scenarios.bear.price, "#5a9bff", "약세", 1);
   }
   chart.timeScale().fitContent();
   RES.chart = chart;
@@ -131,6 +149,49 @@ function planBlock(run) {
       ${cl ? `<table class="cl"><tbody>${cl.rules.map((r) => `<tr><td>${r.ok ? "<span class='chipst ok'>통과</span>" : "<span class='chipst bad'>미통과</span>"}</td>
         <td><b>${esc(r.name)}</b><div class="note">${esc(r.ref)}</div></td><td class="r">${esc(r.value)}</td><td class="note">${esc(r.need)}</td></tr>`).join("")}</tbody></table>` : ""}
     </div></div>`;
+}
+
+// 초보자용: 맨 위에 '한 줄 결론 + 얼마에 사고팔지 + 왜'만, 나머지는 '자세히 보기' 안으로
+const PLAIN = { Buy: ["사도 좋아요", "근거가 충분해 계획대로 삽니다"], Overweight: ["조금 사 볼 만해요", "일부만 사고 지켜봅니다"],
+  Hold: ["지금은 기다려요", "새로 사지도 팔지도 않습니다"], Underweight: ["줄이는 게 좋아요", "가진 것을 일부 팝니다"], Sell: ["팔아요", "위험이 커서 정리합니다"] };
+function simplify(box, run, f, last, m) {
+  const P = run.plan, cl = run.checklist;
+  const ok = cl?.rules ? cl.rules.filter((r) => r.ok).length : 0, total = cl?.rules?.length || 0;
+  const [title, sub] = PLAIN[f.rating] || ["판단 보류", ""];
+  const color = R_COLOR[f.rating] || "#8b98a5";
+  const easy = document.createElement("div");
+  easy.className = "panel easy";
+  easy.style.setProperty("--c", color);
+  easy.innerHTML = `<div class="easy-top">
+      <div class="easy-verdict"><span class="note">${esc(run.name || run.symbol)} · AI 회의 결론</span><b>${title}</b><span>${sub}</span>
+        <div class="easy-conf"><i style="width:${Math.round((f.confidence || 0) * 100)}%"></i></div><span class="note">AI 확신 ${Math.round((f.confidence || 0) * 100)}%</span></div>
+      <p class="easy-head">${esc(f.headline || "")}</p></div>
+    ${P ? `<div class="easy-tiles">
+      <div><span>이 가격에 사요</span><b>${fmtPx(P.entry, m)}</b><em>${P.qty.toLocaleString()}주 · ${fmtPx(P.amount, m)}</em></div>
+      <div class="down"><span>여기까지 내리면 팔아요 (손절)</span><b>${fmtPx(P.stop, m)}</b><em>최대 손실 ${fmtPx(P.max_loss, m)} (-${P.stop_pct}%)</em></div>
+      <div class="up"><span>여기까지 오르면 팔아요 (익절)</span><b>${fmtPx(P.take, m)}</b><em>예상 이익 ${fmtPx(P.max_gain, m)} (+${P.take_pct}%)</em></div>
+      <div class="${cl?.passed ? "ok" : "bad"}"><span>안전 점검</span><b>${total ? `${ok} / ${total} 통과` : "-"}</b><em>${cl?.passed ? "모두 통과해야 실제로 삽니다" : "하나라도 못 넘으면 사지 않아요"}</em></div>
+    </div>` : ""}
+    <div class="easy-why"><div><h4>왜 이렇게 판단했나요?</h4><ol>${list((f.reasons || f.summary || []).slice(0, 3))}</ol></div>
+      ${(f.worry || []).length ? `<div class="worry"><h4>조심할 점</h4><ul>${list(f.worry.slice(0, 2))}</ul></div>` : ""}</div>`;
+  box.prepend(easy);
+  // 회의 결과 머리말과 차트·계획 아래 내용은 접어 둔다
+  const planGrid = box.querySelector(".plan-card")?.closest(".res-grid");
+  const head = box.querySelector(".res-head");
+  const det = document.createElement("details");
+  det.className = "panel more-detail";
+  det.innerHTML = `<summary><i data-lucide="book-open-text"></i> 전문가용 자세한 분석 보기 <small>토론 점수 · 시나리오 · 밸류에이션 · 투자 논리 · 반대 논리 · 팩트체크 · 토론 기록</small></summary>`;
+  const rest = [];
+  let after = !planGrid;
+  for (const el of [...box.children]) {
+    if (el === easy || el === head) continue;
+    if (after && el.tagName !== "P") rest.push(el);
+    if (el === planGrid) after = true;
+  }
+  if (head) det.appendChild(head);
+  rest.forEach((el) => det.appendChild(el));
+  (planGrid || box.lastElementChild).after(det);
+  icons();
 }
 
 function list(arr) { return (arr || []).map((x) => `<li>${esc(x)}</li>`).join(""); }
@@ -185,7 +246,10 @@ window.renderResult = (run) => {
   </div>
 
   <div class="res-grid">
-    <div class="panel"><h3>가격 차트 <small>이동평균 20·60·120 · 지지/저항 · 진입·손절·익절 · 시나리오</small></h3><div id="res-chart" class="res-chart"></div>
+    <div class="panel"><div class="rank-bar"><h3 style="margin:0">가격 차트</h3>
+      <div class="seg" id="res-chart-mode"><button data-v="simple" class="on">간단히</button><button data-v="detail">자세히</button></div></div>
+      <div id="res-chart" class="res-chart"></div>
+      <div class="chart-legend"><span><i style="background:#e8edf3"></i>매수 가격</span><span><i style="background:#3182f6"></i>손절: 여기까지 내리면 판다</span><span><i style="background:#f04452"></i>익절: 여기까지 오르면 판다</span><span><i style="background:#ffd34d"></i>20일 평균선</span></div>
       <div class="facts">${[["RSI", facts.rsi14], ["20일선 대비", facts.vs_sma20 != null ? facts.vs_sma20 + "%" : "-"], ["52주 고가 대비", facts.from_high != null ? facts.from_high + "%" : "-"],
         ["연 변동성", facts.vol_annual != null ? facts.vol_annual + "%" : "-"], ["거래량(5/20일)", facts.vol_ratio != null ? facts.vol_ratio + "배" : "-"]]
         .map(([k, v]) => `<div><span>${k}</span><b>${v ?? "-"}</b></div>`).join("")}</div></div>
@@ -220,5 +284,8 @@ window.renderResult = (run) => {
   ${run.debate?.length ? `<div class="panel"><h3>토론 기록</h3><div class="debate">${run.debate.map((d) =>
     `<div class="dmsg ${d.role}"><b>${d.role === "bull" ? "불리 · 강세" : "베어리 · 약세"} ${d.round}라운드</b>${mdLite(d.text)}</div>`).join("")}</div></div>` : ""}
   <p class="note">AI 회의 결과는 공개 자료와 모델 추론으로 만든 추정입니다. 투자 권유가 아니며 수익을 보장하지 않습니다. 중요한 숫자는 출처 원문을 직접 확인하세요.</p>`;
-  drawChart(run, f);
+  if (f) simplify(box, run, f, last, m);
+  RES.detail = false;
+  drawChart(run, f, false);
+  $("#res-chart-mode").onclick = (e) => { const b = e.target.closest("button"); if (b) drawChart(run, f, b.dataset.v === "detail"); };
 };

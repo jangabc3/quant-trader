@@ -45,7 +45,7 @@ window.loadDashExtras = async () => {
   const c = conc[m];
   $("#conc-warn").innerHTML = c?.warnings?.length
     ? `<div class="warn-box"><i data-lucide="alert-triangle"></i><div><b>한쪽으로 쏠려 있어요</b>${c.warnings.map((w) => `<div>${esc(w)}</div>`).join("")}
-       <div class="note">업종 구성: ${c.sectors.map((s) => `${esc(s.name)} ${Math.round(s.weight * 100)}%`).join(" · ")}</div></div></div>` : "";
+       <div class="note">총자산 대비 업종 비중: ${c.sectors.map((s) => `${esc(s.name)} ${Math.round(s.weight * 100)}%`).join(" · ")}</div></div></div>` : "";
   if (rep?.text) $("#day-report").innerHTML = `<pre class="report-pre">${esc(rep.text)}</pre>`;
   renderAlerts(alerts);
   icons();

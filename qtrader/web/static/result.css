@@ -134,3 +134,40 @@ table.cl td { white-space: normal; font-size: 13px; vertical-align: top; }
 table.refs td { white-space: normal; font-size: 13px; vertical-align: top; }
 .pp-x { position: absolute; right: 8px; top: 4px; background: none; border: 0; color: #c7d0d9; font-size: 20px; padding: 0 6px; }
 .plan-pop { cursor: pointer; }
+
+.chart-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+.chart-legend span { display: inline-flex; align-items: center; gap: 6px; } .chart-legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+
+/* 초보자용 한눈 요약 */
+.easy { border-top: 4px solid var(--c); display: flex; flex-direction: column; gap: 16px; }
+.easy-top { display: grid; grid-template-columns: minmax(200px, 260px) 1fr; gap: 18px; align-items: center; }
+.easy-verdict { display: flex; flex-direction: column; gap: 4px; }
+.easy-verdict b { font-size: 30px; color: var(--c); letter-spacing: -.5px; }
+.easy-conf { height: 6px; background: var(--panel2); border-radius: 3px; overflow: hidden; margin-top: 6px; } .easy-conf i { display: block; height: 100%; background: var(--c); }
+.easy-head { margin: 0; font-size: 17px; font-weight: 700; line-height: 1.55; }
+.easy-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.easy-tiles > div { background: #0f141b; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.easy-tiles span { font-size: 12.5px; color: var(--muted); } .easy-tiles b { font-size: 20px; color: var(--text); } .easy-tiles em { font-style: normal; font-size: 12px; color: var(--muted); }
+.easy-tiles .down b { color: #3182f6; } .easy-tiles .up b { color: #f04452; } .easy-tiles .ok b { color: #2fbf71; } .easy-tiles .bad b { color: #e9a23b; }
+.easy-why { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+.easy-why h4 { margin: 0 0 6px; font-size: 14px; } .easy-why ol, .easy-why ul { margin: 0; padding-left: 20px; line-height: 1.7; font-size: 14px; }
+.easy-why .worry { background: rgba(233,162,59,.07); border: 1px solid rgba(233,162,59,.25); border-radius: 12px; padding: 10px 14px; }
+.more-detail > summary { cursor: pointer; font-weight: 700; display: flex; gap: 8px; align-items: center; list-style: none; }
+.more-detail > summary::-webkit-details-marker { display: none; }
+.more-detail > summary small { font-weight: 400; color: var(--muted); }
+.more-detail[open] > summary { margin-bottom: 12px; }
+.more-detail > .panel, .more-detail > .res-grid, .more-detail > .tww { margin-top: 10px; }
+@media (max-width: 900px) { .easy-top, .easy-why { grid-template-columns: 1fr; } .easy-tiles { grid-template-columns: 1fr 1fr; } }
+
+/* 참석자 보고서 창 */
+#agent-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 92vw); z-index: 80; background: var(--panel); border-left: 1px solid #2c3a4d;
+  box-shadow: -20px 0 50px rgba(0,0,0,.45); transform: translateX(105%); transition: transform .32s cubic-bezier(.2,.8,.2,1); display: flex; flex-direction: column; }
+#agent-drawer.open { transform: none; }
+#agent-drawer header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+.ad-who { display: flex; align-items: center; gap: 10px; min-width: 0; } .ad-who b { display: block; font-size: 16px; } .ad-who span { font-size: 12.5px; color: var(--muted); }
+.ad-ava { width: 38px; height: 38px; border-radius: 12px; display: grid !important; place-items: center; color: #fff !important; font-weight: 800; font-size: 16px !important; flex: none; }
+.ad-st { padding: 3px 10px; border-radius: 99px; background: var(--panel2); font-size: 12px !important; white-space: nowrap; }
+.ad-st.working { color: #e9a23b !important; background: rgba(233,162,59,.12); } .ad-st.done { color: #2fbf71 !important; background: rgba(47,191,113,.12); }
+.ad-nav { display: flex; gap: 4px; } .ad-nav button { width: 32px; height: 32px; padding: 0; font-size: 18px; }
+.ad-body { padding: 16px 18px; overflow: auto; flex: 1; line-height: 1.65; }
+.ad-bubble { background: #0f141b; border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; color: #e9d9b5; }

@@ -438,7 +438,7 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             except Exception:
                 continue
             out[m.value] = extras.concentration([{"symbol": p.symbol, "value": p.value} for p in a.positions.values()],
-                                                float(c.cfg["risk"]["max_weight"]), float(c.cfg.get("max_sector_weight", 0.4)))
+                                                float(c.cfg["risk"]["max_weight"]), float(c.cfg.get("max_sector_weight", 0.4)), a.cash)
         return out
 
     @app.get("/api/report")
