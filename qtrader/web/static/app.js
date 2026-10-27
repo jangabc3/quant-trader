@@ -57,19 +57,33 @@ function askPin(msg) {
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const isUS = (m) => m === "US" || m === "USD";
-// 미국 가격 보기: 달러 그대로, 또는 지금 환율로 바꾼 원화 (≈ 표시). 주문창은 늘 달러로 내고 원화는 옆에 함께 보여 준다
+// 미국 가격 보기: 달러 그대로, 또는 지금 환율로 바꾼 원화. 주문창은 늘 달러로 내고 원화는 옆에 함께 보여 준다
 const fxView = { krw: false, rate: 0 };
 try { fxView.krw = localStorage.getItem("qtrader.fxview") === "krw"; } catch {}
 const fmtUsd = (v) => "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
 const fmtWon = (v) => Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 0 }) + "원";
 const money = (v, m) => v == null || isNaN(v) ? "-" : isUS(m)
-  ? (fxView.krw && fxView.rate ? "≈" + fmtWon(v * fxView.rate) : fmtUsd(v)) : fmtWon(v);
-// 큰 달러 금액(거래대금·시가총액): 원화 보기면 ≈조·억 원, 아니면 $억
-const bigUSD = (v) => v == null || isNaN(v) ? "-" : fxView.krw && fxView.rate ? "≈" + bigKRW(v * fxView.rate) + "원" : "$" + bigKRW(v);
-// 달러 금액 옆에 붙이는 원화 (예: "$12.30 (≈17,100원)")
-const usdWithKrw = (v) => v == null || isNaN(v) ? "-" : fmtUsd(v) + (fxView.rate ? ` (≈${fmtWon(v * fxView.rate)})` : "");
+  ? (fxView.krw && fxView.rate ? fmtWon(v * fxView.rate) : fmtUsd(v)) : fmtWon(v);
+// 큰 달러 금액(시가총액 등): 원화 보기면 조·억 원, 아니면 $억
+const bigUSD = (v) => v == null || isNaN(v) ? "-" : fxView.krw && fxView.rate ? bigKRW(v * fxView.rate) + "원" : "$" + bigKRW(v);
+// 종목 화면 맨 위 큰 가격 (국내는 원, 미국은 고른 통화로 크게 + 다른 통화 작게)
+const bigPriceHtml = (px, m) => {
+  if (px == null) return "-";
+  if (!isUS(m)) return fmtWon(px);
+  if (!fxView.rate) return fmtUsd(px);
+  return fxView.krw ? `${fmtWon(px * fxView.rate)}<small class="px-alt">${fmtUsd(px)}</small>` : `${fmtUsd(px)}<small class="px-alt">${fmtWon(px * fxView.rate)}</small>`;
+};
+// 달러 금액 옆에 붙이는 원화 (예: "$12.30 (17,100원)")
+const usdWithKrw = (v) => v == null || isNaN(v) ? "-" : fmtUsd(v) + (fxView.rate ? ` (${fmtWon(v * fxView.rate)})` : "");
 async function loadFx() {
-  try { const r = await api("/api/fx"); if (r.rate) fxView.rate = r.rate; } catch {}
+  try {
+    const r = await api("/api/fx");
+    if (r.rate && r.rate !== fxView.rate) {
+      const first = !fxView.rate;
+      fxView.rate = r.rate;
+      if (fxView.krw && !first) document.dispatchEvent(new CustomEvent("tab", { detail: state.tab }));  // 새 환율로 다시 그리기
+    }
+  } catch {}
   drawFxToggle();
 }
 function drawFxToggle() {
@@ -271,11 +285,11 @@ document.addEventListener("click", (e) => {
   fxView.krw = !fxView.krw;
   try { localStorage.setItem("qtrader.fxview", fxView.krw ? "krw" : "usd"); } catch {}
   drawFxToggle();
-  toast(fxView.krw ? "미국 주식 가격을 지금 환율로 바꾼 원화로 보여 줘요 (≈ 표시)" : "미국 주식 가격을 달러로 보여 줘요", "repeat");
+  toast(fxView.krw ? "미국 주식 가격을 지금 환율로 바꾼 원화로 보여 줘요" : "미국 주식 가격을 달러로 보여 줘요", "repeat");
   document.dispatchEvent(new CustomEvent("tab", { detail: state.tab }));  // 지금 화면을 다시 그린다
 });
 loadFx();
-setInterval(loadFx, 5 * 60 * 1000);
+setInterval(loadFx, 60 * 1000);
 
 function renderStatus(s) {
   const mb = $("#mode-badge");
