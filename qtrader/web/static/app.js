@@ -40,14 +40,41 @@ const bigKRW = (v) => {
   return Math.round(v).toLocaleString();
 };
 
-// 종목 로고 대신 쓰는 이니셜 아이콘 (실제 로고 이미지는 쓰지 않는다)
+// 종목 아이콘
+// - 미국: 오픈소스 nvstly/icons (NYSE·NASDAQ 로고 모음) 을 원본 GitHub 에서 불러온다. 없으면 이니셜로 대체
+// - 국내: 공개 로고 모음이 없어 그룹 대표색 + 이니셜 (로고는 각 회사의 상표)
 const LOGO_COLORS = ["#3182f6", "#f04452", "#00b386", "#ff8a00", "#8b5cf6", "#0ea5e9", "#e11d74", "#14b8a6", "#f59e0b", "#6366f1"];
+const BRAND = [[/^삼성/, "#1428a0"], [/^SK/i, "#ea002c"], [/^LG/i, "#a50034"], [/^현대|^기아/, "#002c5f"], [/카카오/, "#fee500", "#191919"],
+  [/NAVER|네이버/i, "#03c75a"], [/^한화/, "#f37321"], [/셀트리온/, "#0068b7"], [/^KB|국민/, "#ffbc00", "#3a3a3a"], [/신한/, "#0046ff"],
+  [/^포스코|POSCO/i, "#05507d"], [/^롯데/, "#da291c"], [/^CJ/i, "#ef4123"], [/^GS/i, "#00a8a8"], [/^HD|^HMM/, "#1d4f91"],
+  [/하나/, "#009490"], [/우리/, "#0067ac"], [/크래프톤/, "#222"], [/엔씨/, "#2a2a2a"], [/두산/, "#005eb8"]];
 function logo(symbol, name, size = 28) {
+  const sym = String(symbol).split(":").pop().toUpperCase();
+  const nm = String(name || sym);
   let h = 0;
-  for (const c of String(symbol)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  const ch = String(name || symbol).replace(/^(KODEX|TIGER|KBSTAR|ACE|SOL|RISE)\s*/i, "").trim().charAt(0).toUpperCase();
-  return `<span class="logo" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.46)}px;background:${LOGO_COLORS[h % LOGO_COLORS.length]}">${esc(ch)}</span>`;
+  for (const c of sym) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const b = BRAND.find(([re]) => re.test(nm));
+  const bg = b ? b[1] : LOGO_COLORS[h % LOGO_COLORS.length], fg = b?.[2] || "#fff";
+  const ch = nm.replace(/^(KODEX|TIGER|KBSTAR|ACE|SOL|RISE|HANARO)\s*/i, "").trim().charAt(0).toUpperCase();
+  const st = `width:${size}px;height:${size}px;font-size:${Math.round(size * 0.44)}px`;
+  const initial = `<span class="logo" style="${st};background:${bg};color:${fg}">${esc(ch)}</span>`;
+  if (/^[A-Z.\-]+$/.test(sym) && !["KOSPI", "KOSDAQ"].includes(sym)) {
+    return `<span class="logo img" style="${st};background:${bg};color:${fg}">${esc(ch)}<img src="https://raw.githubusercontent.com/nvstly/icons/main/ticker_icons/${encodeURIComponent(sym)}.png" alt="" loading="lazy" onerror="this.remove()"></span>`;
+  }
+  return initial;
 }
+
+// 숫자가 부드럽게 바뀌는 효과 (CountUp.js)
+function countTo(el, value, opts = {}) {
+  if (!el) return;
+  const prev = Number(el.dataset.v || 0);
+  el.dataset.v = value;
+  if (!window.countUp || !isFinite(value)) { el.textContent = opts.format ? opts.format(value) : value; return; }
+  const cu = new countUp.CountUp(el, value, { startVal: prev, duration: 0.8, decimalPlaces: opts.decimals ?? 0,
+    formattingFn: opts.format, separator: "," });
+  cu.error ? (el.textContent = opts.format ? opts.format(value) : value) : cu.start();
+}
+function icons() { window.lucide && lucide.createIcons(); }
 
 function banner(msg, kind = "") {
   const b = $("#banner");
@@ -69,6 +96,11 @@ function openTab(name) {
   $$(".tab").forEach((t) => t.classList.toggle("hidden", t.id !== "tab-" + name));
   if (name === "cfg") loadConfig();
   document.dispatchEvent(new CustomEvent("tab", { detail: name }));
+  // 화면 전환 애니메이션 (anime.js)
+  const sec = $("#tab-" + name);
+  if (window.anime && sec) anime({ targets: sec.querySelectorAll(":scope > .panel, :scope > div > .panel, :scope .idx-card"),
+    opacity: [0, 1], translateY: [10, 0], delay: anime.stagger(30), duration: 380, easing: "easeOutQuad" });
+  setTimeout(icons, 0);
 }
 $$("nav button").forEach((b) => b.addEventListener("click", () => openTab(b.dataset.tab)));
 
@@ -125,10 +157,11 @@ async function refresh() {
     state.status = s;
     renderStatus(s);
     if (!s.error && state.tab === "dash") {
-      const [pos, ords, evs, plans, appr] = await Promise.all([api("/api/positions"), api("/api/orders?limit=50"),
-        api("/api/events?limit=80"), api("/api/plans"), api("/api/approvals?status=pending")]);
+      const [pos, ords, evs, plans, appr, ov] = await Promise.all([api("/api/positions"), api("/api/orders?limit=80"),
+        api("/api/events?limit=80"), api("/api/plans"), api("/api/approvals?status=pending"), api("/api/account/overview")]);
       state.plans = Object.fromEntries(plans.map((p) => [p.symbol, p]));
-      renderPositions(pos); renderOrders(ords); renderEvents(evs); renderApprovals(appr);
+      renderApprovals(appr);
+      window.renderDash && window.renderDash({ positions: pos, orders: ords, events: evs, overview: ov });
     }
   } catch (e) { banner("서버 응답 오류: " + e.message); }
 }
@@ -141,16 +174,26 @@ function renderStatus(s) {
   $("#auto-badge").className = "badge " + (s.auto_trading ? "green" : "");
   $("#kill-badge").textContent = s.kill_switch ? "킬 스위치 켜짐" : "킬 스위치 꺼짐";
   $("#kill-badge").className = "badge " + (s.kill_switch ? "red" : "");
-  $("#auto-btn").textContent = s.auto_trading ? "자동매매 중지" : "자동매매 시작";
-  $("#kill-btn").textContent = s.kill_switch ? "킬 스위치 끄기" : "킬 스위치 켜기";
+  $("#auto-btn").innerHTML = s.auto_trading ? '<i data-lucide="pause"></i> 자동매매 중지' : '<i data-lucide="play"></i> 자동매매 시작';
+  $("#kill-btn").innerHTML = s.kill_switch ? '<i data-lucide="octagon-x"></i> 킬 스위치 끄기' : '<i data-lucide="octagon-x"></i> 킬 스위치';
   $("#kill-btn").classList.toggle("on", s.kill_switch);
+  const ac = $("#auto-card");
+  if (ac) {
+    ac.classList.toggle("on", s.auto_trading);
+    ac.classList.toggle("killed", s.kill_switch);
+    $("#auto-title").textContent = s.kill_switch ? "킬 스위치 켜짐 · 신규 매수 중단" : s.auto_trading ? "자동매매 실행 중" : "자동매매 꺼짐";
+    const next = Object.entries(s.markets).filter(([, x]) => x.enabled).map(([m, x]) =>
+      `${MARKET_NAME[m]} ${STRAT_NAME[x.strategy] || x.strategy} · 다음 ${x.next_run.replace("T", " ").slice(5, 16)}`).join(" / ");
+    $("#auto-sub").textContent = `${MODE_NAME[s.mode]} · ${next || "사용 중인 시장 없음"}`;
+  }
+  icons();
   const msgs = [s.error, s.scheduler_error && "스케줄러: " + s.scheduler_error].filter(Boolean);
   if (msgs.length) banner(msgs.join(" / "));
   else if (!s.keys.toss && ["mkt", "stock"].includes(state.tab)) banner("토스증권 키가 없어 체험용 데이터를 보여줍니다. 설정에서 토스증권 Client ID/Secret 을 등록하면 실제 시세로 바뀝니다.", "info");
   else if (!s.keys.anthropic && state.tab === "office") banner("AI 회의와 비서를 쓰려면 설정에서 Claude API 키를 등록하세요.", "info");
   else banner("");
 
-  $("#market-cards").innerHTML = Object.entries(s.markets).map(([m, x]) => `
+  if ($("#market-cards")) $("#market-cards").innerHTML = Object.entries(s.markets).map(([m, x]) => `
     <div class="card">
       <div class="k">${MARKET_NAME[m]} · ${x.enabled ? STRAT_NAME[x.strategy] || x.strategy : "사용 안 함"} ${x.open ? "· 장중" : ""}</div>
       <div class="v">${x.enabled ? money(x.equity, m) : "-"}</div>
@@ -177,12 +220,14 @@ function reasonHtml(text) {
 function renderOrders(rows) {
   const st = { submitted: "접수", filled: "체결", rejected: "거부", dry_run: "계산만" };
   state.orders = rows;
+  const stc = { submitted: "amber", filled: "green", rejected: "red", dry_run: "" };
   $("#ord-table tbody").innerHTML = rows.length ? rows.map((o, i) => `<tr class="clickable" data-ord="${i}">
-    <td>${esc(o.trade_date)}</td><td>${esc(o.symbol)}</td>
-    <td class="${o.side === "buy" ? "up" : "down"}">${o.side === "buy" ? "매수" : "매도"}${o.strategy === "ai-exit" ? " (자동)" : ""}</td>
-    <td class="r">${o.qty.toLocaleString()}</td><td class="r">${money(o.price, o.market)}</td>
-    <td>${st[o.status] || o.status}</td></tr>`).join("")
-    : `<tr><td colspan="6" class="note">주문이 없습니다.</td></tr>`;
+    <td>${esc(o.trade_date.slice(5))}</td><td><div class="namecell">${logo(o.symbol, o.symbol, 22)}${esc(o.symbol)}</div></td>
+    <td><span class="side ${o.side}">${o.side === "buy" ? "매수" : "매도"}</span>${o.strategy === "ai-exit" ? ' <span class="badge">자동 손익절</span>' : ""}</td>
+    <td class="r">${o.qty.toLocaleString()}</td><td class="r">${money(o.price, o.market)}</td><td class="r">${money(o.price * o.qty, o.market)}</td>
+    <td><span class="badge ${stc[o.status] || ""}">${st[o.status] || o.status}</span></td>
+    <td class="note reason-cell">${esc(String(o.message || "").split(" | ")[0])}</td></tr>`).join("")
+    : `<tr><td colspan="8" class="note">주문이 없습니다.</td></tr>`;
 }
 $("#ord-table").addEventListener("click", (e) => {
   const tr = e.target.closest("[data-ord]");
@@ -228,6 +273,7 @@ async function runNow(dry) {
   try {
     const r = await api("/api/run-once", { method: "POST", body: { market: m, dry_run: dry } });
     $("#run-out").textContent = formatRun(r);
+    if (window.acctTab) window.acctTab("run");
   } catch (e) { $("#run-out").textContent = "실패: " + e.message; }
   refresh();
 }
@@ -305,16 +351,17 @@ async function loadConfig() {
   $("#rl-cool").value = R.cooldown_days; $("#rl-trend").checked = R.require_trend; $("#rl-mom").checked = R.require_momentum;
   const stratOptions = [...Object.keys(state.strategies), "ai"];
   $("#market-cfg").innerHTML = Object.entries(c.markets).map(([m, mc]) => `
-    <div class="panel" data-market="${m}">
-      <h3>${MARKET_NAME[m]} 주식</h3>
-      <label class="check"><input type="checkbox" data-f="enabled" ${mc.enabled ? "checked" : ""}> 이 시장 사용</label>
+    <div class="mkt-cfg" data-market="${m}">
+      <label class="check big"><input type="checkbox" data-f="enabled" ${mc.enabled ? "checked" : ""}> ${MARKET_NAME[m]} 주식 자동매매</label>
       <div class="form-row">
         <label>전략 <select data-f="strategy">${stratOptions.map((k) => `<option value="${k}" ${k === mc.strategy ? "selected" : ""}>${STRAT_NAME[k]}</option>`).join("")}</select></label>
-        <label>실행 시각 (${m === "KR" ? "한국" : "뉴욕"}) <input data-f="run_time" value="${esc(mc.run_time)}"></label>
-        <label>운용 한도 (${m === "KR" ? "원" : "$"}) <input data-f="budget" type="number" value="${mc.budget}"></label>
+        <label>쓸 돈 (${m === "KR" ? "원" : "$"}) <input data-f="budget" type="number" value="${mc.budget}"></label>
       </div>
-      <label>종목 (쉼표로 구분${m === "US" ? ", 나스닥 외에는 NYSE:KO 처럼" : ""}) <input data-f="universe" value="${esc(mc.universe.join(", "))}"></label>
-      <div class="form-row params" data-params></div>
+      <details class="mini-adv"><summary>실행 시각·종목·전략 세부</summary>
+        <div class="form-row"><label>실행 시각 (${m === "KR" ? "한국" : "뉴욕"}) <input data-f="run_time" value="${esc(mc.run_time)}"></label></div>
+        <label>종목 (쉼표로 구분${m === "US" ? ", 나스닥 외에는 NYSE:KO 처럼" : ""}) <input data-f="universe" value="${esc(mc.universe.join(", "))}"></label>
+        <div class="form-row params" data-params></div>
+      </details>
     </div>`).join("");
   $$("#market-cfg [data-market]").forEach((el) => {
     const m = el.dataset.market;
@@ -343,7 +390,13 @@ function refreshKeyState() {
   $("#key-secret-wrap").classList.toggle("hidden", !b);
   if (b) $("#key-label2").textContent = b;
   const s = state.status;
-  if (s) $("#key-state").innerHTML = s.keys[kind] ? "<b class='up'>저장된 키 있음</b>" : "저장된 키 없음";
+  if (s) {
+    $("#key-state").innerHTML = s.keys[kind] ? "<b class='ok'>저장된 키 있음</b>" : "저장된 키 없음";
+    const names = { toss: "토스증권", anthropic: "Claude", dart: "DART", kis_demo: "KIS 모의", kis_real: "KIS 실전" };
+    $("#key-status").innerHTML = Object.entries(names).map(([k, n]) =>
+      `<span class="kchip ${s.keys[k] ? "on" : ""}"><i data-lucide="${s.keys[k] ? "check-circle-2" : "circle-dashed"}"></i>${n}</span>`).join("");
+    window.lucide && lucide.createIcons();
+  }
 }
 $("#key-kind").onchange = refreshKeyState;
 

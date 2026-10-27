@@ -128,7 +128,13 @@ def load() -> dict:
     if not p.exists():
         save(DEFAULT)
         return copy.deepcopy(DEFAULT)
-    return _merge(DEFAULT, json.loads(p.read_text(encoding="utf-8")))
+    cfg = _merge(DEFAULT, json.loads(p.read_text(encoding="utf-8")))
+    # 예전 기본 뉴스 피드(인베스팅닷컴 2개)만 저장돼 있으면 새 기본 목록으로 바꾼다
+    old = {"https://kr.investing.com/rss/news_25.rss", "https://kr.investing.com/rss/news.rss"}
+    feeds = cfg.get("news", {}).get("feeds") or []
+    if feeds and {f.get("url") for f in feeds} <= old:
+        cfg["news"]["feeds"] = copy.deepcopy(DEFAULT["news"]["feeds"])
+    return cfg
 
 
 def validate(cfg: dict) -> list[str]:

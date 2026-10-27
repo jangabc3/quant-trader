@@ -51,6 +51,7 @@ async function renderIndices() {
   if (!ov) return;
   const box = $("#idx-cards");
   mkt.charts = {};
+  box.style.gridTemplateColumns = `repeat(${mkt.group === "KR" ? 2 : 3}, minmax(0, 1fr))`;
   if (mkt.group === "KR") {
     box.innerHTML = ov.indices.map((i) => idxCard(i.symbol, i.name, "", i.price, i.change, i.change_rate,
       i.flows?.unit ? flowCell("개인", i.flows.individual) + flowCell("외국인", i.flows.foreigner) + flowCell("기관", i.flows.institution) : "", i.symbol)).join("");
@@ -165,3 +166,44 @@ document.addEventListener("tab", (e) => { if (e.detail === "mkt") loadMarket(); 
   loadMarket();
 })();
 setInterval(() => { if (state.tab === "mkt" && !document.hidden) loadMarket(); }, 15000);
+
+
+// 섹터 히트맵: 등락률이 클수록 진한 색, 칸을 누르면 구성 종목
+const sec = { market: "KR", dur: "1d" };
+async function loadSectors() {
+  const el = $("#sector-grid");
+  if (!el) return;
+  try {
+    const r = await api(`/api/market/sectors?kind=TOP_GAINERS&market=${sec.market}&duration=${sec.dur}`);
+    const items = r.items.slice().sort((a, b) => b.changeRate - a.changeRate);
+    el.innerHTML = items.map((x) => {
+      const a = Math.min(Math.abs(x.changeRate) / 0.04, 1);
+      const bg = x.changeRate >= 0 ? `rgba(240,83,78,${0.12 + a * 0.6})` : `rgba(76,141,255,${0.12 + a * 0.6})`;
+      return `<button class="sector" data-sector="${esc(x.sectorId)}" data-sname="${esc(x.name)}" style="background:${bg}">
+        <b>${esc(x.name)}</b><span>${pct(x.changeRate)}</span></button>`;
+    }).join("") || `<p class="note">섹터 데이터가 없습니다.</p>`;
+    $("#sec-note").textContent = (r.demo ? "체험용 · " : "") + "칸을 누르면 그 섹터 종목이 보입니다";
+  } catch (e) { el.innerHTML = `<p class="note">${esc(e.message)}</p>`; }
+}
+function segSimple(id, fn) {
+  $$(`#${id} button`).forEach((b) => b.addEventListener("click", () => {
+    $$(`#${id} button`).forEach((x) => x.classList.toggle("on", x === b));
+    fn(b.dataset.v);
+  }));
+}
+segSimple("sec-market", (v) => { sec.market = v; loadSectors(); });
+segSimple("sec-dur", (v) => { sec.dur = v; loadSectors(); });
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-sector]");
+  if (!b) return;
+  modal(`<h3>${esc(b.dataset.sname)} 섹터</h3><p class="note">불러오는 중...</p>`);
+  try {
+    const r = await api(`/api/sector/${encodeURIComponent(b.dataset.sector)}/stocks?market=${sec.market}`);
+    $("#modal-body").innerHTML = `<h3>${esc(b.dataset.sname)} 섹터 <small class="note">${r.demo ? "체험용" : "시가총액 순"}</small></h3>
+      <div class="sector-list">${r.items.sort((a, b2) => (b2.marketCap || 0) - (a.marketCap || 0)).map((x) => `<div class="gs-item" data-open="${esc(x.symbol)}">
+        ${logo(x.symbol, x.name, 28)}<b>${esc(x.name)}</b><span class="note">${esc(x.symbol)}${x.marketCap ? " · 시총 " + bigKRW(x.marketCap) + "원" : ""}</span></div>`).join("")}</div>`;
+  } catch (err) { $("#modal-body").innerHTML = `<p class="note">${esc(err.message)}</p>`; }
+});
+document.addEventListener("click", (e) => { if (e.target.closest("#modal [data-open]")) $("#modal").classList.add("hidden"); }, true);
+document.addEventListener("tab", (e) => { if (e.detail === "mkt") loadSectors(); });
+loadSectors();

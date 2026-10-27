@@ -224,6 +224,39 @@ class Toss:
     def price_limits(self, symbol: str) -> dict:
         return self._call("GET", "/api/v1/price-limits", "MARKET_DATA", {"symbol": toss_symbol(symbol)}) or {}
 
+    def sector_rankings(self, kind: str, market: str, duration: str = "1d") -> list[dict]:
+        """kind: TOP_GAINERS | MARKET_TRADING_AMOUNT"""
+        r = self._call("GET", "/api/v1/sectors/rankings", "SECTOR", {"type": kind, "marketCountry": market,
+                                                                        "duration": duration}) or {}
+        return r.get("rankings", [])
+
+    def sector_stocks(self, sector_id: str, market: str) -> list[dict]:
+        r = self._call("GET", f"/api/v1/sectors/{sector_id}/stocks", "SECTOR", {"marketCountry": market}) or {}
+        return r.get("stocks", [])
+
+    def sector_detail(self, sector_id: str, market: str) -> dict:
+        return self._call("GET", f"/api/v1/sectors/{sector_id}", "SECTOR", {"marketCountry": market}) or {}
+
+    def _trend(self, kind: str, symbol: str, count: int) -> dict:
+        return self._call("GET", f"/api/v1/stocks/{toss_symbol(symbol)}/{kind}", "STOCK_TRADING_TREND",
+                          {"count": count}) or {}
+
+    def program_trades(self, symbol: str, count: int = 20) -> dict:
+        return self._trend("program-trades", symbol, count)
+
+    def short_selling(self, symbol: str, count: int = 20) -> dict:
+        return self._trend("short-selling", symbol, count)
+
+    def credit_trades(self, symbol: str, count: int = 20) -> dict:
+        return self._trend("credit-trades", symbol, count)
+
+    def commissions(self) -> list[dict]:
+        return self._call("GET", "/api/v1/commissions", "ORDER_INFO", account=True) or []
+
+    def sellable_quantity(self, symbol: str) -> float:
+        r = self._call("GET", "/api/v1/sellable-quantity", "ORDER_INFO", {"symbol": toss_symbol(symbol)}, account=True)
+        return num((r or {}).get("sellableQuantity"))
+
     def rankings(self, kind: str, market: str, duration: str = "1d", count: int = 30) -> dict:
         return self._call("GET", "/api/v1/rankings", "RANKING", {
             "type": kind, "marketCountry": market, "duration": duration, "count": count,

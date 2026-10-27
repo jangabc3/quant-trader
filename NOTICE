@@ -16,3 +16,12 @@ AI 회의 지침(투자자 기본 지령, 리포트 항목, 팩트체크, 추가
 타민더마켓 「AI 주식 투자 프롬프트 완벽 가이드 2탄」 (c) 2025 타민더마켓 - 출처 명시 조건으로 자유 활용 허용
 타민더마켓 「클로드로 만드는 나만의 미국 주식 리서치 시스템」 (2026.05.04)
 https://www.youtube.com/@타민더마켓
+
+화면 라이브러리 (qtrader/web/static/vendor, 라이선스 파일 동봉)
+- anime.js 3.2.2 (MIT, Julian Garnier) - 화면 전환·패널 애니메이션
+- Lucide 0.454.0 (ISC, Lucide Contributors) - 아이콘
+- CountUp.js 2.8.0 (MIT, Jamie Perkins) - 숫자 애니메이션
+- Lightweight Charts 4.1.3 (Apache-2.0, TradingView) - 차트
+- Pretendard 1.3.9 (SIL OFL 1.1, Kil Hyung-jin) - 글꼴 (CDN)
+- 미국 종목 로고: nvstly/icons (GitHub). 저장소에 라이선스가 명시돼 있지 않아 앱에 포함하지 않고 원본 주소에서 불러온다.
+  로고는 각 회사의 상표다.

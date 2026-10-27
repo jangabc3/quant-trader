@@ -21,7 +21,7 @@ function compound() {
   const monthly = Math.max(0, (goal - fvNow) / factor);
   const paid = pv + monthly * n;
   $("#cp-out").innerHTML = `
-    <div><span>필요한 월 투자액</span><b>${won(monthly)}</b></div>
+    <div class="big-res"><span>매달 넣어야 할 돈</span><b>${won(monthly)}</b><em>${years}년 동안</em></div>
     <div><span>목표 (${years}년 뒤 물가 반영)</span><b>${man(goal)}</b></div>
     <div><span>총 납입 원금</span><b>${man(paid)}</b></div>
     <div><span>복리로 불어난 몫</span><b class="up">${man(goal - paid)}</b></div>`;
@@ -56,10 +56,9 @@ function position() {
   const qty = Math.floor(acct * risk / per);
   const cost = qty * entry;
   $("#ps-out").innerHTML = `
-    <div><span>살 수량</span><b>${qty.toLocaleString()}주</b></div>
-    <div><span>투입 금액</span><b>${won(cost)} (계좌의 ${(cost / acct * 100).toFixed(1)}%)</b></div>
-    <div><span>손절 시 손실</span><b class="down">${won(qty * per)}</b></div>
-    <div><span>손절 폭</span><b>${(per / entry * 100).toFixed(1)}%</b></div>`;
+    <div class="big-res"><span>살 수량</span><b>${qty.toLocaleString()}주</b><em>이만큼 사면 손절돼도 계좌의 ${(risk * 100).toFixed(1)}%만 잃습니다</em></div>
+    <div><span>투입 금액</span><b>${won(cost)}</b><em>계좌의 ${(cost / acct * 100).toFixed(1)}%</em></div>
+    <div><span>손절되면</span><b class="down">-${won(qty * per)}</b><em>손절 폭 ${(per / entry * 100).toFixed(1)}%</em></div>`;
 }
 ["#ps-acct", "#ps-risk", "#ps-entry", "#ps-stop"].forEach((id) => $(id).addEventListener("input", position));
 
@@ -105,4 +104,13 @@ $("#tx-table").addEventListener("click", (e) => {
 });
 $("#tx-add").onclick = () => { tx.push({ sym: "", qty: 0, buy: 0, bfx: 1400, sell: 0, sfx: 1400, fee: 0 }); txRender(); };
 
-document.addEventListener("tab", (e) => { if (e.detail === "calc") { compound(); position(); txRender(); } });
+document.addEventListener("tab", (e) => { if (e.detail === "calc") { position(); txRender(); compound(); } });
+
+
+$("#calc-tab").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  $$("#calc-tab button").forEach((x) => x.classList.toggle("on", x === b));
+  ["pos", "cp", "tax"].forEach((k) => $("#calc-" + k).classList.toggle("hidden", k !== b.dataset.v));
+  if (b.dataset.v === "cp") compound();
+});

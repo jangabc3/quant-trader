@@ -20,7 +20,7 @@ window.openStock = async (symbol) => {
   ["#st-ob", "#st-trades", "#st-fin", "#st-flows", "#st-news", "#st-ai-hist"].forEach((id) => ($(id).innerHTML = "<p class='note'>불러오는 중...</p>"));
   await loadSummary();
   buildChart(); loadCandles();
-  loadOrderbook(); loadTrades(); loadFin(); loadFlows(); loadNews(); loadAiHist();
+  loadOrderbook(); loadTrades(); loadFin(); loadFlows(); loadNews(); loadAiHist(); loadExtra();
   st.timers.push(setInterval(() => { if (state.tab === "stock" && !document.hidden) { loadSummary(); loadOrderbook(); } }, 3000));
   st.timers.push(setInterval(() => { if (state.tab === "stock" && !document.hidden) loadTrades(); }, 5000));
   st.timers.push(setInterval(() => { if (state.tab === "stock" && !document.hidden) loadCandles(true); }, 10000));
@@ -242,3 +242,47 @@ $("#st-watch").onclick = async () => {
   try { state.config = await api("/api/config", { method: "PUT", body: c }); $("#st-watch").classList.toggle("on"); } catch (e) { alert(e.message); }
 };
 document.addEventListener("tab", (e) => { if (e.detail === "stock" && st.symbol) { loadSummary(); loadCandles(true); } });
+
+
+// 수급 상세: 프로그램매매·공매도·신용거래 (국내)
+let extraTab = "program", extraData = null;
+async function loadExtra() {
+  const el = $("#st-extra");
+  if (!/^\d/.test(st.symbol)) { $("#st-extra-panel").classList.add("hidden"); return; }
+  $("#st-extra-panel").classList.remove("hidden");
+  try { extraData = await api(`/api/stock/${encodeURIComponent(st.symbol)}/extra`); } catch (e) { el.innerHTML = `<p class="note">${esc(e.message)}</p>`; return; }
+  drawExtra();
+}
+function drawExtra() {
+  const el = $("#st-extra");
+  const recs = (extraData?.[extraTab] || []).slice(0, 20);
+  if (!recs.length) { el.innerHTML = "<p class='note'>토스증권 키를 등록하면 국내 종목의 프로그램매매·공매도·신용거래 동향이 보입니다.</p>"; return; }
+  const n = (v) => Number(v || 0);
+  let rows, head, series;
+  if (extraTab === "program") {
+    head = ["날짜", "차익 순매수", "비차익 순매수", "합계"];
+    rows = recs.map((r) => { const a = n(r.arbitrage?.netBuyVolume), b = n(r.nonArbitrage?.netBuyVolume); return [r.date.slice(5), a, b, a + b]; });
+    series = rows.map((r) => r[3]);
+  } else if (extraTab === "short") {
+    head = ["날짜", "공매도 수량", "공매도 금액", "거래량 비중"];
+    rows = recs.map((r) => [r.date.slice(5), n(r.shortSellingVolume), n(r.shortSellingAmount), r.shortSellingVolumeRate == null ? null : n(r.shortSellingVolumeRate)]);
+    series = rows.map((r) => r[1]);
+  } else {
+    head = ["날짜", "신용 신규", "신용 상환", "신용 잔고", "잔고율"];
+    rows = recs.map((r) => [r.date.slice(5), n(r.marginLoan?.newQuantity), n(r.marginLoan?.returnQuantity), n(r.marginLoan?.balanceQuantity), n(r.marginLoan?.balanceRate)]);
+    series = rows.map((r) => r[3]);
+  }
+  const max = Math.max(...series.map(Math.abs), 1);
+  const bars = series.slice().reverse().map((v) => `<i class="${v >= 0 ? "pos" : "neg"}" style="height:${Math.abs(v) / max * 100}%"></i>`).join("");
+  const fmt = (v, i) => v == null ? "-" : (extraTab === "short" && i === 3) || (extraTab === "credit" && i === 4) ? (v * 100).toFixed(2) + "%" :
+    (extraTab === "short" && i === 2) ? bigKRW(v) + "원" : `<span class="${extraTab === "program" ? cls(v) : ""}">${Number(v).toLocaleString()}</span>`;
+  el.innerHTML = `<div class="mini-bars">${bars}</div><table><thead><tr>${head.map((h, i) => `<th class="${i ? "r" : ""}">${h}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map((r) => `<tr>${r.map((v, i) => `<td class="${i ? "r" : ""}">${i ? fmt(v, i) : v}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+}
+$("#st-extra-tab").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  extraTab = b.dataset.v;
+  $$("#st-extra-tab button").forEach((x) => x.classList.toggle("on", x === b));
+  drawExtra();
+});
