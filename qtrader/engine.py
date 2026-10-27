@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from . import config as config_mod
@@ -189,6 +189,68 @@ def remember_plan(store: Store, account: str, market: str, o: OrderRequest, toda
         store.save_plan(account, market, o.symbol, d.get("id"), plan["entry"], plan["stop"], plan["take"])
 
 
+TOSS_DONE = {"FILLED": "filled", "CANCELED": "rejected", "REJECTED": "rejected", "EXPIRED": "rejected",
+             "REPLACED": "rejected", "CANCEL_REJECTED": None}
+
+
+def sync_orders(ctx: Context) -> list[dict]:
+    """토스증권에 접수만 된 주문의 체결 여부를 확인해 기록을 고친다. 체결된 AI 매수는 이때 손절·익절 계획을 만든다."""
+    if ctx.broker.name != "toss":
+        return []
+    out = []
+    for o in ctx.store.open_orders(ctx.broker.name):
+        try:
+            d = ctx.broker.client.order_detail(o["broker_order_id"])
+        except Exception as e:
+            ctx.store.log("warn", "sync", f"주문 {o['symbol']} 상태 조회 실패: {e}")
+            continue
+        st = d.get("status", "")
+        new = TOSS_DONE.get(st)
+        if not new:
+            continue  # 대기·부분 체결은 다음에 다시 본다
+        ex = d.get("execution") or {}
+        note = {"FILLED": f"체결 {ex.get('filledQuantity')}주 @ {ex.get('averageFilledPrice')}",
+                "CANCELED": "취소됨", "REJECTED": "거부됨", "EXPIRED": "기간 만료"}.get(st, st)
+        ctx.store.update_order(o["id"], new, note)
+        ctx.store.log("info" if new == "filled" else "warn", "sync", f"{o['symbol']} {o['side']} {note}")
+        if new == "filled" and o.get("strategy") == "ai":
+            req = OrderRequest(Market(o["market"]), o["symbol"], Side(o["side"]), int(o["qty"]), float(o["price"]), "ai")
+            remember_plan(ctx.store, ctx.broker.name, o["market"], req, o["trade_date"])
+        if new == "filled" and o.get("strategy") == "ai-exit":
+            ctx.store.close_plan(ctx.broker.name, o["market"], o["symbol"], "stop" if "손절" in (o.get("message") or "") else "take")
+        out.append({"symbol": o["symbol"], "status": new, "note": note})
+    return out
+
+
+def check_loss(ctx: Context, market: Market) -> bool:
+    """장중에도 하루 손실 한도를 본다. 넘으면 킬 스위치를 켠다 (신규 매수 중단, 매도·손절은 계속)."""
+    if ctx.kill:
+        return True
+    lim = RiskLimits.from_config(ctx.cfg, market)
+    today = trade_date(market)
+    start = ctx.store.day_start_equity(ctx.broker.name, market.value, today)
+    if not start:
+        return False
+    acct = ctx.broker.account(market)
+    universe = set(ctx.cfg["markets"][market.value]["universe"])
+    managed = acct.cash + sum(p.value for s, p in acct.positions.items() if s in universe)
+    if loss_breached(start, managed, lim):
+        ctx.store.set("kill_switch", "1")
+        ctx.store.log("error", f"risk.{market.value}", f"장중 손실 {managed / start - 1:.2%} 로 하루 한도 초과. 킬 스위치를 켰습니다")
+        return True
+    return False
+
+
+def snapshot_equity(ctx: Context, market: Market) -> bool:
+    """장 마감 뒤 하루 한 번 자산을 기록한다 (자산 추이·누적 수익률·하루 손실 기준)."""
+    today = trade_date(market)
+    if ctx.store.has_equity(ctx.broker.name, market.value, today):
+        return False
+    a = ctx.broker.account(market)
+    ctx.store.add_equity(today, ctx.broker.name, market.value, a.equity, a.cash)
+    return True
+
+
 def check_exits(ctx: Context, market: Market) -> list[dict]:
     """손절가·익절가에 닿은 AI 포지션을 판다. 장중에 스케줄러가 몇 분마다 부른다."""
     store, out = ctx.store, []
@@ -206,8 +268,23 @@ def check_exits(ctx: Context, market: Market) -> list[dict]:
         why = "stop" if px <= pl["stop"] else "take" if px >= pl["take"] else None
         if not why:
             continue
-        # 국내는 시장가, 미국은 지정가만 되므로 현재가보다 0.3% 낮게
-        price = round(px * 0.997, 2) if market == Market.US else 0
+        pending = [o for o in store.rows("select * from orders where account=? and symbol=? and strategy='ai-exit' "
+                                         "and status='submitted' order by id desc", (ctx.broker.name, pl["symbol"]))]
+        retry = 0
+        if pending:
+            last = pending[0]
+            age = (datetime.now(timezone.utc) - datetime.fromisoformat(last["ts"])).total_seconds()
+            if age < 180 or ctx.broker.name != "toss":
+                continue  # 아직 기다리는 중
+            try:
+                ctx.broker.client.cancel(last["broker_order_id"])
+                store.update_order(last["id"], "rejected", "3분 미체결로 취소 후 재주문")
+            except Exception as e:
+                store.log("error", "exit", f"{pl['symbol']} 미체결 손절 주문 취소 실패: {e}")
+                continue
+            retry = len(pending)
+        # 국내는 시장가, 미국은 지정가만 되므로 현재가보다 낮게 (재주문할수록 1%씩 더 낮게)
+        price = round(px * (0.997 - 0.01 * retry), 2) if market == Market.US else 0
         label = "손절" if why == "stop" else "익절"
         req = OrderRequest(market, pl["symbol"], Side.SELL, pos.qty, price, "ai-exit",
                            f"{label}: 현재가 {px:,} / 손절가 {pl['stop']:,} / 익절가 {pl['take']:,}")
@@ -216,7 +293,8 @@ def check_exits(ctx: Context, market: Market) -> list[dict]:
         store.add_order(trade_date=today, account=ctx.broker.name, market=market.value, symbol=req.symbol, side="sell",
                         qty=req.qty, price=req.price or px, status=status, broker_order_id=r.broker_order_id,
                         strategy="ai-exit", message=f"{req.reason} | {r.message}")
-        if r.ok:
+        # 토스는 접수만 된 상태라 체결 확인(sync_orders) 때 계획을 닫는다. 그 전까지는 미체결 재주문 대상
+        if r.ok and (status == "filled" or ctx.broker.name != "toss"):
             store.close_plan(ctx.broker.name, market.value, pl["symbol"], why)
         store.log("warn" if why == "stop" else "info", "exit", f"{req.reason} -> {status} {r.message}")
         out.append({"symbol": req.symbol, "reason": why, "status": status, "price": px})
@@ -252,7 +330,7 @@ def execute_approval(ctx: Context, aid: int) -> dict:
                     side=req.side.value, qty=req.qty, price=req.price, status=status, broker_order_id=r.broker_order_id,
                     strategy=req.strategy, message=f"승인 #{aid} | {req.reason} | {r.message}")
     store.decide_approval(aid, "approved", f"{status} {r.message}")
-    if r.ok and req.strategy == "ai":
+    if r.ok and req.strategy == "ai" and (status == "filled" or ctx.broker.name != "toss"):
         remember_plan(store, ctx.broker.name, market.value, req, a["trade_date"])
     store.log("info" if r.ok else "error", "approval", f"승인 #{aid} {status} {req.side.value} {req.symbol} x{req.qty} {r.message}")
     return {"id": aid, "status": status, "message": r.message}
@@ -350,7 +428,7 @@ def run_market(ctx: Context, market: Market, dry_run: bool = False, force: bool 
         store.add_order(trade_date=today, account=acct_id, market=market.value, symbol=o.symbol,
                         side=o.side.value, qty=o.qty, price=o.price, status=status, broker_order_id=oid,
                         strategy=o.strategy, message=f"{o.reason} | {res_msg}")
-        if use_ai and status in ("filled", "submitted"):
+        if use_ai and (status == "filled" or (status == "submitted" and ctx.broker.name != "toss")):
             remember_plan(store, acct_id, market.value, o, today)
         store.log("info" if status != "rejected" else "error", src,
                   f"{status} {o.side.value} {o.symbol} x{o.qty} @ {o.price:,.2f} {res_msg}")

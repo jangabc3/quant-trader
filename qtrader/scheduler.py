@@ -24,6 +24,13 @@ def is_open(market: Market, now: datetime | None = None) -> bool:
     return t.weekday() < 5 and o <= t.time() < c
 
 
+def after_close(market: Market, now: datetime | None = None) -> bool:
+    """평일 장 마감 5분 뒤부터 자정 전까지."""
+    t = (now or datetime.now(TZ[market])).astimezone(TZ[market])
+    close = SESSIONS[market][1]
+    return t.weekday() < 5 and t.time() >= dtime(close.hour, close.minute + 5)
+
+
 def due(market: Market, run_time: str, now: datetime | None = None) -> bool:
     """오늘 실행 시각이 지났고 아직 장중이면 True. 주말은 False. (휴장일은 증권사 거부로 걸러진다)"""
     t = (now or datetime.now(TZ[market])).astimezone(TZ[market])
@@ -66,13 +73,22 @@ class Scheduler:
         out = []
         if cfg["ai"].get("auto_exit", True) and time.monotonic() - self._last_exit > 120:
             self._last_exit = time.monotonic()
+            from .engine import check_exits, check_loss, snapshot_equity, sync_orders
+            try:
+                sync_orders(ctx)
+            except Exception as e:
+                ctx.store.log("error", "sync", f"체결 확인 실패: {e}")
             for m in (Market.KR, Market.US):
-                if cfg["markets"][m.value].get("enabled") and is_open(m):
-                    try:
-                        from .engine import check_exits
+                if not cfg["markets"][m.value].get("enabled"):
+                    continue
+                try:
+                    if is_open(m):
+                        check_loss(ctx, m)
                         check_exits(ctx, m)
-                    except Exception as e:
-                        ctx.store.log("error", f"exit.{m.value}", f"손절·익절 점검 실패: {e}")
+                    elif after_close(m):
+                        snapshot_equity(ctx, m)
+                except Exception as e:
+                    ctx.store.log("error", f"exit.{m.value}", f"장중 점검 실패: {e}")
         for m in (Market.KR, Market.US):
             mc = cfg["markets"].get(m.value, {})
             if mc.get("enabled") and mc.get("strategy") == "ai":

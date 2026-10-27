@@ -179,6 +179,17 @@ class Store:
         q = ",".join("?" * len(o))
         return self.exec(f"insert into orders (ts,{cols}) values (?,{q})", (now(), *o.values())).lastrowid
 
+    def update_order(self, oid: int, status: str, note: str = "") -> None:
+        self.exec("update orders set status=?, message=coalesce(message,'') || ? where id=?",
+                  (status, f" | {note}" if note else "", oid))
+
+    def open_orders(self, account: str) -> list[dict]:
+        return self.rows("select * from orders where account=? and status='submitted' and broker_order_id is not null "
+                         "and broker_order_id != '' order by id", (account,))
+
+    def has_equity(self, account: str, market: str, trade_date: str) -> bool:
+        return bool(self.rows("select 1 from equity where account=? and market=? and trade_date=?", (account, market, trade_date)))
+
     def orders(self, limit: int = 200) -> list[dict]:
         return self.rows("select * from orders order by id desc limit ?", (limit,))
 
