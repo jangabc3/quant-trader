@@ -93,7 +93,9 @@ function ticketDraw(syncInputs = true) {
   $("#tk-total").textContent = tkMoney(buy ? gross + fee : gross - fee);
   const go = $("#tk-go");
   go.className = "tk-go " + (buy ? "buy" : "sell");
-  go.textContent = tk.how === "cond" ? (buy ? "조건 구매 걸기" : "조건 판매 걸기") : tk.how === "split" ? (buy ? "나눠서 사기" : "나눠서 팔기") : buy ? "구매하기" : "판매하기";
+  const liveTk = LIVE.has(state.status?.mode);
+  go.textContent = (liveTk ? "실전 · " : "가상 · ") + (tk.how === "cond" ? (buy ? "조건 구매 걸기" : "조건 판매 걸기") : tk.how === "split" ? (buy ? "나눠서 사기" : "나눠서 팔기") : buy ? "구매하기" : "판매하기");
+  go.classList.toggle("is-live", liveTk);
   $("#tk-guard").classList.toggle("hidden", !buy || tk.how !== "now");
   $$("#ticket .tk-how button").forEach((b) => b.classList.toggle("on", b.dataset.how === tk.how));
   $("#tk-cond-box").classList.toggle("hidden", tk.how !== "cond");

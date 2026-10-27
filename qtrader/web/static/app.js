@@ -250,6 +250,10 @@ function renderStatus(s) {
   const mb = $("#mode-badge");
   mb.textContent = MODE_NAME[s.mode] + (s.data_source ? ` · 시세 ${SRC_NAME[s.data_source] || s.data_source}` : "");
   mb.className = "badge " + (LIVE.has(s.mode) ? "red" : s.mode === "kis_demo" ? "amber" : "green");
+  const live = LIVE.has(s.mode);
+  document.body.classList.toggle("is-live", live);
+  $("#live-strip").classList.toggle("hidden", !live);
+  if (live) $("#live-strip").innerHTML = `<i data-lucide="flame"></i> 실전매매 중 · ${esc(MODE_NAME[s.mode])} · 주문이 실제 돈으로 나가요 <button data-mode-go="paper">가상매매로 돌아가기</button>`;
   $("#auto-badge").textContent = s.auto_trading ? "자동매매 실행 중" : "자동매매 꺼짐";
   $("#auto-badge").className = "badge " + (s.auto_trading ? "green" : "");
   $("#kill-badge").textContent = s.kill_switch ? "긴급 정지 중" : "긴급 정지 꺼짐";
@@ -417,37 +421,47 @@ function readParams(root) {
 }
 
 // 설정
+// 퍼센트로 보여 주는 칸 (저장은 0~1 비율)
+const PCT_IDS = ["r-maxw", "r-maxe", "r-loss", "sec-max", "rl-conf", "rl-vol", "rl-fact"];
+const setPct = (id, v) => { $("#" + id).value = v == null ? "" : +(v * 100).toFixed(2); };
+const getPct = (id) => Number($("#" + id).value) / 100;
+const MODELS = [["claude-sonnet-5-5", "Sonnet 5.5 · 빠르고 균형 (추천: 빠른 모델)"], ["claude-opus-5-5", "Opus 5.5 · 깊게 생각 (추천: 깊은 모델)"],
+  ["claude-haiku-5-5", "Haiku 5.5 · 가장 저렴"], ["claude-fable-5-1", "Fable 5.1 · 최고 성능, 가장 비쌈"]];
+const modelSelect = (id, cur) => {
+  const list = MODELS.some(([k]) => k === cur) || !cur ? MODELS : [...MODELS, [cur, cur + " (직접 입력한 모델)"]];
+  $("#" + id).innerHTML = list.map(([k, n]) => `<option value="${k}" ${k === cur ? "selected" : ""}>${n}</option>`).join("");
+};
+
 async function loadConfig() {
   const c = await api("/api/config");
   const pr = await api("/api/principles");
   state.config = c;
-  $$("input[name=mode]").forEach((i) => (i.checked = i.value === c.mode));
-  $("#live-confirmed").checked = !!c.live_confirmed;
+  renderModeNow();
   $("#data-source").value = c.data_source || "auto";
   $("#kis-account").value = c.kis.account || "";
   $("#toss-loc").checked = !!c.toss.us_loc;
+  $("#toss-guard").checked = c.toss.server_guard !== false;
   $("#sec-contact").value = c.sec_contact || "";
-  $("#r-maxw").value = c.risk.max_weight; $("#r-maxe").value = c.risk.max_exposure;
-  $("#r-loss").value = c.risk.daily_loss_limit;
+  setPct("r-maxw", c.risk.max_weight); setPct("r-maxe", c.risk.max_exposure); setPct("r-loss", c.risk.daily_loss_limit);
   $("#r-ordkr").value = c.risk.max_order_value.KR; $("#r-ordus").value = c.risk.max_order_value.US;
-  $("#watchlist").value = (c.watchlist || []).join(", ");
   $("#news-feeds").value = (c.news?.feeds || []).map((f) => `${f.name}|${f.url}|${f.cat || "kr"}`).join("\n");
   $("#tg-chat").value = c.notify?.telegram_chat_id || "";
   $("#ntf-report").checked = c.notify?.daily_report !== false;
   $("#ai-cap").value = c.ai.monthly_cost_cap_krw ?? 30000;
-  $("#sec-max").value = c.max_sector_weight ?? 0.4;
+  setPct("sec-max", c.max_sector_weight ?? 0.4);
   $("#ai-mode").value = c.ai.mode || "fast";
-  $("#ai-quick").value = c.ai.quick_model || ""; $("#ai-deep").value = c.ai.deep_model || c.ai.model || "";
-  $("#ai-effort").value = c.ai.effort; $("#ai-profile").value = c.ai.profile || "";
+  modelSelect("ai-quick", c.ai.quick_model); modelSelect("ai-deep", c.ai.deep_model || c.ai.model);
+  $("#ai-effort").value = c.ai.effort; $("#ai-chat-effort").value = c.ai.chat_effort || "medium";
+  $("#ai-profile").value = c.ai.profile || "";
   $("#ai-approve").checked = !!c.ai.require_approval;
   $("#ai-exit").checked = c.ai.auto_exit !== false;
   $("#ai-debate").value = c.ai.debate_rounds;
   $("#ai-before").value = c.ai.run_before_minutes; $("#ai-max").value = c.ai.max_symbols_per_day;
-  $("#ai-conf").value = c.ai.min_confidence; $("#ai-web").checked = !!c.ai.web_research;
+  $("#ai-web").checked = !!c.ai.web_research;
   $("#ai-autopick").checked = c.ai.auto_pick !== false;
   const R = pr.rules;
-  $("#rl-conf").value = R.min_confidence; $("#rl-rr").value = R.min_reward_risk; $("#rl-rsi").value = R.max_rsi;
-  $("#rl-vol").value = R.max_vol; $("#rl-fact").value = R.min_fact_ok; $("#rl-buys").value = R.max_new_buys_per_day;
+  setPct("rl-conf", R.min_confidence); $("#rl-rr").value = R.min_reward_risk; $("#rl-rsi").value = R.max_rsi;
+  setPct("rl-vol", R.max_vol); setPct("rl-fact", R.min_fact_ok); $("#rl-buys").value = R.max_new_buys_per_day;
   $("#rl-cool").value = R.cooldown_days; $("#rl-trend").checked = R.require_trend; $("#rl-mom").checked = R.require_momentum;
   $("#rl-market").value = R.market_filter || "half";
   $("#pin-enabled").checked = c.security?.pin !== false;
@@ -455,24 +469,23 @@ async function loadConfig() {
   loadPin();
   const ruleKeys = Object.keys(state.strategies);
   const stratSelect = (cur) => `<option value="ai" ${cur === "ai" ? "selected" : ""}>${STRAT_NAME.ai} (추천)</option>
-    <optgroup label="고급 · 단순 규칙 (AI 검증 없음)">${ruleKeys.map((k) => `<option value="${k}" ${k === cur ? "selected" : ""}>${STRAT_NAME[k] || k}</option>`).join("")}</optgroup>`;
+    <optgroup label="단순 규칙 (AI 회의 없이, 고급 사용자용)">${ruleKeys.map((k) => `<option value="${k}" ${k === cur ? "selected" : ""}>${STRAT_NAME[k] || k}</option>`).join("")}</optgroup>`;
   $("#market-cfg").innerHTML = Object.entries(c.markets).map(([m, mc]) => `
-    <div class="mkt-cfg" data-market="${m}">
-      <label class="check big"><input type="checkbox" data-f="enabled" ${mc.enabled ? "checked" : ""}> ${MARKET_NAME[m]} 주식 자동매매</label>
-      <div class="form-row">
-        <label>전략 <select data-f="strategy">${stratSelect(mc.strategy)}</select></label>
-        <label>쓸 돈 (${m === "KR" ? "원" : "$"}) <input data-f="budget" type="number" value="${mc.budget}"></label>
-      </div>
-      <details class="mini-adv"><summary>실행 시각·종목·전략 세부</summary>
-        ${m === "KR" ? `<div class="form-row"><label>실행 시각 (한국) <input data-f="run_time" value="${esc(mc.run_time)}"></label></div>
-          <label class="check"><input type="checkbox" data-f="extended" ${mc.extended ? "checked" : ""}> 시간외(넥스트레이드 08:00~20:00)에도 손절·익절 감시와 주문 <small class="note">시간외는 지정가로만 나가요 · 토스 Open API 지원 확인 필요</small></label>`
-        : `<div class="form-row"><label>정기 실행 <select data-f="run_session"><option value="regular" ${mc.run_session !== "day" ? "selected" : ""}>뉴욕 정규장 마감 전 (밤)</option><option value="day" ${mc.run_session === "day" ? "selected" : ""}>한국 낮 주간거래</option></select></label>
-            <label>실행 시각 <small class="note">정규장=뉴욕, 주간거래=한국 시각</small> <input data-f="run_time" value="${esc(mc.run_time)}"></label>
-            <label>주간거래 시간 (한국) <input data-f="day_hours" value="${esc(mc.day_hours || "10:00-17:30")}"></label></div>
+    <div class="mkt-cfg ${mc.enabled ? "on" : ""}" data-market="${m}">
+      <label class="mkt-head"><span class="flag">${m === "KR" ? "🇰🇷" : "🇺🇸"}</span><b>${MARKET_NAME[m]} 주식</b>
+        <span class="sw"><input type="checkbox" data-f="enabled" ${mc.enabled ? "checked" : ""}><i></i></span><em class="sw-txt">${mc.enabled ? "자동매매 켬" : "자동매매 끔"}</em></label>
+      <label>이 시장에 쓸 돈 <em class="hint">${m === "KR" ? "원" : "달러"} · 계좌 돈 중 이만큼만 자동매매에 써요</em><input data-f="budget" type="number" value="${mc.budget}"></label>
+      <details class="mini-adv"><summary>시간 · 종목 · 고르는 방법 (고급)</summary>
+        <label>무엇을 살지 고르는 방법 <select data-f="strategy">${stratSelect(mc.strategy)}</select></label>
+        ${m === "KR" ? `<div class="form-row"><label>정기 실행 시각 <em class="hint">한국 시각</em><input data-f="run_time" value="${esc(mc.run_time)}"></label></div>
+          <label class="check"><input type="checkbox" data-f="extended" ${mc.extended ? "checked" : ""}> 시간외(넥스트레이드 08:00~20:00)에도 감시·주문 <em class="hint">지정가로만 나가요</em></label>`
+        : `<div class="form-row"><label>정기 실행 <select data-f="run_session"><option value="regular" ${mc.run_session !== "day" ? "selected" : ""}>뉴욕 정규장 마감 전 (한국 밤)</option><option value="day" ${mc.run_session === "day" ? "selected" : ""}>한국 낮 주간거래</option></select></label>
+            <label>실행 시각 <em class="hint">정규장=뉴욕, 주간거래=한국 시각</em><input data-f="run_time" value="${esc(mc.run_time)}"></label>
+            <label>주간거래 시간 <em class="hint">한국 시각</em><input data-f="day_hours" value="${esc(mc.day_hours || "10:00-17:30")}"></label></div>
           <div class="form-row">${[["day", "주간거래 (한국 낮)"], ["pre", "프리마켓"], ["after", "애프터마켓"]].map(([k, n]) =>
             `<label class="check"><input type="checkbox" data-ext="${k}" ${(mc.extended_sessions || []).includes(k) ? "checked" : ""}> ${n}에도 감시·주문</label>`).join("")}</div>
-          <p class="note">국내장이 열린 낮에도 미국 주간거래로 사고팔 수 있어요. 토스 Open API 가 해당 세션 주문을 받는지는 첫 실전 때 꼭 확인하세요. 미국 주식은 달러로만 사고, 달러가 모자라면 자동 환전 대신 환전 우대로 바꾸라고 알려 드려요.</p>`}
-        <label>종목 (쉼표로 구분${m === "US" ? ", 나스닥 외에는 NYSE:KO 처럼" : ""}) <input data-f="universe" value="${esc(mc.universe.join(", "))}"></label>
+          <p class="note">미국 주식은 달러로만 사요. 달러가 모자라면 자동 환전 대신 환전 우대로 바꾸라고 알려 드려요.</p>`}
+        <label>늘 살펴볼 종목 <em class="hint">쉼표로 구분${m === "US" ? ". 나스닥 외에는 NYSE:KO 처럼" : ""}. AI가 매일 고르는 후보에 더해져요</em><input data-f="universe" value="${esc(mc.universe.join(", "))}"></label>
         <div class="form-row params" data-params></div>
       </details>
     </div>`).join("");
@@ -482,66 +495,104 @@ async function loadConfig() {
       const name = el.querySelector("[data-f=strategy]").value;
       const vals = name === c.markets[m].strategy ? c.markets[m].params : {};
       el.querySelector("[data-params]").innerHTML = name === "ai"
-        ? `<p class="note">실행 시각 ${c.ai.run_before_minutes}분 전부터 종목마다 AI 투자 회의를 열고, 최종 등급과 매수 체크리스트로 비중을 정합니다. 보유·확신 부족·규칙 미통과면 그대로 둡니다.</p>`
+        ? `<p class="note">정기 실행 ${c.ai.run_before_minutes}분 전부터 후보마다 AI 투자 회의를 열고, 결론과 '사기 전 확인 규칙'을 통과한 종목만 삽니다.</p>`
         : Object.entries(state.strategies[name] || {}).map(([k, v]) =>
           `<label>${PARAM_NAME[k] || k}<input data-param="${k}" type="number" step="any" value="${vals[k] ?? v}"></label>`).join("");
     };
     el.querySelector("[data-f=strategy]").onchange = draw;
+    el.querySelector("[data-f=enabled]").onchange = (e) => {
+      el.classList.toggle("on", e.target.checked);
+      el.querySelector(".sw-txt").textContent = e.target.checked ? "자동매매 켬" : "자동매매 끔";
+    };
     draw();
   });
   refreshKeyState();
+  setDirty(false);
+  icons();
 }
 
-const KEY_LABELS = {
-  toss: ["Client ID", "Client Secret"], anthropic: ["API 키", null], dart: ["인증키 (40자리)", null], telegram: ["봇 토큰", null],
-  kis_demo: ["앱키", "앱시크릿"], kis_real: ["앱키", "앱시크릿"],
-};
-function refreshKeyState() {
-  const kind = $("#key-kind").value;
-  const [a, b] = KEY_LABELS[kind];
-  $("#key-label1").textContent = a;
-  $("#key-secret-wrap").classList.toggle("hidden", !b);
-  if (b) $("#key-label2").textContent = b;
-  const s = state.status;
-  if (s) {
-    $("#key-state").innerHTML = s.keys[kind] ? "<b class='ok'>저장된 키 있음</b>" : "저장된 키 없음";
-    const names = { toss: "토스증권", anthropic: "Claude", dart: "DART", telegram: "텔레그램", kis_demo: "KIS 모의", kis_real: "KIS 실전" };
-    $("#key-status").innerHTML = Object.entries(names).map(([k, n]) =>
-      `<span class="kchip ${s.keys[k] ? "on" : ""}"><i data-lucide="${s.keys[k] ? "check-circle-2" : "circle-dashed"}"></i>${n}</span>`).join("");
-    window.lucide && lucide.createIcons();
-  }
+// 저장하지 않은 변경 표시 (키·PIN·업데이트 칸은 따로 저장되니 제외)
+let cfgDirty = false;
+function setDirty(v) { cfgDirty = v; $("#cfg-dirty")?.classList.toggle("hidden", !v); }
+$("#tab-cfg").addEventListener("input", (e) => { if (!e.target.closest("#cfg-keys, #pin-panel, #upd-panel")) setDirty(true); });
+$("#tab-cfg").addEventListener("change", (e) => { if (!e.target.closest("#cfg-keys, #pin-panel, #upd-panel")) setDirty(true); });
+document.addEventListener("tab", (e) => { if (e.detail !== "cfg" && cfgDirty) toast("설정에 저장하지 않은 변경이 있어요. 설정 탭 아래 '설정 저장'을 눌러 주세요", "circle-dot"); });
+
+// 운용 모드: 지금 상태를 크게. 실전으로 갈 때만 따로 확인 (설정 저장 버튼과 별개로 바로 적용)
+// '가상매매로' / '토스증권 실전으로' (받침이 있으면 '으로', ㄹ 받침은 '로')
+const ro = (w) => { const c = w.charCodeAt(w.length - 1) - 0xac00; const j = c >= 0 && c < 11172 ? c % 28 : 0; return w + (j && j !== 8 ? "으로" : "로"); };
+function renderModeNow() {
+  const m = state.config?.mode || "paper", live = LIVE.has(m);
+  const el = $("#mode-now");
+  if (!el) return;
+  el.className = "mode-now " + (live ? "live" : "paper");
+  el.innerHTML = live
+    ? `<div class="mn-ico"><i data-lucide="flame"></i></div><div class="mn-txt"><b>지금은 실전매매예요</b><span>${MODE_NAME[m]} · 주문이 <u>실제 돈</u>으로 나가요. 모든 화면 맨 위에 빨간 띠가 보여요</span></div>
+       <button data-mode-go="paper"><i data-lucide="flask-conical"></i> 가상매매로 돌아가기</button>`
+    : `<div class="mn-ico"><i data-lucide="flask-conical"></i></div><div class="mn-txt"><b>지금은 ${m === "kis_demo" ? "모의투자" : "가상매매"}예요</b><span>${MODE_NAME[m]} · 실제 시세로 연습만 해요. <u>실제 돈은 쓰지 않아요</u></span></div>
+       <button class="danger" data-mode-go="toss_real"><i data-lucide="flame"></i> 토스증권 실전으로 바꾸기</button>`;
+  icons();
 }
-$("#key-kind").onchange = refreshKeyState;
+async function applyMode(target) {
+  const live = LIVE.has(target);
+  const cur = await api("/api/config");
+  try { state.config = await api("/api/config", { method: "PUT", body: { ...cur, mode: target, live_confirmed: live } }); }
+  catch (e) { toast(e.message); return; }
+  toast(live ? `${ro(MODE_NAME[target])} 바꿨어요. 자동매매는 꺼진 상태예요` : `${ro(MODE_NAME[target])} 바꿨어요. 이제 실제 돈은 쓰지 않아요`, live ? "flame" : "flask-conical");
+  renderModeNow();
+  refresh();
+}
+function switchMode(target) {
+  if (!LIVE.has(target)) {
+    if (confirm(`${ro(MODE_NAME[target])} 바꿀까요?\n자동매매는 꺼진 상태로 시작해요. 실전 계좌의 주식·주문은 그대로 남아요.`)) applyMode(target);
+    return;
+  }
+  const keyKind = target === "toss_real" ? "toss" : target;
+  const hasKey = !!state.status?.keys?.[keyKind];
+  modal(`<h3><i data-lucide="flame"></i> ${ro(MODE_NAME[target])} 바꾸기</h3>
+    ${hasKey ? "" : `<p class="bad-note">먼저 '2. 연결'에 ${keyKind === "toss" ? "토스증권" : "한국투자증권"} 키를 저장하고 '연결 테스트'를 해 주세요.</p>`}
+    <ul class="live-list"><li>앞으로 주문이 <b>실제 돈</b>으로 나가요. 손실도 실제예요.</li>
+      <li>바꾸면 자동매매는 <b>꺼진 상태</b>가 돼요. 켤 때 한 번 더 확인해요.</li>
+      <li>실전인 동안 모든 화면 맨 위에 <b class="down">빨간 '실전' 띠</b>가 보이고, 주문 버튼에도 '실전'이 붙어요.</li>
+      <li>언제든 '가상매매로 돌아가기' 한 번이면 돌아와요.</li></ul>
+    <label class="check"><input type="checkbox" id="lv-ok"> 손실 책임이 저에게 있음을 이해했습니다</label>
+    <label>확인을 위해 <b>실전</b> 이라고 입력하세요 <input id="lv-word" autocomplete="off"></label>
+    <div class="form-row"><button id="lv-cancel">취소</button><button class="danger" id="lv-go" disabled>실전으로 바꾸기</button></div>`);
+  icons();
+  const ok = () => { $("#lv-go").disabled = !(hasKey && $("#lv-ok").checked && $("#lv-word").value.trim() === "실전"); };
+  $("#lv-ok").onchange = ok; $("#lv-word").oninput = ok;
+  $("#lv-cancel").onclick = () => $("#modal").classList.add("hidden");
+  $("#lv-go").onclick = () => { $("#modal").classList.add("hidden"); applyMode(target); };
+}
+document.addEventListener("click", (e) => { const b = e.target.closest("[data-mode-go]"); if (b) switchMode(b.dataset.modeGo); });
 
 $("#cfg-save").onclick = async () => {
-  const c = structuredClone(state.config);
-  c.mode = ($$("input[name=mode]").find((i) => i.checked) || {}).value || "paper";
-  c.live_confirmed = $("#live-confirmed").checked;
-  if (LIVE.has(c.mode) && c.live_confirmed && !state.config.live_confirmed &&
-      prompt("실전 주문을 허용합니다. 진행하려면 '실전주문' 이라고 입력하세요.") !== "실전주문") return;
+  // 서버의 최신 설정 위에 화면 칸을 덮어쓴다 (운용 모드는 위 '운용 모드'에서만 바뀐다)
+  const c = await api("/api/config");
   c.data_source = $("#data-source").value;
   c.kis.account = $("#kis-account").value.trim();
   c.toss.us_loc = $("#toss-loc").checked;
+  c.toss.server_guard = $("#toss-guard").checked;
   c.sec_contact = $("#sec-contact").value.trim();
-  c.risk.max_weight = Number($("#r-maxw").value); c.risk.max_exposure = Number($("#r-maxe").value);
-  c.risk.daily_loss_limit = Number($("#r-loss").value);
+  c.risk.max_weight = getPct("r-maxw"); c.risk.max_exposure = getPct("r-maxe");
+  c.risk.daily_loss_limit = getPct("r-loss");
   c.risk.max_order_value = { KR: Number($("#r-ordkr").value), US: Number($("#r-ordus").value) };
-  c.watchlist = $("#watchlist").value.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
   c.news = { feeds: $("#news-feeds").value.split("\n").map((l) => l.split("|")).filter((p) => p.length >= 2 && /^https?:\/\//.test(p[1].trim()))
     .map(([n, u, k]) => ({ name: n.trim(), url: u.trim(), cat: (k || "").trim() === "global" ? "global" : "kr" })) };
   c.notify = { ...(c.notify || {}), telegram_chat_id: $("#tg-chat").value.trim(), daily_report: $("#ntf-report").checked };
-  c.max_sector_weight = Number($("#sec-max").value) || 0.4;
+  c.max_sector_weight = getPct("sec-max") || 0.4;
   c.security = { ...(c.security || {}), pin: $("#pin-enabled").checked };
+  const conf = getPct("rl-conf");
   Object.assign(c.ai, {
-    mode: $("#ai-mode").value, quick_model: $("#ai-quick").value.trim(), deep_model: $("#ai-deep").value.trim(),
-    effort: $("#ai-effort").value, profile: $("#ai-profile").value.trim(), require_approval: $("#ai-approve").checked,
-    auto_exit: $("#ai-exit").checked, debate_rounds: Number($("#ai-debate").value),
+    mode: $("#ai-mode").value, quick_model: $("#ai-quick").value, deep_model: $("#ai-deep").value,
+    effort: $("#ai-effort").value, chat_effort: $("#ai-chat-effort").value, profile: $("#ai-profile").value.trim(),
+    require_approval: $("#ai-approve").checked, auto_exit: $("#ai-exit").checked, debate_rounds: Number($("#ai-debate").value),
     run_before_minutes: Number($("#ai-before").value), max_symbols_per_day: Number($("#ai-max").value),
-    min_confidence: Number($("#ai-conf").value), web_research: $("#ai-web").checked,
+    min_confidence: conf, web_research: $("#ai-web").checked,  // 확신도 기준은 하나로 (회의 비중·체크리스트 같이)
     monthly_cost_cap_krw: Number($("#ai-cap").value) || 0, auto_pick: $("#ai-autopick").checked,
     holding: ($$("input[name=holding]").find((i) => i.checked) || {}).value || "auto",
-    rules: { min_confidence: Number($("#rl-conf").value), min_reward_risk: Number($("#rl-rr").value),
-      max_rsi: Number($("#rl-rsi").value), max_vol: Number($("#rl-vol").value), min_fact_ok: Number($("#rl-fact").value),
+    rules: { min_confidence: conf, min_reward_risk: Number($("#rl-rr").value),
+      max_rsi: Number($("#rl-rsi").value), max_vol: getPct("rl-vol"), min_fact_ok: getPct("rl-fact"),
       max_new_buys_per_day: Number($("#rl-buys").value), cooldown_days: Number($("#rl-cool").value),
       require_trend: $("#rl-trend").checked, require_momentum: $("#rl-mom").checked, market_filter: $("#rl-market").value },
   });
@@ -563,6 +614,7 @@ $("#cfg-save").onclick = async () => {
   try {
     state.config = await api("/api/config", { method: "PUT", body: c });
     $("#cfg-msg").textContent = "저장했습니다.";
+    setDirty(false);
     refresh();
   } catch (e) { $("#cfg-msg").textContent = "저장 실패: " + e.message; }
 };

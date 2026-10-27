@@ -74,3 +74,9 @@ def test_js_syntax():
         if r.returncode:
             bad.append((f, r.stderr[-300:]))
     assert not bad, bad
+
+
+def test_html_ids_unique():
+    ids = re.findall(r'\bid="([\w-]+)"', HTML)
+    dup = sorted({i for i in ids if ids.count(i) > 1})
+    assert not dup, dup
