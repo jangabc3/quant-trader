@@ -57,8 +57,28 @@ function askPin(msg) {
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const isUS = (m) => m === "US" || m === "USD";
-const money = (v, m) => v == null || isNaN(v) ? "-" : (isUS(m) ? "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 })
-  : Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 0 }) + "원");
+// 미국 가격 보기: 달러 그대로, 또는 지금 환율로 바꾼 원화 (≈ 표시). 주문창은 늘 달러로 내고 원화는 옆에 함께 보여 준다
+const fxView = { krw: false, rate: 0 };
+try { fxView.krw = localStorage.getItem("qtrader.fxview") === "krw"; } catch {}
+const fmtUsd = (v) => "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
+const fmtWon = (v) => Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 0 }) + "원";
+const money = (v, m) => v == null || isNaN(v) ? "-" : isUS(m)
+  ? (fxView.krw && fxView.rate ? "≈" + fmtWon(v * fxView.rate) : fmtUsd(v)) : fmtWon(v);
+// 큰 달러 금액(거래대금·시가총액): 원화 보기면 ≈조·억 원, 아니면 $억
+const bigUSD = (v) => v == null || isNaN(v) ? "-" : fxView.krw && fxView.rate ? "≈" + bigKRW(v * fxView.rate) + "원" : "$" + bigKRW(v);
+// 달러 금액 옆에 붙이는 원화 (예: "$12.30 (≈17,100원)")
+const usdWithKrw = (v) => v == null || isNaN(v) ? "-" : fmtUsd(v) + (fxView.rate ? ` (≈${fmtWon(v * fxView.rate)})` : "");
+async function loadFx() {
+  try { const r = await api("/api/fx"); if (r.rate) fxView.rate = r.rate; } catch {}
+  drawFxToggle();
+}
+function drawFxToggle() {
+  const b = $("#fx-toggle");
+  if (!b) return;
+  b.innerHTML = fxView.krw ? `<b>원</b><span>$</span>` : `<span>원</span><b>$</b>`;
+  b.title = `미국 주식 가격을 ${fxView.krw ? "원화로 바꿔" : "달러로"} 보여 주는 중${fxView.rate ? ` · 환율 ${fxView.rate.toLocaleString("ko-KR", { maximumFractionDigits: 1 })}원` : ""}. 누르면 바뀌어요`;
+  b.classList.toggle("on", fxView.krw);
+}
 const pct = (v) => v == null || isNaN(v) ? "-" : Math.abs(v) < 0.00005 ? "0.00%" : (v > 0 ? "+" : "") + (v * 100).toFixed(2) + "%";
 const cls = (v) => v > 0.00005 ? "up" : v < -0.00005 ? "down" : "";
 const bigKRW = (v) => {
@@ -245,6 +265,17 @@ async function refresh() {
     }
   } catch (e) { banner("서버 응답 오류: " + e.message); }
 }
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#fx-toggle")) return;
+  fxView.krw = !fxView.krw;
+  try { localStorage.setItem("qtrader.fxview", fxView.krw ? "krw" : "usd"); } catch {}
+  drawFxToggle();
+  toast(fxView.krw ? "미국 주식 가격을 지금 환율로 바꾼 원화로 보여 줘요 (≈ 표시)" : "미국 주식 가격을 달러로 보여 줘요", "repeat");
+  document.dispatchEvent(new CustomEvent("tab", { detail: state.tab }));  // 지금 화면을 다시 그린다
+});
+loadFx();
+setInterval(loadFx, 5 * 60 * 1000);
 
 function renderStatus(s) {
   const mb = $("#mode-badge");
@@ -566,6 +597,37 @@ function switchMode(target) {
 }
 document.addEventListener("click", (e) => { const b = e.target.closest("[data-mode-go]"); if (b) switchMode(b.dataset.modeGo); });
 
+// 키 종류마다 칸 이름·예시·받는 곳이 바뀐다
+const KEY_LABELS = {
+  toss: ["Client ID", "Client Secret", "", "토스증권 WTS → 설정 → Open API 에서 발급. 허용 IP 에 이 PC 공인 IP 를 등록해야 주문돼요."],
+  anthropic: ["API 키", null, "sk-ant-로 시작하는 키", "console.anthropic.com → API Keys → Create Key. 처음 한 번만 보이니 바로 복사하세요."],
+  dart: ["인증키 (40자리)", null, "영문·숫자 40자리", "opendart.fss.or.kr → 인증키 신청/관리 → 인증키 신청 (무료)."],
+  telegram: ["봇 토큰", null, "123456789:AAH... 처럼 생긴 값", "텔레그램 @BotFather 에게 /newbot. 대화방 번호는 '5. 알림·이 PC'에 넣어요."],
+  kis_demo: ["앱키", "앱시크릿", "", "KIS Developers 에서 모의투자 앱키 발급."],
+  kis_real: ["앱키", "앱시크릿", "", "KIS Developers 에서 실전 앱키 발급."],
+};
+function refreshKeyState() {
+  const kind = $("#key-kind").value;
+  const [a, b, ph, how] = KEY_LABELS[kind];
+  $("#key-label1").textContent = a;
+  $("#key-app").placeholder = ph || "";
+  $("#key-app").type = kind === "toss" || kind.startsWith("kis") ? "text" : "password";
+  $("#key-secret-wrap").classList.toggle("hidden", !b);
+  if (b) $("#key-label2").textContent = b;
+  $("#key-how").textContent = how;
+  const s = state.status;
+  if (s) {
+    $("#key-state").innerHTML = s.keys[kind] ? "<b class='ok'>저장된 키 있음</b>" : "저장된 키 없음";
+    const names = { toss: "토스증권", anthropic: "Claude", dart: "DART", telegram: "텔레그램", kis_demo: "KIS 모의", kis_real: "KIS 실전" };
+    $("#key-status").innerHTML = Object.entries(names).map(([k, n]) =>
+      `<button type="button" class="kchip ${s.keys[k] ? "on" : ""} ${k === kind ? "sel" : ""}" data-kind="${k}"><i data-lucide="${s.keys[k] ? "check-circle-2" : "circle-dashed"}"></i>${n}</button>`).join("");
+    window.lucide && lucide.createIcons();
+  }
+}
+$("#key-kind").onchange = () => { $("#key-app").value = ""; $("#key-secret").value = ""; refreshKeyState(); };
+// 위의 키 칩을 누르면 그 종류로
+$("#key-status").addEventListener("click", (e) => { const b = e.target.closest("[data-kind]"); if (b) { $("#key-kind").value = b.dataset.kind; $("#key-kind").onchange(); } });
+
 $("#cfg-save").onclick = async () => {
   // 서버의 최신 설정 위에 화면 칸을 덮어쓴다 (운용 모드는 위 '운용 모드'에서만 바뀐다)
   const c = await api("/api/config");
@@ -675,3 +737,8 @@ $("#key-del").onclick = async () => {
   await refresh();
   setInterval(refresh, 15000);
 })();
+
+// 머리말 높이(창이 좁으면 두 줄)에 맞춰 설정 바로가기 줄이 머리말을 가리지 않게
+const setHdrH = () => document.documentElement.style.setProperty("--hdr-h", ($("header.top")?.offsetHeight || 56) + "px");
+window.addEventListener("resize", setHdrH);
+setTimeout(setHdrH, 300);

@@ -93,6 +93,7 @@ function renderOverview(ov) {
   $("#mkt-demo").classList.toggle("hidden", !ov.demo || (mkt.group === "US" && (ov.us_index || []).length));
   renderIndices();
   const fx = ov.fx || {};
+  if (fx.rate) { fxView.rate = fx.rate; drawFxToggle(); }
   $("#fx-card").innerHTML = `<div class="k">달러 환율</div><div class="v">${fx.rate ? fx.rate.toLocaleString("ko-KR", { maximumFractionDigits: 1 }) : "-"}<small>원</small></div>
     <div class="${fx.change > 0 ? "up" : fx.change < 0 ? "down" : ""} s">${fx.change ? (fx.change > 0 ? "▲ " : "▼ ") + Math.abs(fx.change) : ""}</div>`;
   $("#bond-card").innerHTML = `<div class="k">국고채 금리 <small class="note">만기별</small></div>` + bondCurve(ov.bonds || []);
@@ -165,7 +166,7 @@ async function loadRankings() {
       <td class="clickable" data-open="${esc(x.symbol)}"><div class="namecell">${logo(x.symbol, x.name)}<div><div class="nm">${esc(x.name)}</div><div class="sym">${esc(x.symbol)}</div></div></div></td>
       <td class="r px"><span data-key="p:${esc(x.symbol)}" data-val="${x.price}">${money(x.price, x.currency)}</span></td>
       <td class="r">${rateCell(x.change_rate)}</td>
-      <td class="r">${x.currency === "USD" ? "$" + bigKRW(x.amount) : bigKRW(x.amount) + "원"}</td>
+      <td class="r">${x.amount ? bigKRW(x.amount) + "원" : "-"}</td>
       <td class="r"><button class="ai-btn" data-ai="${esc(x.symbol)}">AI 분석</button></td></tr>`).join("")
       || `<tr><td colspan="7" class="note">순위 데이터가 없습니다.</td></tr>`;
     const key = mkt.kind + mkt.market + mkt.duration + (mkt.safe ? "s" : "");

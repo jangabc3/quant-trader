@@ -226,7 +226,7 @@ def demo_rankings(kind: str, market: str, count: int) -> dict:
         cr = float(rng.normal(0, 0.04))
         vol = float(rng.integers(200_000, 30_000_000))
         items.append({"symbol": sym, "name": nm, "price": round(px * (1 + cr), 0 if market == "KR" else 2),
-                      "change_rate": cr, "volume": vol, "amount": vol * px,
+                      "change_rate": cr, "volume": vol, "amount": vol * px * (1 if market == "KR" else 1390),  # 토스처럼 미국도 원화 환산
                       "currency": "KRW" if market == "KR" else "USD"})
     key = {"amount": "amount", "volume": "volume", "toss_amount": "amount", "toss_volume": "volume"}.get(kind)
     items.sort(key=(lambda x: -x[key]) if key else (lambda x: -x["change_rate"] if kind == "gainers" else x["change_rate"]))
