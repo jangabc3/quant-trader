@@ -1,6 +1,6 @@
 """자동 업데이트 (GitHub Releases).
 
-배포하는 쪽 (개발자):
+배포하는 쪽 (개발자): packaging\\publish.cmd "바뀐 점" 한 번이면 아래 1~3 을 모두 한다. 손으로 할 때는
   1. qtrader/__init__.py 의 __version__ 을 올린다 (예: 0.2.0)
   2. packaging\\release.cmd 실행 -> dist\\QTrader-0.2.0-win.zip 과 .sha256 이 생긴다
   3. GitHub 저장소 Releases 에 태그 v0.2.0 으로 두 파일을 올리고, 본문에 바뀐 점을 적는다

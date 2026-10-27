@@ -21,7 +21,7 @@ QTRADER_HOME=.devhome .venv/Scripts/python -m qtrader serve --no-browser   # htt
 - `qtrader/toss.py` 토스 API (명세 v1.2.24, 호출 그룹별 속도 제한), `guard.py` OCO 서버 보호, `corp.py` 분할·병합 처리, `conditional.py` 조건주문
 - `qtrader/screener.py` 후보 고르기(멀티팩터·DART 공시·재무·종목 기본 정보 거르기), `principles.py` 매수 체크리스트
 - `qtrader/web/app.py` FastAPI, `qtrader/web/static/` 화면(프레임워크 없는 JS, 스크립트 순서는 index.html)
-- `packaging/` PyInstaller 빌드(`build_exe.cmd`), 배포 압축(`release.cmd`), 자동 업데이트는 `qtrader/updater.py`
+- `packaging/` PyInstaller 빌드(`build_exe.cmd`), 배포 압축(`release.cmd`), **새 버전 배포 한 번에 `publish.cmd "바뀐 점"`**(버전 올리기→빌드→공개 업데이트 저장소 Releases→버전 커밋, gh 필요), 자동 업데이트는 `qtrader/updater.py`
 
 ## 지켜야 할 것
 - **화면 글은 쉬운 한국어**(초보자 기준). 커밋 메시지도 한국어로, 무엇을 왜 바꿨는지.
