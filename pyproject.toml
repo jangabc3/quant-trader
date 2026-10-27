@@ -1,7 +1,7 @@
 [project]
 name = "qtrader"
 version = "0.1.0"
-description = "국내·미국 주식 퀀트 자동매매 (한국투자증권 Open API)"
+description = "국내·미국 주식 AI 퀀트 자동매매 (토스증권·한국투자증권 Open API)"
 requires-python = ">=3.11"
 dependencies = [
   "pandas>=2.1",
