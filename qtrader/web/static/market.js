@@ -95,8 +95,7 @@ function renderOverview(ov) {
   const fx = ov.fx || {};
   $("#fx-card").innerHTML = `<div class="k">달러 환율</div><div class="v">${fx.rate ? fx.rate.toLocaleString("ko-KR", { maximumFractionDigits: 1 }) : "-"}<small>원</small></div>
     <div class="${fx.change > 0 ? "up" : fx.change < 0 ? "down" : ""} s">${fx.change ? (fx.change > 0 ? "▲ " : "▼ ") + Math.abs(fx.change) : ""}</div>`;
-  $("#bond-card").innerHTML = `<div class="k">국고채 금리</div>` + (ov.bonds || []).map((b) =>
-    `<div class="row"><span>${esc(b.name)}</span><b>${b.value.toFixed(3)}%</b></div>`).join("");
+  $("#bond-card").innerHTML = `<div class="k">국고채 금리 <small class="note">만기별</small></div>` + bondCurve(ov.bonds || []);
   $("#us-card").innerHTML = `<div class="k">${mkt.group === "KR" ? "미국 지수 ETF" : "국내 지수"}</div>` + (mkt.group === "KR"
     ? (ov.us || []).map((u) => `<div class="row clickable" data-open="${esc(u.symbol)}"><span>${esc(u.name)}</span><b class="${cls(u.change_rate)}">${pct(u.change_rate)}</b></div>`).join("")
     : (ov.indices || []).map((i) => `<div class="row"><span>${esc(i.name)}</span><b class="${cls(i.change_rate)}">${pct(i.change_rate)}</b></div>`).join(""));
@@ -157,7 +156,7 @@ async function loadWatchTable() {
 async function loadRankings() {
   if (mkt.kind === "watch") return loadWatchTable();
   try {
-    const r = await api(`/api/market/rankings?kind=${mkt.kind}&market=${mkt.market}&duration=${mkt.duration}&count=30`);
+    const r = await api(`/api/market/rankings?kind=${mkt.kind}&market=${mkt.market}&duration=${mkt.duration}&count=30&safe=${mkt.safe ? 1 : 0}`);
     $("#rank-time").textContent = (r.demo ? "체험용 · " : "") + (r.rankedAt ? r.rankedAt.slice(11, 16) + " 기준" : "");
     const watch = new Set((state.config?.watchlist) || []);
     $("#rank-body").innerHTML = r.items.map((x) => `<tr>
@@ -169,7 +168,7 @@ async function loadRankings() {
       <td class="r">${x.currency === "USD" ? "$" + bigKRW(x.amount) : bigKRW(x.amount) + "원"}</td>
       <td class="r"><button class="ai-btn" data-ai="${esc(x.symbol)}">AI 분석</button></td></tr>`).join("")
       || `<tr><td colspan="7" class="note">순위 데이터가 없습니다.</td></tr>`;
-    const key = mkt.kind + mkt.market + mkt.duration;
+    const key = mkt.kind + mkt.market + mkt.duration + (mkt.safe ? "s" : "");
     if (key !== mkt.lastKey) { mkt.lastKey = key; animateIn("#rank-body tr", { step: 18 }); }
     flashChanges($("#rank-body"));
   } catch (e) { $("#rank-body").innerHTML = `<tr><td colspan="7" class="note">${esc(e.message)}</td></tr>`; }
@@ -190,6 +189,7 @@ function seg(id, key) {
 seg("rank-market", "market");
 seg("rank-kind", "kind");
 $("#rank-duration").onchange = () => { mkt.duration = $("#rank-duration").value; loadRankings(); };
+$("#rank-safe").onchange = () => { mkt.safe = $("#rank-safe").checked; loadRankings(); };
 
 document.addEventListener("click", async (e) => {
   const ai = e.target.closest("[data-ai]");
@@ -260,3 +260,19 @@ document.addEventListener("click", async (e) => {
 document.addEventListener("click", (e) => { if (e.target.closest("#modal [data-open]")) $("#modal").classList.add("hidden"); }, true);
 document.addEventListener("tab", (e) => { if (e.detail === "mkt") loadSectors(); });
 loadSectors();
+
+// 국고채 금리 곡선: 2·3·5·10·20·30년을 선으로 (짧은 만기가 더 높으면 '역전' — 경기 둔화 신호로 자주 봄)
+function bondCurve(bonds) {
+  if (!bonds.length) return "";
+  const yrs = bonds.map((b) => Number((b.symbol.match(/(\d+)Y/) || [])[1] || 0));
+  const vs = bonds.map((b) => b.value), lo = Math.min(...vs), hi = Math.max(...vs), W = 200, H = 54;
+  const x = (k) => 8 + k / Math.max(bonds.length - 1, 1) * (W - 16), y = (v) => H - 10 - (hi - lo ? (v - lo) / (hi - lo) : 0.5) * (H - 22);
+  const pts = vs.map((v, k) => `${x(k).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const inv = vs.length > 2 && vs[0] > vs[vs.indexOf(Math.max(...vs.slice(2)))] && vs[0] > vs[vs.length - 1];
+  return `<svg class="bond-curve" viewBox="0 0 ${W} ${H}"><polyline points="${pts}" fill="none" stroke="var(--blue)" stroke-width="2"/>
+    ${vs.map((v, k) => `<circle cx="${x(k)}" cy="${y(v)}" r="2.6" fill="var(--blue)"><title>${yrs[k]}년 ${v.toFixed(3)}%</title></circle>
+      <text x="${x(k)}" y="${H - 1}" text-anchor="middle">${yrs[k]}년</text>`).join("")}</svg>
+    <div class="row"><span>${esc(bonds[0].name)}</span><b>${bonds[0].value.toFixed(3)}%</b></div>
+    <div class="row"><span>${esc(bonds[bonds.length - 1].name)}</span><b>${bonds[bonds.length - 1].value.toFixed(3)}%</b></div>
+    ${inv ? `<div class="note" style="color:var(--amber)">단기 금리가 장기보다 높아요 (금리 역전)</div>` : ""}`;
+}

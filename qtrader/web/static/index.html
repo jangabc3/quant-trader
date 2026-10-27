@@ -77,8 +77,9 @@
         </div>
         <select id="rank-duration">
           <option value="realtime">실시간</option><option value="1d">1일</option><option value="1w">1주</option>
-          <option value="1mo">1개월</option><option value="3mo">3개월</option>
+          <option value="1mo">1개월</option><option value="3mo">3개월</option><option value="6mo">6개월</option><option value="1y">1년</option>
         </select>
+        <label class="chk-inline" title="투자주의·경고·위험 종목을 순위에서 뺍니다"><input type="checkbox" id="rank-safe"> 투자유의 빼기</label>
         <span id="rank-time" class="note"></span>
       </div>
       <table class="rank"><thead><tr><th>순위</th><th></th><th>종목</th><th class="r">현재가</th><th class="r">등락률</th><th class="r">거래대금</th><th></th></tr></thead>
@@ -88,6 +89,7 @@
         <div class="rank-bar">
           <div class="seg" id="ind-market"><button data-v="KR" class="on">국내</button><button data-v="US">해외</button></div>
           <div class="seg" id="ind-kind"><button data-v="TOP_GAINERS" class="on">등락률</button><button data-v="MARKET_TRADING_AMOUNT">거래대금</button></div>
+          <button id="ind-tree-btn" class="ghost-btn"><i data-lucide="network"></i> 산업 분류 전체</button>
           <div class="seg" id="ind-dur"><button data-v="1d" class="on">1일</button><button data-v="1w">1주일</button><button data-v="1mo">1개월</button><button data-v="3mo">3개월</button><button data-v="1y">1년</button></div>
         </div>
         <div class="ind-layout"><table class="rank ind-table"><thead><tr><th>순위</th><th>산업</th><th class="r">등락률</th><th class="r">거래대금</th><th class="r">시가총액</th><th>대표 종목</th></tr></thead><tbody id="ind-body"></tbody></table>
@@ -141,7 +143,7 @@
       </div>
       <div class="panel" id="st-extra-panel">
         <div class="rank-bar"><h3 style="margin:0"><i data-lucide="activity"></i> 수급 상세 <small>국내 종목 · 최근 20일</small></h3>
-          <div class="seg" id="st-extra-tab"><button data-v="program" class="on">프로그램매매</button><button data-v="short">공매도</button><button data-v="credit">신용거래</button></div></div>
+          <div class="seg" id="st-extra-tab"><button data-v="program" class="on">프로그램매매</button><button data-v="short">공매도</button><button data-v="credit">신용거래</button><button data-v="lending">대차거래</button></div></div>
         <div id="st-extra"></div>
       </div>
       <div class="st-grid2">

@@ -19,7 +19,9 @@ async function loadMySum() {
     const krw = (m, v) => (m === "US" ? v * fx : v) || 0;
     const total = krw("KR", k?.equity) + krw("US", u?.equity);
     const prevOf = (m, x) => x && x.daily_return != null ? x.equity / (1 + x.daily_return) : x?.equity;
-    const today = (k ? krw("KR", k.equity - prevOf("KR", k)) : 0) + (u ? krw("US", u.equity - prevOf("US", u)) : 0);
+    // 토스가 계산해 준 오늘 손익이 있으면 그 값을, 없으면 어제 자산과 비교
+    const dayOf = (m, x) => !x ? 0 : x.day_pnl != null ? krw(m, x.day_pnl) : krw(m, x.equity - prevOf(m, x));
+    const today = dayOf("KR", k) + dayOf("US", u);
     const todayRate = total - today ? today / (total - today) : 0;
     const unreal = krw("KR", k?.unrealized) + krw("US", u?.unrealized);
     const cost = krw("KR", k?.cost) + krw("US", u?.cost);
@@ -81,7 +83,9 @@ async function loadIndustry(id) {
         <div class="ib-pair"><div class="ib"><i style="width:${p.sector == null ? 0 : Math.abs(p.sector) / mx * 100}%;background:#ff8a3d"></i><b class="${cls(p.sector)}">${pct(p.sector)}</b></div>
         <div class="ib"><i style="width:${p.index == null ? 0 : Math.abs(p.index) / mx * 100}%;background:#20b2aa"></i><b class="${cls(p.index)}">${pct(p.index)}</b></div></div></div>`).join("")}</div>
       <h4 style="margin-top:14px">주식</h4>
-      ${d.stocks.map((s) => `<div class="ind-stock" data-open="${esc(s.symbol)}">${logo(s.symbol, s.name, 26)}<b>${esc(s.name)}</b><span>${s.price ? money(s.price, tr.market) : ""}</span></div>`).join("")}`;
+      ${d.stocks.map((s) => `<div class="ind-stock" data-open="${esc(s.symbol)}">${logo(s.symbol, s.name, 26)}<b>${esc(s.name)}</b><span>${s.price ? money(s.price, tr.market) : ""}</span></div>`).join("")}
+      ${(d.etfs || []).length ? `<h4 style="margin-top:14px">이 산업에 투자하는 ETF <small class="note">한 번에 여러 종목</small></h4>
+        ${d.etfs.map((s) => `<div class="ind-stock" data-open="${esc(s.symbol)}">${logo(s.symbol, s.name, 26)}<b>${esc(s.name)}</b><span>${s.price ? money(s.price, tr.market) : ""}</span></div>`).join("")}` : ""}`;
     drawIndustryChart(id, d.name);
     if (!REDUCED && window.anime) anime({ targets: "#ind-detail .ib i", scaleX: [0, 1], duration: 600, delay: anime.stagger(40), easing: "easeOutCubic" });
   } catch (e) { el.innerHTML = `<p class="note">${esc(e.message)}</p>`; }
@@ -151,3 +155,25 @@ async function drawIndustryChart(id, name) {
   $("#ind-chart-note").innerHTML = `1년 <b style="color:#ff8a3d">${esc(name || "산업")} ${pct(s1)}</b>${i1 != null ? ` · <b style="color:#20b2aa">코스피 ${pct(i1)}</b>` : ""}`
     + (c.basket?.length ? ` · ${esc(c.basket.slice(0, 3).join(", "))} 등 시총 상위 ${c.basket.length}종목으로 계산` : " · 체험용");
 }
+
+// 산업 분류 전체 (대·중·소분류 나무)
+async function openSectorTree() {
+  let el = $("#sector-tree");
+  if (!el) { el = document.createElement("div"); el.id = "sector-tree"; el.className = "modal-back"; document.body.appendChild(el); }
+  el.innerHTML = `<div class="st-box"><header><b>산업 분류 전체</b><input id="st-q" placeholder="산업 찾기 (예: 반도체)"><button data-x>닫기</button></header><div class="st-body"><div class="skeleton" style="height:240px"></div></div></div>`;
+  el.classList.remove("hidden");
+  el.onclick = (e) => {
+    if (e.target === el || e.target.closest("[data-x]")) { el.classList.add("hidden"); return; }
+    const n = e.target.closest("[data-sid]");
+    if (n) { el.classList.add("hidden"); loadIndustry(n.dataset.sid); }
+  };
+  const r = await api("/api/market/sector-tree").catch((e) => ({ tree: [], err: e.message }));
+  const node = (s) => `<li><span data-sid="${esc(s.id)}" class="st-n d${s.depth}">${esc(s.name)}</span>${s.children.length ? `<ul>${s.children.map(node).join("")}</ul>` : ""}</li>`;
+  const body = el.querySelector(".st-body");
+  body.innerHTML = r.tree.length ? `${r.demo ? `<p class="note">체험용 예시예요. 토스 키를 넣으면 전체 분류가 나와요.</p>` : ""}<ul class="st-tree">${r.tree.map(node).join("")}</ul>` : `<p class="note">${esc(r.err || "분류를 받지 못했어요")}</p>`;
+  $("#st-q").oninput = () => {
+    const q = $("#st-q").value.trim();
+    body.querySelectorAll("li").forEach((li) => { li.style.display = !q || li.textContent.includes(q) ? "" : "none"; });
+  };
+}
+$("#ind-tree-btn")?.addEventListener("click", openSectorTree);

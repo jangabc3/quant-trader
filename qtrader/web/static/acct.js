@@ -37,11 +37,12 @@ window.renderHoldings = (pos, m) => {
       return `<div class="hl-row ${open ? "open" : ""}" data-row="${esc(p.symbol)}">
         <div class="hl-main">${logo(p.symbol, p.name || p.symbol, 38)}
           <div class="hl-name"><b>${esc(p.name || p.symbol)}</b><span>${p.qty.toLocaleString()}주 · 비중 ${(w * 100).toFixed(0)}%</span></div>
-          <div class="hl-guard">${pl ? `<i data-lucide="shield-check"></i>` : `<i data-lucide="shield-off" class="off"></i>`}</div>
-          <div class="hl-val"><b>${money(p.value, p.market)}</b><em class="hl-px">현재가 <span data-key="p:${esc(p.symbol)}" data-val="${p.last_price}">${money(p.last_price, p.market)}</span></em><span class="${cls(p.pnl)}">${gain > 0 ? "+" : ""}${money(gain, p.market)} (${pct(p.pnl)})</span></div></div>
+          <div class="hl-guard" title="${p.server_guard ? "토스 서버가 손절·익절을 지켜요 (PC가 꺼져도)" : pl ? "QTrader 가 손절·익절을 지켜요" : "손절·익절 없음"}">${p.server_guard ? `<i data-lucide="server" class="srv"></i>` : pl ? `<i data-lucide="shield-check"></i>` : `<i data-lucide="shield-off" class="off"></i>`}</div>
+          <div class="hl-val"><b>${money(p.value, p.market)}</b><em class="hl-px">현재가 <span data-key="p:${esc(p.symbol)}" data-val="${p.last_price}">${money(p.last_price, p.market)}</span></em><span class="${cls(p.pnl)}">${gain > 0 ? "+" : ""}${money(gain, p.market)} (${pct(p.pnl)})</span>${p.day_pnl != null ? `<em class="hl-day">오늘 <span class="${cls(p.day_pnl)}">${p.day_pnl > 0 ? "+" : ""}${money(p.day_pnl, p.market)}</span></em>` : ""}</div></div>
         <div class="hl-more">
           <div class="hl-facts"><div><span>평균 단가</span><b>${money(p.avg_price, p.market)}</b></div><div><span>현재가</span><b>${money(p.last_price, p.market)}</b></div>
             <div><span>투자 원금</span><b>${money(p.qty * p.avg_price, p.market)}</b></div></div>
+          ${p.server_guard ? `<div class="srv-note"><i data-lucide="server"></i> 토스 서버에 손절·익절(OCO)이 걸려 있어요. 이 PC가 꺼져 있어도 국내는 정규장, 미국은 모든 시간에 토스가 팔아 줘요.</div>` : ""}
           ${pl ? guardGauge({ ...pl, price: p.last_price, avg: p.avg_price }, p.market) : `<div class="hold-noplan"><i data-lucide="shield-off"></i><span>손절·익절이 없어 자동으로 팔지 않아요. 정해 두면 장중 2분마다 지켜 봅니다.</span></div>`}
           <div class="hold-acts"><button data-plan="${esc(p.symbol)}"><i data-lucide="shield-check"></i> ${pl ? "손절·익절 바꾸기" : "손절·익절 정하기"}</button>
             ${pl ? `<button data-unplan="${esc(p.symbol)}">감시 끄기</button>` : ""}<button data-open="${esc(p.symbol)}"><i data-lucide="candlestick-chart"></i> 차트·주문</button></div>
@@ -154,12 +155,25 @@ async function loadConds() {
   const ST = { watching: ["지켜보는 중", ""], done: ["실행됨", "ok"], canceled: ["취소됨", "off"], expired: ["만료", "off"], failed: ["실패", "bad"] };
   el.innerHTML = rows.length ? `<div class="cd-list">${rows.map((r) => {
     const [st, sc] = ST[r.status] || [r.status, ""];
-    return `<div class="cd-row ${sc}">${logo(r.symbol, r.name, 28)}<div><b>${esc(r.name)}</b><span>${money(r.trigger, r.market)}에 닿으면 ${r.qty}주 ${r.side === "buy" ? "매수" : "매도"}${r.note ? " · " + esc(r.note) : ""}</span></div>
-      <span class="cd-st">${st}</span><span class="note">~${esc(r.expire.slice(5))}</span>${r.status === "watching" ? `<button data-cond-x="${esc(r.id)}">취소</button>` : "<span></span>"}</div>`;
+    const mine = !r.external && !r.guard;
+    const tag = r.guard ? `<em class="cd-tag srv">서버 보호</em>` : r.external ? `<em class="cd-tag">토스 앱</em>` : "";
+    return `<div class="cd-row ${sc}">${logo(r.symbol, r.name, 28)}<div><b>${esc(r.name)} ${tag}</b><span>${money(r.trigger, r.market)}에 닿으면 ${r.qty}주 ${r.side === "buy" ? "매수" : "매도"}${r.then_stop ? ` → 사지면 ${money(r.then_stop, r.market)} 손절` : ""}${r.note ? " · " + esc(r.note) : ""}</span></div>
+      <span class="cd-st">${st}</span><span class="note">~${esc((r.expire || "").slice(5))}</span>${r.status === "watching" && mine ? `<span class="cd-acts"><button data-cond-e="${esc(r.id)}" data-trig="${r.trigger}" data-qty="${r.qty}">수정</button><button data-cond-x="${esc(r.id)}">취소</button></span>` : r.external ? `<span class="note">토스 앱에서 관리</span>` : "<span></span>"}</div>`;
   }).join("")}</div>` : `<div class="empty"><i data-lucide="crosshair"></i><p>걸어 둔 조건 주문이 없어요</p><span class="note">종목 화면 주문창에서 '조건' 또는 '나눠서'를 고르면 여기 모여요.</span></div>`;
   icons();
 }
 $("#cond-list")?.addEventListener("click", async (e) => {
+  const ed = e.target.closest("[data-cond-e]");
+  if (ed) {
+    const t = prompt("새 감시 가격", ed.dataset.trig);
+    if (!t) return;
+    const q = prompt("수량 (그대로면 확인)", ed.dataset.qty);
+    if (!q) return;
+    await api(`/api/conditional/${ed.dataset.condE}/modify`, { method: "POST", body: { trigger: Number(t.replace(/,/g, "")), qty: Number(q) } })
+      .then(() => toast("조건 주문을 바꿨어요", "crosshair")).catch((err) => toast(err.message));
+    loadConds();
+    return;
+  }
   const b = e.target.closest("[data-cond-x]");
   if (b && confirm("이 조건 주문을 취소할까요?")) { await api("/api/conditional/" + b.dataset.condX, { method: "DELETE" }).catch((err) => toast(err.message)); loadConds(); }
 });

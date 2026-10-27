@@ -30,7 +30,7 @@ GROUP_INTERVAL = {
     "MARKET_INFO": 0.25, "STOCK": 0.25, "STOCK_TRADING_TREND": 0.25,
 }
 
-INDICATORS = ["KOSPI", "KOSDAQ", "KR_BOND_3Y", "KR_BOND_10Y"]
+INDICATORS = ["KOSPI", "KOSDAQ", "KR_BOND_2Y", "KR_BOND_3Y", "KR_BOND_5Y", "KR_BOND_10Y", "KR_BOND_20Y", "KR_BOND_30Y"]
 
 
 class TossError(RuntimeError):
@@ -152,7 +152,8 @@ class Toss:
             if q <= 0:
                 continue
             pos[it["symbol"]] = Position(market, it["symbol"], int(q), num(it.get("averagePurchasePrice")),
-                                         num(it.get("lastPrice")))
+                                         num(it.get("lastPrice")), num((it.get("dailyProfitLoss") or {}).get("amount")))
+        self.last_overview = h  # 계좌 전체 일간 손익·손익 (토스 계산)
         cash = self.buying_power("KRW" if market == Market.KR else "USD")
         return Account(market, cash, pos)
 
@@ -260,10 +261,10 @@ class Toss:
         r = self._call("GET", "/api/v1/sellable-quantity", "ORDER_INFO", {"symbol": toss_symbol(symbol)}, account=True)
         return num((r or {}).get("sellableQuantity"))
 
-    def rankings(self, kind: str, market: str, duration: str = "1d", count: int = 30) -> dict:
+    def rankings(self, kind: str, market: str, duration: str = "1d", count: int = 30, exclude_caution: bool = False) -> dict:
         return self._call("GET", "/api/v1/rankings", "RANKING", {
             "type": kind, "marketCountry": market, "duration": duration, "count": count,
-            "excludeInvestmentCaution": "false"}) or {}
+            "excludeInvestmentCaution": "true" if exclude_caution else "false"}) or {}
 
     def indicator_prices(self, symbols: list[str] = INDICATORS) -> list[dict]:
         return self._call("GET", "/api/v1/market-indicators/prices", "MARKET_INDICATOR",
@@ -325,6 +326,15 @@ class Toss:
 
     def order_detail(self, order_id: str) -> dict:
         return self._call("GET", f"/api/v1/orders/{order_id}", "ORDER_HISTORY", account=True) or {}
+
+    def securities_lending(self, symbol: str, count: int = 20) -> dict:
+        return self._call("GET", f"/api/v1/stocks/{toss_symbol(symbol)}/securities-lending", "STOCK_TRADING_TREND", {"count": count}) or {}
+
+    def sectors(self) -> list[dict]:
+        return (self._call("GET", "/api/v1/sectors", "SECTOR") or {}).get("sectors", [])
+
+    def sector_etfs(self, sector_id: str, market: str) -> list[dict]:
+        return (self._call("GET", f"/api/v1/sectors/{sector_id}/etfs", "SECTOR", {"marketCountry": market}) or {}).get("etfs", [])
 
     def modify(self, order_id: str, price: float | None, qty: int | None, market: Market) -> dict:
         """주문 정정. 국내는 수량 필수, 미국은 가격만 바꿀 수 있다."""

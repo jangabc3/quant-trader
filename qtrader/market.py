@@ -20,7 +20,8 @@ RANK_TYPES = {
     "toss_amount": "TOSS_SECURITIES_TRADING_AMOUNT", "toss_volume": "TOSS_SECURITIES_TRADING_VOLUME",
 }
 US_PROXIES = ["SPY", "QQQ", "DIA"]
-NAMES = {"KOSPI": "코스피", "KOSDAQ": "코스닥", "KR_BOND_3Y": "국고채 3년", "KR_BOND_10Y": "국고채 10년",
+NAMES = {"KOSPI": "코스피", "KOSDAQ": "코스닥", "KR_BOND_2Y": "국고채 2년", "KR_BOND_3Y": "국고채 3년", "KR_BOND_5Y": "국고채 5년",
+         "KR_BOND_10Y": "국고채 10년", "KR_BOND_20Y": "국고채 20년", "KR_BOND_30Y": "국고채 30년",
          "SPY": "S&P500 (SPY)", "QQQ": "나스닥100 (QQQ)", "DIA": "다우 (DIA)"}
 
 _cache: dict[str, tuple[float, object]] = {}
@@ -103,7 +104,7 @@ def overview(t: Toss | None) -> dict:
             spark = {s: pool.submit(_intraday, t, s) for s in ("KOSPI", "KOSDAQ", *US_PROXIES)}
             flows = {s: pool.submit(_flows, t, s) for s in ("KOSPI", "KOSDAQ")}
             fx = pool.submit(t.exchange_rate)
-            bonds = pool.submit(t.indicator_prices, [s for s in INDICATORS if s.startswith("KR_BOND")])
+            bonds = pool.submit(t.indicator_prices, [s for s in INDICATORS if s.startswith("KR_BOND")])  # 2·3·5·10·20·30년
             sess = pool.submit(session_label, t)
 
             def safe(f, default=None):
@@ -133,7 +134,7 @@ def overview(t: Toss | None) -> dict:
 
 
 def rankings(t: Toss | None, kind: str = "amount", market: str = "KR", duration: str = "realtime",
-             count: int = 30) -> dict:
+             count: int = 30, exclude_caution: bool = False) -> dict:
     if kind not in RANK_TYPES:
         raise ValueError(f"순위 종류: {', '.join(RANK_TYPES)}")
     if kind in ("gainers", "losers") and duration == "realtime":
@@ -142,7 +143,7 @@ def rankings(t: Toss | None, kind: str = "amount", market: str = "KR", duration:
         return demo_rankings(kind, market, count)
 
     def build():
-        r = t.rankings(RANK_TYPES[kind], market, duration, count)
+        r = t.rankings(RANK_TYPES[kind], market, duration, count, exclude_caution)
         items = r.get("rankings", [])
         nm = names(t, [x["symbol"] for x in items])
         return {"demo": False, "rankedAt": r.get("rankedAt"), "kind": kind, "market": market, "duration": duration,
@@ -151,7 +152,7 @@ def rankings(t: Toss | None, kind: str = "amount", market: str = "KR", duration:
                            "volume": num(x.get("tradingVolume")), "amount": num(x.get("tradingAmount")),
                            "currency": x.get("currency")} for x in items]}
 
-    return cached(f"rank:{kind}:{market}:{duration}:{count}", 15, build)
+    return cached(f"rank:{kind}:{market}:{duration}:{count}:{int(exclude_caution)}", 15, build)
 
 
 def watch_quotes(t: Toss | None, symbols: list[str]) -> list[dict]:
@@ -204,8 +205,8 @@ def demo_overview() -> dict:
             "indices": [idx("KOSPI", 3200.0), idx("KOSDAQ", 880.0)],
             "us": [us("SPY", 640.0), us("QQQ", 560.0), us("DIA", 450.0)],
             "fx": {"rate": round(1390 + float(rng.normal(0, 4)), 1), "change": round(float(rng.normal(0, 3)), 1), "dir": "UP"},
-            "bonds": [{"symbol": "KR_BOND_3Y", "name": NAMES["KR_BOND_3Y"], "value": 2.61},
-                      {"symbol": "KR_BOND_10Y", "name": NAMES["KR_BOND_10Y"], "value": 2.94}]}
+            "bonds": [{"symbol": f"KR_BOND_{k}", "name": NAMES[f"KR_BOND_{k}"], "value": v}
+                      for k, v in (("2Y", 2.55), ("3Y", 2.61), ("5Y", 2.72), ("10Y", 2.94), ("20Y", 2.98), ("30Y", 2.91))]}
 
 
 DEMO_KR = [("005930", "삼성전자", 72000), ("000660", "SK하이닉스", 210000), ("373220", "LG에너지솔루션", 380000),
@@ -354,7 +355,8 @@ def industry_detail(t: Toss | None, sector_id: str, market: str = "KR") -> dict:
         return {"demo": True, "name": dict((a, b) for a, b, *_ in DEMO_INDUSTRY).get(sector_id, sector_id),
                 "perf": [{"duration": d, "sector": float(rng.normal(0.02, 0.06)) * (i + 1), "index": float(rng.normal(0.01, 0.03)) * (i + 1)}
                          for i, d in enumerate(durs)],
-                "stocks": [{"symbol": s, "name": n, "price": p, "tradingAmount": None} for s, n, p in DEMO_KR[:6]]}
+                "stocks": [{"symbol": s, "name": n, "price": p, "tradingAmount": None} for s, n, p in DEMO_KR[:6]],
+                "etfs": [{"symbol": "091160", "name": "KODEX 반도체 (예시)", "price": 52000}, {"symbol": "305720", "name": "KODEX 2차전지산업 (예시)", "price": 18000}]}
 
     def build():
         d = t.sector_detail(sector_id, market)
@@ -375,7 +377,14 @@ def industry_detail(t: Toss | None, sector_id: str, market: str = "KR") -> dict:
             px = t.prices([s["symbol"] for s in st])
         except Exception:
             pass
-        return {"demo": False, "name": d.get("name"), "summary": d.get("summary"),
+        etfs = []
+        try:
+            es = t.sector_etfs(sector_id, market)[:5]
+            epx = t.prices([e["symbol"] for e in es]) if es else {}
+            etfs = [{"symbol": e["symbol"], "name": e.get("name"), "price": epx.get(e["symbol"])} for e in es]
+        except Exception:
+            pass
+        return {"demo": False, "name": d.get("name"), "summary": d.get("summary"), "etfs": etfs,
                 "perf": [{"duration": k, "sector": rates.get(k), "index": idx.get(k)} for k in durs],
                 "stocks": [{"symbol": s["symbol"], "name": s.get("name"), "price": px.get(s["symbol"]), "tradingAmount": num(s.get("tradingAmount"))}
                            for s in st]}
@@ -447,3 +456,28 @@ def index_daily(t: Toss | None, market: str, days: int = 260) -> list[dict]:
         return cached("idx_daily_us", 600, build_us)
     except Exception:
         return []
+
+
+def sector_tree(t: Toss | None) -> list[dict]:
+    """토스 산업 분류 (대·중·소분류) 나무."""
+    if t is None:
+        flat = [{"sectorId": "s0", "name": "IT", "depth": 0, "parentSectorId": None}, {"sectorId": "s1", "name": "소프트웨어", "depth": 1, "parentSectorId": "s0"},
+                {"sectorId": "s4", "name": "전자부품", "depth": 1, "parentSectorId": "s0"}, {"sectorId": "s9", "name": "반도체장비", "depth": 2, "parentSectorId": "s4"},
+                {"sectorId": "x0", "name": "소비재", "depth": 0, "parentSectorId": None}, {"sectorId": "s3", "name": "온라인쇼핑", "depth": 1, "parentSectorId": "x0"}]
+    else:
+        flat = cached("sector_tree", 86400, t.sectors)
+    by = {}
+    for s in flat:
+        by.setdefault(s.get("parentSectorId"), []).append(s)
+    def kids(pid):
+        return [{"id": s["sectorId"], "name": s["name"], "depth": s.get("depth", 0), "children": kids(s["sectorId"])} for s in by.get(pid, [])]
+    return kids(None)
+
+
+def lending(t: Toss | None, symbol: str, count: int = 20) -> list[dict]:
+    """대차거래: 기관끼리 주식을 빌리고 갚은 흐름 (잔고가 늘면 공매도 준비가 늘었다는 신호일 수 있음)."""
+    if t is None or not symbol[:1].isdigit():
+        return []
+    recs = t.securities_lending(symbol, count).get("records", [])
+    return [{"date": r.get("date"), "exec": num(r.get("executionQuantity")), "repay": num(r.get("repaymentQuantity")),
+             "balance": num(r.get("balanceQuantity")), "amount": num(r.get("balanceAmount"))} for r in recs]

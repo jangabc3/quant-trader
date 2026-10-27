@@ -24,6 +24,7 @@ class Position:
     qty: int
     avg_price: float
     last_price: float = 0.0
+    day_pnl: float | None = None  # 토스가 계산한 오늘 손익 (거래 통화)
 
     @property
     def value(self) -> float:

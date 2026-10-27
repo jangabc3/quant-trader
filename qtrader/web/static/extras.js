@@ -100,12 +100,12 @@ loadSystem();
 
 // 지난 회의와 비교 (같은 종목)
 const _renderResult = window.renderResult;
-const cmp = { key: null };
+const aiCmp = { key: null };
 window.renderResult = (run) => {
   _renderResult(run);
   if (!run || run.status !== "done") { $("#compare").classList.add("hidden"); return; }
-  if (cmp.key === run.id) return;
-  cmp.key = run.id;
+  if (aiCmp.key === run.id) return;
+  aiCmp.key = run.id;
   loadCompare(run);
 };
 async function loadCompare(run) {

@@ -207,6 +207,8 @@ def run_rechecks(ctx, market: Market, llm=None) -> list[dict]:
         msg = f"{sym} AI 재점검({why}): {'일찍 판다' if d['action'] == 'sell' else '계속 보유'} — {d['reason']}"
         ctx.store.log("notice" if d["action"] == "sell" else "info", f"live.{market.value}", msg)
         if d["action"] == "sell" and w["qty"] > 0:
+            from .guard import release
+            release(ctx, market, sym)
             px = round(w["price"] * 0.997, 2) if market == Market.US else 0
             res = ctx.broker.order(OrderRequest(market, sym, Side.SELL, int(w["qty"]), px, "ai-exit", f"AI 재점검 매도: {d['reason']}"))
             status = ("filled" if res.filled_qty else "submitted") if res.ok else "rejected"
