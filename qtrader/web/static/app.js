@@ -256,6 +256,16 @@ function renderStatus(s) {
   $("#auto-btn").innerHTML = s.auto_trading ? '<i data-lucide="pause"></i> 자동매매 중지' : '<i data-lucide="play"></i> 자동매매 시작';
   $("#kill-btn").innerHTML = s.kill_switch ? '<i data-lucide="play-circle"></i> 긴급 정지 풀기' : '<i data-lucide="octagon-x"></i> 긴급 정지';
   $("#kill-btn").classList.toggle("on", s.kill_switch);
+  const ks = $("#kill-strip");
+  if (ks) {
+    ks.classList.toggle("hidden", !s.kill_switch);
+    if (s.kill_switch) {
+      const since = s.kill_since ? new Date(s.kill_since).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+      ks.innerHTML = `<i data-lucide="octagon-x"></i><div><b>긴급 정지 중 — 새로 사지 않아요</b><span>${since ? since + "부터 · " : ""}${esc(s.kill_reason || "")} · 가진 종목의 손절·익절 매도는 계속돼요. 직접 풀기 전까지 그대로예요.</span></div>
+        <button id="kill-strip-off">긴급 정지 풀기</button>`;
+      $("#kill-strip-off").onclick = () => $("#kill-btn").click();
+    }
+  }
   const ac = $("#auto-card");
   if (ac) {
     ac.classList.toggle("on", s.auto_trading);
@@ -337,7 +347,7 @@ document.addEventListener("click", async (e) => {
 });
 
 function renderEvents(rows) {
-  $("#events").innerHTML = rows.map((e) => `<li class="${e.level}"><span class="t">${esc(e.ts.replace("T", " ").slice(5, 19))}</span>${esc(e.message)}</li>`).join("")
+  $("#events").innerHTML = rows.map((e) => `<li class="${e.level}"><span class="t">${esc(new Date(e.ts).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }))}</span>${esc(e.message)}</li>`).join("")
     || `<li class="note">로그가 없습니다.</li>`;
 }
 
@@ -573,9 +583,26 @@ $("#key-save").onclick = async () => {
     const r = await api("/api/secrets", { method: "PUT", body: { kind: $("#key-kind").value, key: $("#key-app").value, secret: $("#key-secret").value } });
     $("#key-app").value = ""; $("#key-secret").value = "";
     await refresh(); refreshKeyState();
-    alert(r.keys[$("#key-kind").value] ? "키를 저장했습니다." : "저장이 확인되지 않았습니다. 다시 시도하세요.");
+    if (!r.keys[$("#key-kind").value]) return alert("저장이 확인되지 않았습니다. 다시 시도하세요.");
+    toast("키를 저장했어요. 연결을 시험해 볼게요", "save");
+    keyTest();
   } catch (e) { alert("저장 실패: " + e.message + (e.message.includes("토큰") ? "\n페이지를 새로고침(F5)한 뒤 다시 저장하세요." : "")); }
 };
+// 저장한 키가 실제로 되는지 단계별로 시험 (주문은 내지 않는다)
+async function keyTest() {
+  const kind = $("#key-kind").value, out = $("#key-test-out");
+  if (!["toss", "anthropic", "dart", "telegram"].includes(kind)) { out.classList.add("hidden"); return toast("이 키는 연결 테스트를 지원하지 않아요"); }
+  out.classList.remove("hidden");
+  out.innerHTML = `<div class="kt-row run"><span class="kt-ico"><i class="spin"></i></span><b>연결을 시험하는 중...</b></div>`;
+  try {
+    const r = await api("/api/secrets/test", { method: "POST", body: { kind } });
+    out.innerHTML = `<div class="kt-head ${r.ok ? "ok" : "bad"}">${r.ok ? "연결 성공 — 이 키로 바로 쓸 수 있어요" : "연결이 안 되는 단계가 있어요"}</div>` +
+      r.steps.map((s) => `<div class="kt-row ${s.ok ? "ok" : "bad"}"><span class="kt-ico">${s.ok ? "✓" : "!"}</span><div><b>${esc(s.name)}</b><span>${esc(s.detail)}</span></div></div>`).join("");
+    animateIn("#key-test-out .kt-row", { step: 80 });
+  } catch (e) { out.innerHTML = `<div class="kt-head bad">${esc(e.message)}</div>`; }
+}
+$("#key-test").onclick = keyTest;
+
 $("#key-del").onclick = async () => {
   if (!confirm("이 키를 삭제할까요?")) return;
   await api("/api/secrets/" + $("#key-kind").value, { method: "DELETE" }).catch((e) => alert(e.message));

@@ -196,6 +196,20 @@ TOSS_DONE = {"FILLED": "filled", "CANCELED": "rejected", "REJECTED": "rejected",
              "REPLACED": "rejected", "CANCEL_REJECTED": None}
 
 
+def _plan_after_fill(ctx: Context, o: dict, price: float) -> None:
+    """매수가 (일부라도) 체결되면 손절·익절 계획을 만든다. AI 매수는 회의 계획, 직접 매수는 주문 때 정한 가격."""
+    import json as _json
+    if any(p["symbol"] == o["symbol"] for p in ctx.store.active_plans(ctx.broker.name, o["market"])):
+        return
+    if o.get("strategy") == "ai":
+        req = OrderRequest(Market(o["market"]), o["symbol"], Side.BUY, int(o["qty"]), float(o["price"]), "ai")
+        remember_plan(ctx.store, ctx.broker.name, o["market"], req, o["trade_date"])
+    elif o.get("strategy") == "manual":
+        mp = _json.loads(ctx.store.get(f"manual_plan_{o['id']}") or "null")
+        if mp:
+            ctx.store.save_plan(ctx.broker.name, o["market"], o["symbol"], "manual", price, mp["stop"], mp["take"])
+
+
 def sync_orders(ctx: Context) -> list[dict]:
     """토스증권에 접수만 된 주문의 체결 여부를 확인해 기록을 고친다. 체결된 AI 매수는 이때 손절·익절 계획을 만든다."""
     if ctx.broker.name != "toss":
@@ -208,17 +222,30 @@ def sync_orders(ctx: Context) -> list[dict]:
             ctx.store.log("warn", "sync", f"주문 {o['symbol']} 상태 조회 실패: {e}")
             continue
         st = d.get("status", "")
+        ex = d.get("execution") or {}
+        fq = int(float(ex.get("filledQuantity") or 0))
+        ap = float(ex.get("averageFilledPrice") or 0) or float(o["price"])
         new = TOSS_DONE.get(st)
         if not new:
-            continue  # 대기·부분 체결은 다음에 다시 본다
-        ex = d.get("execution") or {}
-        note = {"FILLED": f"체결 {ex.get('filledQuantity')}주 @ {ex.get('averageFilledPrice')}",
-                "CANCELED": "취소됨", "REJECTED": "거부됨", "EXPIRED": "기간 만료"}.get(st, st)
+            # 대기 또는 부분 체결: 체결된 만큼은 바로 손절·익절로 보호하고, 나머지는 다음에 다시 본다
+            if 0 < fq < o["qty"] and f"부분 체결 {fq}/" not in (o.get("message") or ""):
+                ctx.store.update_order(o["id"], "submitted", f"부분 체결 {fq}/{o['qty']}주")
+                ctx.store.log("info", "sync", f"{o['symbol']} {o['side']} 부분 체결 {fq}/{o['qty']}주 @ {ap:,.2f}")
+                if o["side"] == "buy":
+                    _plan_after_fill(ctx, o, ap)
+            continue
+        if new == "rejected" and fq > 0:  # 일부만 체결된 채로 취소·만료: 체결된 만큼은 체결로 본다
+            note = f"부분 체결 {fq}/{o['qty']}주 @ {ap:,.2f} (나머지 {'취소' if st == 'CANCELED' else '만료'})"
+            new = "filled"
+        else:
+            note = {"FILLED": f"체결 {fq or o['qty']}주 @ {ap:,.2f}", "CANCELED": "취소됨", "REJECTED": "거부됨",
+                    "EXPIRED": "기간 만료"}.get(st, st)
+        if new == "filled":
+            ctx.store.update_fill(o["id"], fq or o["qty"], ap)
         ctx.store.update_order(o["id"], new, note)
         ctx.store.log("info" if new == "filled" else "warn", "sync", f"{o['symbol']} {o['side']} {note}")
-        if new == "filled" and o.get("strategy") == "ai":
-            req = OrderRequest(Market(o["market"]), o["symbol"], Side(o["side"]), int(o["qty"]), float(o["price"]), "ai")
-            remember_plan(ctx.store, ctx.broker.name, o["market"], req, o["trade_date"])
+        if new == "filled" and o["side"] == "buy":
+            _plan_after_fill(ctx, o, ap)
         if new == "filled" and o.get("strategy") == "ai-exit":
             ctx.store.close_plan(ctx.broker.name, o["market"], o["symbol"], "stop" if "손절" in (o.get("message") or "") else "take")
         out.append({"symbol": o["symbol"], "status": new, "note": note})
@@ -239,6 +266,8 @@ def check_loss(ctx: Context, market: Market) -> bool:
     managed = acct.cash + sum(p.value for s, p in acct.positions.items() if s in universe)
     if loss_breached(start, managed, lim):
         ctx.store.set("kill_switch", "1")
+        ctx.store.set("kill_since", datetime.now(timezone.utc).isoformat(timespec="seconds"))
+        ctx.store.set("kill_reason", f"{market.value} 하루 손실 {managed / start - 1:.1%} 로 한도 초과")
         ctx.store.log("error", f"risk.{market.value}", f"장중 손실 {managed / start - 1:.2%} 로 하루 한도 초과. 킬 스위치를 켰습니다")
         return True
     return False

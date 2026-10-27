@@ -41,6 +41,7 @@
 </header>
 
 <main>
+  <div id="kill-strip" class="kill-strip hidden"></div>
   <div id="banner" class="banner hidden"></div>
 
   <!-- 시장 한눈에 보기 -->
@@ -338,7 +339,8 @@
           <label class="wide"><span id="key-label1">Client ID</span> <input id="key-app" autocomplete="off"></label>
           <label class="wide" id="key-secret-wrap"><span id="key-label2">Client Secret</span> <input id="key-secret" type="password" autocomplete="off"></label>
         </div>
-        <div class="form-row"><button id="key-save" class="primary"><i data-lucide="save"></i> 키 저장</button><button id="key-del"><i data-lucide="trash-2"></i> 이 키 삭제</button></div>
+        <div class="form-row"><button id="key-save" class="primary"><i data-lucide="save"></i> 키 저장</button><button id="key-test"><i data-lucide="plug-zap"></i> 연결 테스트</button><button id="key-del"><i data-lucide="trash-2"></i> 이 키 삭제</button></div>
+        <div id="key-test-out" class="key-test hidden"></div>
         <p class="note">토스증권은 WTS 설정 → Open API → 허용 IP 에 이 PC의 공인 IP를 등록해야 주문이 됩니다.</p>
       </div>
 

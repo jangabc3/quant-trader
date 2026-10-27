@@ -101,7 +101,7 @@ def schedule(ctx, market: Market) -> dict:
             "close": close.isoformat(timespec="minutes"), "strategy": mc["strategy"], "enabled": mc["enabled"]}
 
 
-def timeline(ctx, market: Market, limit: int = 30) -> list[dict]:
+def timeline(ctx, market: Market, limit: int = 30, name_of=lambda s: s) -> list[dict]:
     today = datetime.now(TZ[market]).strftime("%Y-%m-%d")
     rows = ctx.store.rows("select * from events where substr(ts,1,10)>=? order by id desc limit 200", (today,))
     keep = ("engine", "exit", "sync", "ai", "picks", "alert", "order", "risk", "live", "manual", "report", "approval")
@@ -109,7 +109,8 @@ def timeline(ctx, market: Market, limit: int = 30) -> list[dict]:
     for r in rows:
         src = r["source"].split(".")[0]
         if src in keep and (market.value in r["source"] or "." not in r["source"] or src in ("exit", "sync", "order", "manual", "live")):
-            out.append({"id": r["id"], "ts": r["ts"], "level": r["level"], "source": src, "message": r["message"][:200]})
+            from .humanize import say
+            out.append({"id": r["id"], "ts": r["ts"], "level": r["level"], "source": src, "message": say(r["message"], name_of)[:200]})
         if len(out) >= limit:
             break
     return out
@@ -228,6 +229,6 @@ def snapshot(ctx, market: Market, name_of=lambda s: s) -> dict:
     today = trade_date(market)
     return {"market": market.value, "auto": ctx.store.get("auto_trading", "0") == "1", "kill": ctx.kill,
             "schedule": schedule(ctx, market), "watch": watch, "candidates": cands,
-            "timeline": timeline(ctx, market), "news": headlines(ctx, names),
+            "timeline": timeline(ctx, market, name_of=name_of), "news": headlines(ctx, names),
             "rechecks": json.loads(ctx.store.get(f"recheck_{market.value}_{today}") or "{}"),
             "recheck_cap": int(ctx.cfg["ai"].get("recheck_per_day", 5))}

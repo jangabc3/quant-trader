@@ -182,10 +182,10 @@ def set_autostart(on: bool) -> bool:
     if on:
         exe = Path(sys.executable)
         if getattr(sys, "frozen", False):  # 설치 파일(QTrader.exe)로 실행 중
-            cmd = f'"{exe}" serve --no-browser'
+            cmd = f'"{exe}" supervise --no-browser'
         else:
             exe = exe.with_name("pythonw.exe") if exe.with_name("pythonw.exe").exists() else exe
-            cmd = f'"{exe}" -m qtrader serve --no-browser'
+            cmd = f'"{exe}" -m qtrader supervise --no-browser'
         home = os.environ.get("QTRADER_HOME", "")
         env = f'set "QTRADER_HOME={home}"\r\n' if home else ""
         f.write_text(f'@echo off\r\n{env}start "" {cmd}\r\n', encoding="utf-8")

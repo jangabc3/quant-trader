@@ -22,6 +22,11 @@ function ticketShell() {
     <label class="tk-field"><span>수량</span><div class="tk-input"><button type="button" data-step="qty:-1">−</button>
       <input id="tk-qty" inputmode="numeric" autocomplete="off" placeholder="0"><button type="button" data-step="qty:1">＋</button></div></label>
     <div class="tk-pcts">${[10, 25, 50, 100].map((p) => `<button type="button" data-pct="${p}">${p === 100 ? "최대" : p + "%"}</button>`).join("")}</div>
+    <div class="tk-guard" id="tk-guard">
+      <label class="check"><input type="checkbox" id="tk-guard-on" checked> 손절·익절도 정하기 <small class="note">닿으면 자동으로 팔아요</small></label>
+      <div class="tk-guard-row"><label>손절 <span class="down" id="tk-stop-px"></span><div class="tk-pct"><input id="tk-stop" inputmode="decimal">%</div></label>
+        <label>익절 <span class="up" id="tk-take-px"></span><div class="tk-pct"><input id="tk-take" inputmode="decimal">%</div></label></div>
+    </div>
     <dl class="tk-sum">
       <div><dt id="tk-avail-k">주문 가능</dt><dd id="tk-avail">-</dd></div>
       <div><dt>예상 수수료${tkKR() ? "·세금" : ""}</dt><dd id="tk-fee">-</dd></div>
@@ -49,6 +54,9 @@ function ticketShell() {
   $("#tk-price").oninput = (e) => { tk.price = Number(e.target.value.replace(/,/g, "")) || 0; ticketDraw(false); };
   $("#tk-qty").oninput = (e) => { tk.qty = Math.floor(Number(e.target.value.replace(/,/g, "")) || 0); ticketDraw(false); };
   $("#tk-go").onclick = confirmOrder;
+  const H = { long: [7, 15], swing: [5, 10], short: [2.5, 5] }[state.config?.ai?.holding || "long"] || [7, 15];
+  $("#tk-stop").value = H[0]; $("#tk-take").value = H[1];
+  ["#tk-stop", "#tk-take", "#tk-guard-on"].forEach((s) => $(s).addEventListener("input", () => ticketDraw(false)));
 }
 
 function unitPrice() { return tk.type === "market" ? tk.info?.price || 0 : tk.price; }
@@ -78,6 +86,13 @@ function ticketDraw(syncInputs = true) {
   const go = $("#tk-go");
   go.className = "tk-go " + (buy ? "buy" : "sell");
   go.textContent = buy ? "구매하기" : "판매하기";
+  $("#tk-guard").classList.toggle("hidden", !buy);
+  const gOn = buy && $("#tk-guard-on").checked;
+  $("#tk-guard .tk-guard-row").classList.toggle("off", !gOn);
+  tk.stop = gOn && p ? tkRound(p * (1 - Number($("#tk-stop").value || 0) / 100)) : 0;
+  tk.take = gOn && p ? tkRound(p * (1 + Number($("#tk-take").value || 0) / 100)) : 0;
+  $("#tk-stop-px").textContent = tk.stop ? tkMoney(tk.stop) : "";
+  $("#tk-take-px").textContent = tk.take ? tkMoney(tk.take) : "";
   const over = tk.qty > maxQty();
   go.disabled = !tk.qty || !p || over;
   $("#tk-note").innerHTML = over ? `<span class="down">${buy ? "주문 가능 금액(또는 1회 주문 한도)을 넘었어요" : "판매 가능 수량을 넘었어요"}</span>`
@@ -110,14 +125,15 @@ function confirmOrder() {
       <div><dt>${tk.type === "market" ? "예상 가격" : "주문 가격"}</dt><dd>${tkMoney(p)}</dd></div>
       <div><dt>수량</dt><dd>${tk.qty.toLocaleString()}주</dd></div>
       <div class="tot"><dt>총 ${buy ? "주문" : "판매"} 금액</dt><dd>${tkMoney(gross)}</dd></div>
-      <div><dt>계좌</dt><dd>${i.live ? "<b class='up'>실전</b> " : "가상 "}${esc(MODE_NAME[i.mode] || i.mode)}</dd></div></dl>
+      <div><dt>계좌</dt><dd>${i.live ? "<b class='up'>실전</b> " : "가상 "}${esc(MODE_NAME[i.mode] || i.mode)}</dd></div>
+      ${buy ? `<div><dt>손절 · 익절</dt><dd>${tk.stop ? `<span class="down">${tkMoney(tk.stop)}</span> · <span class="up">${tkMoney(tk.take)}</span>` : "정하지 않음 (자동으로 팔지 않아요)"}</dd></div>` : ""}</dl>
     ${i.live ? `<p class="note">실제 돈이 움직입니다. 확인을 누르면 PIN 을 물을 수 있어요.</p>` : ""}
     <div class="tk-c-btns"><button id="tk-cancel">취소</button><button class="tk-go ${buy ? "buy" : "sell"}" id="tk-ok">${buy ? "구매" : "판매"} 확인</button></div></div>`);
   $("#tk-cancel").onclick = () => $("#modal").classList.add("hidden");
   $("#tk-ok").onclick = async (e) => {
     e.target.disabled = true; e.target.textContent = "주문 보내는 중...";
     try {
-      const r = await api("/api/order", { method: "POST", body: { symbol: i.symbol, side: tk.side, qty: tk.qty, price: tk.type === "market" ? 0 : p } });
+      const r = await api("/api/order", { method: "POST", body: { symbol: i.symbol, side: tk.side, qty: tk.qty, price: tk.type === "market" ? 0 : p, stop: buy ? tk.stop : 0, take: buy ? tk.take : 0 } });
       $("#modal-body").innerHTML = `<div class="tk-done"><div class="tk-check">✓</div><h3>${r.status === "filled" ? (buy ? "구매 완료" : "판매 완료") : "주문 접수"}</h3>
         <p>${esc(name)} ${tk.qty.toLocaleString()}주 · ${tkMoney(r.price)}</p>
         <p class="note">${r.status === "filled" ? "체결됐어요. 내 계좌에서 확인할 수 있어요." : "증권사에 접수됐어요. 체결되면 알림으로 알려 드릴게요."}</p>

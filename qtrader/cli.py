@@ -29,6 +29,38 @@ def cmd_serve(a):
     uvicorn.run(create_app(sched), host="127.0.0.1", port=a.port, log_level="warning")
 
 
+def cmd_supervise(a):
+    """serve 를 자식 프로세스로 돌리고, 오류로 꺼지면 10초 뒤 다시 켠다 (Ctrl+C 나 정상 종료는 그대로 끝)."""
+    import subprocess
+    import sys
+    import time
+
+    base = [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, "-m", "qtrader"]
+    first, recent = True, []
+    while True:
+        args = base + ["serve", "--port", str(a.port)] + ([] if first and not a.no_browser else ["--no-browser"])
+        first = False
+        try:
+            code = subprocess.call(args)
+        except KeyboardInterrupt:
+            return
+        if code == 0:
+            return
+        recent = [t for t in recent if time.time() - t < 600] + [time.time()]
+        wait = 300 if len(recent) > 5 else 10  # 10분에 5번 넘게 죽으면 5분 쉬었다가
+        try:
+            from .storage import Store
+            from . import config as config_mod
+            Store(config_mod.home() / "qtrader.db").log("notice", "live", f"프로그램이 오류로 꺼져 {wait}초 뒤 다시 켭니다 (종료 코드 {code})")
+        except Exception:
+            pass
+        print(f"QTrader 가 꺼졌습니다 (코드 {code}). {wait}초 뒤 다시 켭니다...")
+        try:
+            time.sleep(wait)
+        except KeyboardInterrupt:
+            return
+
+
 def cmd_backtest(a):
     ctx = build_context()
     m = Market(a.market)
@@ -89,6 +121,11 @@ def main(argv=None):
     s.add_argument("--port", type=int, default=8765)
     s.add_argument("--no-browser", action="store_true")
     s.set_defaults(fn=cmd_serve)
+
+    s = sub.add_parser("supervise", help="serve 를 띄우고 오류로 꺼지면 자동으로 다시 켠다")
+    s.add_argument("--port", type=int, default=8765)
+    s.add_argument("--no-browser", action="store_true")
+    s.set_defaults(fn=cmd_supervise)
 
     s = sub.add_parser("backtest", help="백테스트")
     s.add_argument("--market", default="KR", choices=["KR", "US"])

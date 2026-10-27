@@ -7,5 +7,5 @@ if not exist ".venv\Scripts\python.exe" (
   python -m venv .venv || (echo Python 3.11 이상을 먼저 설치해 주세요. & pause & exit /b 1)
   ".venv\Scripts\python.exe" -m pip install -q -e . || (echo 설치에 실패했습니다. & pause & exit /b 1)
 )
-".venv\Scripts\python.exe" -m qtrader serve
+".venv\Scripts\python.exe" -m qtrader supervise
 pause

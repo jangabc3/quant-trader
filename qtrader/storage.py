@@ -183,6 +183,10 @@ class Store:
         self.exec("update orders set status=?, message=coalesce(message,'') || ? where id=?",
                   (status, f" | {note}" if note else "", oid))
 
+    def update_fill(self, oid: int, qty: int, price: float) -> None:
+        """부분 체결이면 실제로 체결된 수량·평균가로 바꾼다."""
+        self.exec("update orders set qty=?, price=? where id=?", (int(qty), float(price), oid))
+
     def open_orders(self, account: str) -> list[dict]:
         return self.rows("select * from orders where account=? and status='submitted' and broker_order_id is not null "
                          "and broker_order_id != '' order by id", (account,))
