@@ -2,21 +2,45 @@
 // 떠 있는 AI 애널리스트 챗봇 '큐비'. 화면 어디로든 끌어서 옮길 수 있고, 위치는 이 PC 브라우저에 기억한다.
 // 답변은 서버의 비서(Assistant)가 시세·계좌·최근 AI 회의 결론을 도구로 확인해서 만든다.
 
-// 토스처럼 단순한 평면 그림: 파란 말풍선 얼굴 + 흰 눈·입. 그림자·광택 없이 40~56px 에서도 또렷하게.
-// 움직임은 CSS 가 맡는다 (가만히: 숨쉬기·눈 깜빡, 생각 중: 고리 회전·점 물결, 답 도착: 통 튀기기)
 const QBI_TPL = `
-<svg viewBox="0 0 64 64" class="qbi-svg" aria-hidden="true">
-  <circle class="qbi-ring" cx="32" cy="30" r="29" fill="none" stroke="#3182f6" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="46 140"/>
-  <g class="qbi-body">
-    <path d="M17 45 Q15.5 52 10.5 56 Q19.5 56.5 25.5 51.5 Z" fill="#3182f6"/>
-    <circle cx="32" cy="30" r="23" fill="#3182f6"/>
-    <g class="qbi-eyes"><rect x="22" y="21" width="6" height="10" rx="3" fill="#fff"/><rect x="36" y="21" width="6" height="10" rx="3" fill="#fff"/></g>
-    <path class="qbi-mouth" d="M26.5 37.5 Q32 42.5 37.5 37.5" stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none"/>
-    <g class="qbi-wave"><circle cx="25.5" cy="39" r="2.2" fill="#fff"/><circle cx="32" cy="39" r="2.2" fill="#fff"/><circle cx="38.5" cy="39" r="2.2" fill="#fff"/></g>
+<svg viewBox="0 0 120 130" class="qbi-svg" aria-hidden="true">
+  <defs>
+    <radialGradient id="qb-body" cx="38%" cy="30%" r="75%">
+      <stop offset="0" stop-color="#e9f6ff"/><stop offset=".45" stop-color="#9fd4ff"/><stop offset="1" stop-color="#3f7fe0"/>
+    </radialGradient>
+    <radialGradient id="qb-face" cx="45%" cy="35%" r="70%">
+      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#dfeaf7"/>
+    </radialGradient>
+    <radialGradient id="qb-coin" cx="35%" cy="30%" r="70%">
+      <stop offset="0" stop-color="#fff3b0"/><stop offset=".6" stop-color="#f5c542"/><stop offset="1" stop-color="#b8860b"/>
+    </radialGradient>
+    <linearGradient id="qb-belly" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#14223a"/><stop offset="1" stop-color="#0b1424"/>
+    </linearGradient>
+    <filter id="qb-soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="2.2"/></filter>
+  </defs>
+  <ellipse cx="60" cy="124" rx="30" ry="4.5" fill="rgba(0,0,0,.28)" class="qbi-shadow"/>
+  <g class="qbi-float">
+    <line x1="60" y1="16" x2="60" y2="28" stroke="#3f7fe0" stroke-width="3" stroke-linecap="round"/>
+    <g class="qbi-coin"><circle cx="60" cy="12" r="8" fill="url(#qb-coin)"/><text x="60" y="15.5" text-anchor="middle" font-size="9" font-weight="900" fill="#8a5a00">Q</text></g>
+    <ellipse cx="22" cy="56" rx="9" ry="13" fill="url(#qb-body)"/><ellipse cx="98" cy="56" rx="9" ry="13" fill="url(#qb-body)"/>
+    <rect x="18" y="26" width="84" height="74" rx="36" fill="url(#qb-body)"/>
+    <ellipse cx="46" cy="38" rx="20" ry="8" fill="#fff" opacity=".55" filter="url(#qb-soft)"/>
+    <rect x="28" y="40" width="64" height="40" rx="20" fill="url(#qb-face)"/>
+    <g class="qbi-eyes">
+      <ellipse cx="47" cy="58" rx="6" ry="7.5" fill="#1b2433"/><ellipse cx="73" cy="58" rx="6" ry="7.5" fill="#1b2433"/>
+      <circle cx="45" cy="55" r="2.3" fill="#fff"/><circle cx="71" cy="55" r="2.3" fill="#fff"/>
+      <circle cx="49" cy="61" r="1" fill="#fff" opacity=".7"/><circle cx="75" cy="61" r="1" fill="#fff" opacity=".7"/>
+    </g>
+    <ellipse cx="36" cy="68" rx="5" ry="3" fill="#ff9fb8" opacity=".75"/><ellipse cx="84" cy="68" rx="5" ry="3" fill="#ff9fb8" opacity=".75"/>
+    <path d="M54 69 Q60 74 66 69" stroke="#1b2433" stroke-width="2.4" fill="none" stroke-linecap="round" class="qbi-mouth"/>
+    <rect x="40" y="84" width="40" height="13" rx="6.5" fill="url(#qb-belly)"/>
+    <polyline points="45,93 52,90 57,92 64,87 71,88 75,86" fill="none" stroke="#3fe07a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <ellipse cx="38" cy="104" rx="9" ry="6" fill="url(#qb-body)"/><ellipse cx="82" cy="104" rx="9" ry="6" fill="url(#qb-body)"/>
   </g>
 </svg>`;
-// 그라데이션 id 가 없어 그대로 여러 번 써도 된다 (k: 어디에 쓰는지 표시)
-const qbiSvg = (k) => QBI_TPL.replace('class="qbi-svg"', `class="qbi-svg qbi-svg-${k}"`);
+// 같은 SVG 를 두 번 쓰므로 그라데이션 id 가 겹치지 않게 접미사를 붙인다
+const qbiSvg = (k) => QBI_TPL.replace(/qb-([a-z]+)/g, `qb-$1-${k}`);
 
 const chat = { open: false, busy: false, thread: null, dragging: false, moved: false, log: [] };
 const CHAT_KEY = "qtrader.chat.log";
@@ -186,7 +210,6 @@ async function send(text) {
     if (done.sources.length) box.insertAdjacentHTML("beforeend", `<div class="sources">${done.sources.slice(0, 5).map((s) => `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a>`).join("")}</div>`);
     box.classList.remove("live");
     chat.log.push({ who: "bot", html: box.innerHTML }); saveChatLog();
-    qbiCheer();
     if (done.tools.includes("start_meeting") && window.showRunById) { openTab("office"); }
   } catch (err) {
     box.classList.remove("live");
@@ -195,14 +218,6 @@ async function send(text) {
   chat.busy = false; window.chatBusy = false;
   $("#qbi").classList.remove("thinking");
   if (!chat.open) $("#qbi-dot").classList.remove("hidden");
-}
-
-// 답이 도착하면 큐비가 한 번 통 튄다
-function qbiCheer() {
-  const root = $("#qbi");
-  root.classList.remove("cheer"); void root.offsetWidth;
-  root.classList.add("cheer");
-  setTimeout(() => root.classList.remove("cheer"), 450);
 }
 
 buildChat();
