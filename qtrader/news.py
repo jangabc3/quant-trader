@@ -31,8 +31,19 @@ def _text(el, name: str) -> str:
     return (x.text or "").strip() if x is not None and x.text else ""
 
 
+def to_utf8(xml: bytes) -> bytes:
+    """EUC-KR(CP949) 로 된 한국 언론사 피드는 XML 파서가 못 읽으므로 UTF-8 로 바꾼다."""
+    head = xml[:200].lower()
+    m = re.search(rb"encoding=[\"']([a-z0-9_-]+)[\"']", head)
+    enc = m.group(1).decode() if m else "utf-8"
+    if enc in ("utf-8", "utf8"):
+        return xml
+    text = xml.decode("cp949" if enc in ("euc-kr", "euckr", "ks_c_5601-1987", "cp949") else enc, errors="replace")
+    return re.sub(r"encoding=[\"'][^\"']+[\"']", 'encoding="utf-8"', text, count=1).encode("utf-8")
+
+
 def parse(xml: bytes, source: str) -> list[dict]:
-    root = ET.fromstring(xml)
+    root = ET.fromstring(to_utf8(xml))
     out = []
     for it in root.iter("item"):
         title = html.unescape(_text(it, "title"))
@@ -65,11 +76,12 @@ def fetch(url: str, source: str, ttl: float = 300, session=None) -> list[dict]:
     return items
 
 
-def feeds(cfg_feeds: list[dict] | None = None, limit: int = 300, session=None) -> dict:
+def feeds(cfg_feeds: list[dict] | None = None, limit: int = 500, session=None) -> dict:
     items, errors = [], []
     for f in cfg_feeds or DEFAULT_FEEDS:
         try:
-            items += fetch(f["url"], f["name"], session=session)
+            got = fetch(f["url"], f["name"], session=session)
+            items += [x | {"cat": f.get("cat", "kr"), "feed": f["name"]} for x in got]
         except Exception as e:  # 한 피드 실패가 전체를 막지 않게
             errors.append(f"{f['name']}: {e}")
     seen, uniq = set(), []

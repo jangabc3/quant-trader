@@ -64,8 +64,8 @@ function buildChart() {
     localization: { locale: "ko-KR", priceFormatter: (p) => pxFmt(p) },
   });
   st.main = st.type === "candle"
-    ? chart.addCandlestickSeries({ upColor: "#f0534e", downColor: "#4c8dff", borderVisible: false, wickUpColor: "#f0534e", wickDownColor: "#4c8dff" })
-    : chart.addAreaSeries({ lineColor: "#4c8dff", topColor: "rgba(76,141,255,.3)", bottomColor: "rgba(0,0,0,0)", lineWidth: 2 });
+    ? chart.addCandlestickSeries({ upColor: "#f04452", downColor: "#3182f6", borderVisible: false, wickUpColor: "#f04452", wickDownColor: "#3182f6" })
+    : chart.addAreaSeries({ lineColor: "#3182f6", topColor: "rgba(49,130,246,.3)", bottomColor: "rgba(0,0,0,0)", lineWidth: 2 });
   st.vol = chart.addHistogramSeries({ priceFormat: { type: "volume" }, priceScaleId: "vol", lastValueVisible: false, priceLineVisible: false });
   chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
   st.mas = {};
@@ -99,7 +99,7 @@ async function loadCandles(update = false) {
       l.close = st.last; l.high = Math.max(l.high, st.last); l.low = Math.min(l.low, st.last);
     }
     st.main.setData(st.type === "candle" ? rows : rows.map((r) => ({ time: r.time, value: r.close })));
-    st.vol.setData(rows.map((r) => ({ time: r.time, value: r.volume, color: r.close >= r.open ? "rgba(240,83,78,.45)" : "rgba(76,141,255,.45)" })));
+    st.vol.setData(rows.map((r) => ({ time: r.time, value: r.volume, color: r.close >= r.open ? "rgba(240,68,82,.45)" : "rgba(49,130,246,.45)" })));
     [5, 20, 60, 120].forEach((n) => st.mas[n].setData(sma(rows, n)));
     if (!update) st.chart.timeScale().fitContent();
   } catch (e) { $("#st-live").textContent = e.message; }
@@ -151,7 +151,7 @@ async function loadTrades() {
 
 function finChart(fin) {
   const ys = fin.years, s = fin.series;
-  const keys = [["revenue", "매출", "#4c8dff"], ["operating_income", "영업이익", "#3fe07a"], ["net_income", "순이익", "#ffd34d"]];
+  const keys = [["revenue", "매출", "#3182f6"], ["operating_income", "영업이익", "#3fe07a"], ["net_income", "순이익", "#ffd34d"]];
   const vals = keys.flatMap(([k]) => (s[k] || []).filter((v) => v != null));
   if (!vals.length) return "";
   const max = Math.max(...vals.map(Math.abs), 1);
@@ -221,7 +221,7 @@ async function loadAiHist() {
     const runs = (await api("/api/ai/runs?limit=100")).filter((r) => r.symbol === st.symbol && r.status === "done").slice(0, 5);
     $("#st-ai-hist").innerHTML = runs.length ? runs.map((r) => {
       const f = r.final || {}, p = r.plan;
-      return `<div class="aih" data-run="${r.id}"><b style="color:${({ Buy: "#f0534e", Overweight: "#f08a5e", Hold: "#8b98a5", Underweight: "#6aa0ff", Sell: "#4c8dff" })[f.rating]}">${esc(r.rating_ko || f.rating)}</b>
+      return `<div class="aih" data-run="${r.id}"><b style="color:${({ Buy: "#f04452", Overweight: "#f08a5e", Hold: "#8b98a5", Underweight: "#5a9bff", Sell: "#3182f6" })[f.rating]}">${esc(r.rating_ko || f.rating)}</b>
         <span>${esc(r.trade_date)} · 확신도 ${Math.round((f.confidence || 0) * 100)}%</span>
         ${p ? `<span class="note">진입 ${pxFmt(p.entry)} · 손절 ${pxFmt(p.stop)} · 익절 ${pxFmt(p.take)}</span>` : ""}
         <div class="note">${esc(f.headline || "")}</div></div>`;

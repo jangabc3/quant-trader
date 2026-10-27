@@ -81,16 +81,18 @@ DEFAULT = {
         "min_confidence": 0.5,  # 이보다 확신이 낮으면 Hold 로 본다
     },
     "watchlist": ["005930", "000660", "AAPL", "NVDA"],
+    "investor": None,  # 투자 성향 검사 결과 (처음 실행 때 묻는다)
     "news": {"feeds": [
-        {"name": "인베스팅닷컴", "url": "https://kr.investing.com/rss/news_25.rss"},
-        {"name": "한국경제 증권", "url": "https://www.hankyung.com/feed/finance"},
-        {"name": "매일경제 증권", "url": "https://www.mk.co.kr/rss/50200011/"},
-        {"name": "연합뉴스 마켓", "url": "https://www.yna.co.kr/rss/market.xml"},
-        {"name": "머니투데이 증권", "url": "https://rss.mt.co.kr/mt_news_stock.xml"},
-        {"name": "조선비즈 증권", "url": "https://biz.chosun.com/arc/outboundfeeds/rss/category/stock/?outputType=xml"},
-        {"name": "파이낸셜뉴스 증권", "url": "https://www.fnnews.com/rss/r20/fn_realnews_stock.xml"},
-        {"name": "CNBC", "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html"},
-        {"name": "MarketWatch", "url": "https://feeds.content.dowjones.io/public/rss/mw_topstories"},
+        {"name": "한국경제 증권", "url": "https://www.hankyung.com/feed/finance", "cat": "kr"},
+        {"name": "매일경제 증권", "url": "https://www.mk.co.kr/rss/50200011/", "cat": "kr"},
+        {"name": "연합뉴스 마켓", "url": "https://www.yna.co.kr/rss/market.xml", "cat": "kr"},
+        {"name": "머니투데이 증권", "url": "https://rss.mt.co.kr/mt_news_stock.xml", "cat": "kr"},
+        {"name": "조선비즈 증권", "url": "https://biz.chosun.com/arc/outboundfeeds/rss/category/stock/?outputType=xml", "cat": "kr"},
+        {"name": "파이낸셜뉴스 증권", "url": "https://www.fnnews.com/rss/r20/fn_realnews_stock.xml", "cat": "kr"},
+        {"name": "인베스팅닷컴", "url": "https://kr.investing.com/rss/news_25.rss", "cat": "global"},
+        {"name": "뉴욕증시", "url": "https://news.google.com/rss/search?hl=ko&gl=KR&ceid=KR:ko&q=%EB%89%B4%EC%9A%95%EC%A6%9D%EC%8B%9C", "cat": "global"},
+        {"name": "미국증시·나스닥", "url": "https://news.google.com/rss/search?hl=ko&gl=KR&ceid=KR:ko&q=%EB%AF%B8%EA%B5%AD%EC%A6%9D%EC%8B%9C+OR+%EB%82%98%EC%8A%A4%EB%8B%A5+OR+S%26P500", "cat": "global"},
+        {"name": "미국 빅테크", "url": "https://news.google.com/rss/search?hl=ko&gl=KR&ceid=KR:ko&q=%EC%97%94%EB%B9%84%EB%94%94%EC%95%84+OR+%ED%85%8C%EC%8A%AC%EB%9D%BC+OR+%EC%95%A0%ED%94%8C+%EC%A3%BC%EA%B0%80", "cat": "global"},
     ]},
     # 미국 재무제표(SEC EDGAR)는 요청에 연락처가 필요하다
     "sec_contact": "",
@@ -132,7 +134,8 @@ def load() -> dict:
     # 예전 기본 뉴스 피드(인베스팅닷컴 2개)만 저장돼 있으면 새 기본 목록으로 바꾼다
     old = {"https://kr.investing.com/rss/news_25.rss", "https://kr.investing.com/rss/news.rss"}
     feeds = cfg.get("news", {}).get("feeds") or []
-    if feeds and {f.get("url") for f in feeds} <= old:
+    english = {"https://www.cnbc.com/id/100003114/device/rss/rss.html", "https://feeds.content.dowjones.io/public/rss/mw_topstories"}
+    if feeds and ({f.get("url") for f in feeds} <= old or any(f.get("url") in english for f in feeds) or not all("cat" in f for f in feeds)):
         cfg["news"]["feeds"] = copy.deepcopy(DEFAULT["news"]["feeds"])
     return cfg
 

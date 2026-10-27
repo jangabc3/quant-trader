@@ -14,16 +14,18 @@ function ago(t) {
 }
 
 function card(n, big = false) {
-  const c = SRC_COLOR[n.source] || "#6b7785";
+  let h = 0;
+  for (const ch of String(n.source)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const c = SRC_COLOR[n.source] || ["#3182f6", "#f04452", "#00a37a", "#e9a23b", "#7c5cf6", "#0ea5e9", "#d6336c"][h % 7];
   return `<a class="ncard ${big ? "big" : ""}" href="${esc(n.link)}" target="_blank" rel="noopener noreferrer" style="--c:${c}">
-    <div class="nmeta"><span class="nsrc">${esc(n.source)}</span><span class="note">${ago(n.time)}</span></div>
+    <div class="nmeta"><span class="nsrc">${esc(n.source)}</span><span class="ncat">${n.cat === "global" ? "해외증시" : "국내증시"}</span><span class="note">${ago(n.time)}</span></div>
     <b class="ntitle">${esc(n.title)}</b>${n.summary ? `<p class="nsum">${esc(n.summary)}</p>` : ""}</a>`;
 }
 
 function renderNews() {
   const q = $("#news-q").value.trim();
-  const items = nw.items.filter((n) => (nw.src === "전체" || n.source === nw.src) &&
-    (nw.cat === "all" || (nw.cat === "global") === GLOBAL.has(n.source)) && (!q || n.title.includes(q)));
+  const items = nw.items.filter((n) => (nw.src === "전체" || n.feed === nw.src) &&
+    (nw.cat === "all" || n.cat === nw.cat) && (!q || n.title.includes(q)));
   $("#news-hero").innerHTML = items.slice(0, 3).map((n) => card(n, true)).join("");
   $("#news-list").innerHTML = items.slice(3, 120).map((n) => card(n)).join("") || (items.length ? "" : `<p class="note">뉴스가 없습니다.</p>`);
 }
@@ -35,7 +37,7 @@ async function loadNewsTab(force = false) {
     const d = await api("/api/news");
     nw.items = d.items;
     nw.loaded = Date.now();
-    const srcs = ["전체", ...new Set(d.items.map((n) => n.source))];
+    const srcs = ["전체", ...new Set(d.items.map((n) => n.feed))];
     $("#news-src").innerHTML = srcs.map((s) => `<button data-v="${esc(s)}" class="${s === nw.src ? "on" : ""}" style="--c:${SRC_COLOR[s] || "#6b7785"}">${esc(s)}</button>`).join("");
     $("#news-time").textContent = `${d.items.length}건 · ${new Date().toLocaleTimeString("ko-KR")} 기준` + (d.errors.length ? ` · 실패 ${d.errors.length}곳` : "");
     renderNews();

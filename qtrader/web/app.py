@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .. import __version__, backtest, config as config_mod, fundamentals, market as market_mod, news as news_mod, principles, stockdata, strategies, vault
+from .. import __version__, backtest, config as config_mod, fundamentals, market as market_mod, news as news_mod, principles, profile as profile_mod, stockdata, strategies, vault
 from ..agents import meeting
 from ..agents.assistant import Assistant
 from ..agents.llm import LLMError
@@ -53,6 +53,10 @@ class SecretIn(BaseModel):
 
 class MeetingIn(BaseModel):
     symbol: str
+
+
+class ProfileIn(BaseModel):
+    answers: dict
 
 
 class DecideIn(BaseModel):
@@ -368,6 +372,30 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         r = guard(lambda: c.broker.client.cancel(order_id))
         c.store.log("warn", "web", f"주문 취소 요청 {order_id}")
         return r
+
+    # 투자 성향
+    @app.get("/api/profile")
+    def get_profile():
+        cfg = config_mod.load()
+        return {"investor": cfg.get("investor"), "questions": profile_mod.QUESTIONS,
+                "types": [{"name": n, "desc": d} for n, _, d in profile_mod.TYPES], "criteria": profile_mod.criteria(cfg)}
+
+    @app.post("/api/profile", dependencies=[Depends(need_token)])
+    def set_profile(body: ProfileIn):
+        try:
+            new, result = profile_mod.apply(config_mod.load(), body.answers)
+        except (ValueError, KeyError) as e:
+            raise HTTPException(400, str(e))
+        config_mod.save(new)
+        Store(config_mod.home() / "qtrader.db").log("info", "profile", f"투자 성향 {result['type']} ({result['style']}) 적용")
+        return result
+
+    @app.post("/api/profile/skip", dependencies=[Depends(need_token)])
+    def skip_profile():
+        cfg = config_mod.load()
+        cfg["investor"] = {"type": None, "skipped": True}
+        config_mod.save(cfg)
+        return {"ok": True}
 
     @app.get("/api/news")
     def news_feed():

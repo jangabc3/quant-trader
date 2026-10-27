@@ -37,12 +37,12 @@
 .st-info span { display: block; color: var(--muted); font-size: 11px; }
 .ob { font-variant-numeric: tabular-nums; font-size: 13px; }
 .ob-row { display: grid; grid-template-columns: 1fr 108px 1fr; align-items: center; height: 26px; }
-.ob-row.ask { background: rgba(76,141,255,.05); } .ob-row.bid { background: rgba(240,83,78,.05); }
+.ob-row.ask { background: rgba(49,130,246,.05); } .ob-row.bid { background: rgba(240,68,82,.05); }
 .ob-row.cur .ob-px { outline: 2px solid #e6edf3; border-radius: 4px; }
 .ob-px { text-align: center; font-weight: 700; } .ob-px small { display: block; font-size: 10px; font-weight: 400; line-height: 1; }
 .ob-vol { position: relative; padding: 0 6px; text-align: right; color: #c7d0d9; }
-.ob-vol i { position: absolute; right: 0; top: 4px; bottom: 4px; background: rgba(76,141,255,.25); z-index: 0; }
-.ob-vol.right { text-align: left; } .ob-vol.right i { left: 0; right: auto; background: rgba(240,83,78,.25); }
+.ob-vol i { position: absolute; right: 0; top: 4px; bottom: 4px; background: rgba(49,130,246,.25); z-index: 0; }
+.ob-vol.right { text-align: left; } .ob-vol.right i { left: 0; right: auto; background: rgba(240,68,82,.25); }
 .ob-vol.hide i { display: none; }
 .ob-sum { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin: 6px 0 4px; }
 .trades { max-height: 300px; overflow: auto; font-size: 12px; font-variant-numeric: tabular-nums; }

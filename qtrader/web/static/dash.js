@@ -37,7 +37,7 @@ window.renderDash = (d) => {
         grid: { vertLines: { visible: false }, horzLines: { color: "#1b222b" } },
         rightPriceScale: { borderVisible: false }, timeScale: { borderVisible: false },
       });
-      dash.series = dash.chart.addAreaSeries({ lineColor: "#4c8dff", topColor: "rgba(76,141,255,.3)", bottomColor: "rgba(0,0,0,0)", lineWidth: 2 });
+      dash.series = dash.chart.addAreaSeries({ lineColor: "#3182f6", topColor: "rgba(49,130,246,.3)", bottomColor: "rgba(0,0,0,0)", lineWidth: 2 });
     }
     dash.series.setData(hist);
     dash.chart.timeScale().fitContent();
@@ -46,7 +46,7 @@ window.renderDash = (d) => {
   // 자산 구성 (도넛)
   const parts = pos.map((p) => ({ name: p.symbol, v: p.value })).concat(ov ? [{ name: "현금", v: ov.cash }] : []);
   const tot = parts.reduce((s, x) => s + x.v, 0) || 1;
-  const colors = ["#4c8dff", "#f0534e", "#2fbf71", "#e9a23b", "#8b5cf6", "#0ea5e9", "#e11d74", "#14b8a6", "#6b7785"];
+  const colors = ["#3182f6", "#f04452", "#2fbf71", "#e9a23b", "#8b5cf6", "#0ea5e9", "#e11d74", "#14b8a6", "#6b7785"];
   let acc = 0;
   const arcs = parts.map((x, i) => {
     const a0 = acc / tot * Math.PI * 2, a1 = (acc += x.v) / tot * Math.PI * 2;
