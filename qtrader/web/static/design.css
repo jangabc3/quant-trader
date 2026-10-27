@@ -154,7 +154,7 @@ details[open] > :not(summary) { animation: openDown .28s ease-out; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 
 /* ===== 설정 다시 짜기 ===== */
-.cfg-nav { position: sticky; top: 56px; z-index: 5; display: flex; gap: 6px; flex-wrap: wrap; padding: 8px; background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(6px); border-radius: 12px; }
+.cfg-nav { position: sticky; top: var(--hdr-h, 56px); z-index: 5; display: flex; gap: 6px; flex-wrap: wrap; padding: 8px; background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(6px); border-radius: 12px; }
 .cfg-nav a { padding: 6px 12px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); text-decoration: none; font-size: 13px; }
 .cfg-nav a:hover { color: var(--text); border-color: var(--blue); }
 .cfg-wrap > .panel { scroll-margin-top: 110px; }
@@ -218,3 +218,12 @@ label.wide { display: block; } label.wide textarea { width: 100%; }
 .mode-now .mn-txt { flex: 1 1 220px; min-width: 0; }
 .mode-now > button { flex: 0 0 auto; }
 @media (max-width: 560px) { .mode-now > button { flex: 1 1 100%; } .cfg-nav { top: 0; } }
+button.kchip { cursor: pointer; }
+.kchip.sel { border-color: var(--blue); color: var(--text); }
+#key-how { margin: 6px 0 0; }
+
+/* 달러/원화 바꾸기 */
+.fx-toggle { display: inline-flex; gap: 0; padding: 2px; border-radius: 99px; border: 1px solid var(--line); background: #0f141b; cursor: pointer; font-size: 12px; }
+.fx-toggle b, .fx-toggle span { padding: 2px 8px; border-radius: 99px; }
+.fx-toggle b { background: var(--blue); color: #fff; }
+.fx-toggle span { color: var(--muted); }

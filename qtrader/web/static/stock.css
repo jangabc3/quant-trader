@@ -146,3 +146,9 @@ ul.why { margin: 8px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.7;
 .upd-banner svg { width: 18px; height: 18px; color: var(--blue); }
 .srv-note.ev { background: color-mix(in srgb, var(--amber) 12%, transparent); }
 .srv-note.ev svg { color: var(--amber); }
+/* 순위 막대의 '투자유의 빼기': 한 줄 칩으로 */
+.rank-bar label.chk-inline { display: inline-flex; flex-direction: row; flex: none; width: auto; white-space: nowrap; gap: 6px; align-items: center;
+  margin: 0; padding: 5px 10px; border: 1px solid var(--line); border-radius: 99px; cursor: pointer; font-size: 13px; }
+.rank-bar label.chk-inline:has(input:checked) { border-color: var(--blue); color: var(--text); background: rgba(49,130,246,.1); }
+.rank-bar label.chk-inline input { margin: 0; width: auto; }
+#rank-time { white-space: nowrap; margin-left: auto; }

@@ -80,3 +80,26 @@ def test_html_ids_unique():
     ids = re.findall(r'\bid="([\w-]+)"', HTML)
     dup = sorted({i for i in ids if ids.count(i) > 1})
     assert not dup, dup
+
+
+# 브라우저 기본 함수와 글자 속 CSS 함수(rgba(), translateX() 등) — 정의 안 된 것으로 치지 않는다
+_KNOWN = set("""if for while switch catch function return typeof fetch setTimeout setInterval clearInterval clearTimeout Number String
+Boolean Array Date parseInt parseFloat isNaN isFinite alert confirm prompt encodeURIComponent decodeURIComponent requestAnimationFrame
+cancelAnimationFrame structuredClone Promise Set Map Error anime getComputedStyle new await async super import RegExp Symbol Intl URL
+URLSearchParams EventSource Notification CustomEvent Event Audio Image FormData Blob AbortController queueMicrotask btoa atob matchMedia
+PointerEvent rgba rgb hsl var url translate translateX translateY scale rotate minmax repeat bezier not calc Claude""".split())
+
+
+def test_called_functions_are_defined():
+    """설정 화면을 다시 짤 때 refreshKeyState 를 지워서 키 종류를 바꿔도 칸이 안 바뀌던 일이 다시 없게."""
+    src = "\n".join(SRC.values())
+    defined = set(re.findall(r"\b(?:function\s+|const\s+|let\s+|var\s+|class\s+)([A-Za-z_$][\w$]*)", src))
+    defined |= set(re.findall(r"window\.([A-Za-z_$][\w$]*)\s*=", src))
+    for m in re.finditer(r"\(([^()]*)\)\s*=>|function\s*[\w$]*\s*\(([^()]*)\)|([A-Za-z_$][\w$]*)\s*=>", src):
+        for g in m.groups():
+            if g:
+                defined |= set(re.findall(r"[A-Za-z_$][\w$]*", g))
+    for g in re.findall(r"(?:const|let)\s*[\[{]([^\]}]*)[\]}]\s*=", src):
+        defined |= set(re.findall(r"[A-Za-z_$][\w$]*", g))
+    called = set(re.findall(r"(?<![\w.$])([A-Za-z_$][\w$]*)\s*\(", src))
+    assert not (called - defined - _KNOWN), sorted(called - defined - _KNOWN)

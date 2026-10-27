@@ -10,7 +10,7 @@ function tickKR(p) {
 const tkKR = () => tk.info?.market === "KR";
 const tkStep = (p) => tkKR() ? tickKR(p) : 0.01;
 const tkRound = (p) => tkKR() ? Math.round(p / tickKR(p)) * tickKR(p) : Math.round(p * 100) / 100;
-const tkMoney = (v) => money(v, tk.info?.market || "KR");
+const tkMoney = (v) => isUS(tk.info?.market) ? usdWithKrw(v) : money(v, tk.info?.market || "KR");
 
 function ticketShell() {
   const box = $("#ticket");

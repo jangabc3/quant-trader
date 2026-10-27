@@ -294,6 +294,19 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         except Exception as e:
             raise HTTPException(502, f"시장 정보를 받지 못했습니다: {e}")
 
+    @app.get("/api/fx")
+    def fx_rate():
+        """달러 환율 (원). 토스 키가 없으면 체험용 값."""
+        t = toss()
+        if t is None:
+            return {"rate": 1390.0, "demo": True}
+        from ..toss import num
+        try:
+            f = market_mod.cached("fx_rate", 60, t.exchange_rate) or {}
+            return {"rate": num(f.get("rate")) or None, "demo": False}
+        except Exception as e:
+            raise HTTPException(502, f"환율을 받지 못했습니다: {e}")
+
     @app.get("/api/market/rankings")
     def market_rankings(kind: str = "amount", market: str = "KR", duration: str = "realtime", count: int = 30, safe: bool = False):
         if market not in ("KR", "US"):

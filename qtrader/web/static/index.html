@@ -34,6 +34,7 @@
     <div id="gsearch-list" class="gsearch-list hidden"></div>
   </div>
   <div class="badges">
+    <button type="button" id="fx-toggle" class="fx-toggle" aria-label="미국 가격 달러/원화 바꾸기"></button>
     <span class="badge rt-badge" title="2초마다 시세를 받아요"><i id="rt-dot" class="rt-dot"></i>실시간</span>
     <span id="mode-badge" class="badge">-</span>
     <span id="auto-badge" class="badge">-</span>
@@ -398,6 +399,7 @@
           <label class="wide" id="key-secret-wrap"><span id="key-label2">Client Secret</span> <input id="key-secret" type="password" autocomplete="off"></label>
         </div>
         <div class="form-row"><button id="key-save" class="primary"><i data-lucide="save"></i> 키 저장</button><button id="key-test"><i data-lucide="plug-zap"></i> 연결 테스트</button><button id="key-del"><i data-lucide="trash-2"></i> 이 키 삭제</button></div>
+        <p class="note" id="key-how"></p>
         <div id="key-test-out" class="key-test hidden"></div>
       </div>
 

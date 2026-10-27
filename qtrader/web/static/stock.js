@@ -42,7 +42,7 @@ async function loadSummary() {
     $("#st-chg").innerHTML = `<span class="${cls(s.change)}">${s.change > 0 ? "▲" : s.change < 0 ? "▼" : ""} ${pxFmt(Math.abs(s.change))} (${pct(s.change_rate)})</span>`;
     $("#st-tags").innerHTML = (s.warnings || []).map((w) => `<span class="badge red">${esc(WARN_KO[w] || w)}</span>`).join("");
     $("#st-info").innerHTML = [["전일 종가", pxFmt(s.prev_close)], ["52주 최고", pxFmt(s.high52)], ["52주 최저", pxFmt(s.low52)],
-      ["시가총액", s.market_cap ? (isKR(s.symbol) ? bigKRW(s.market_cap) + "원" : "$" + bigKRW(s.market_cap)) : "-"],
+      ["시가총액", s.market_cap ? (isKR(s.symbol) ? bigKRW(s.market_cap) + "원" : bigUSD(s.market_cap)) : "-"],
       ["상한가", pxFmt(s.upper_limit)], ["하한가", pxFmt(s.lower_limit)], ["오늘 거래량", s.volume_today ? Number(s.volume_today).toLocaleString() : "-"]]
       .map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("");
     const w = new Set(state.config?.watchlist || []);
