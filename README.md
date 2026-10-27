@@ -7,6 +7,8 @@
 > 이 프로그램은 투자 권유가 아닙니다. 백테스트와 AI 분석은 추정이며 미래 수익을
 > 보장하지 않습니다. 모든 매매 판단과 손익은 사용자 본인의 책임입니다.
 
+개발 안내는 [CLAUDE.md](CLAUDE.md), 남은 작업은 [docs/NEXT.md](docs/NEXT.md), 처음 설계는 [docs/architecture-v0.md](docs/architecture-v0.md)에 있습니다.
+
 ## 화면
 
 | 탭 | 내용 |
