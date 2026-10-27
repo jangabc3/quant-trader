@@ -105,3 +105,32 @@ def test_performance_round_trips(store):
     s = r["summary"]
     assert s["count"] == 2 and s["realized"] == 50 and s["win_rate"] == 0.5 and s["profit_factor"] == 2
     assert r["trades"][0]["why"] == "손절" and r["trades"][1]["days"] == 3 and s["mdd"] == -50
+
+
+def test_telegram_find_chat_from_own_bot(monkeypatch):
+    """다른 봇 없이, 내 봇에게 보낸 메시지에서 대화방 번호를 찾는다."""
+    from qtrader import checks, vault
+
+    class R:
+        def __init__(self, d):
+            self.d = d
+
+        def json(self):
+            return self.d
+
+    class S:
+        def __init__(self, updates):
+            self.updates = updates
+
+        def get(self, url, **k):
+            if url.endswith("/getMe"):
+                return R({"ok": True, "result": {"username": "my_qtrader_bot"}})
+            return R({"ok": True, "result": self.updates})
+
+    monkeypatch.setattr(vault, "get", lambda k: "123:ABC" if k == "telegram_bot_token" else None)
+    upd = [{"message": {"chat": {"id": 555, "type": "private", "first_name": "길동"}, "text": "Gd"}},
+           {"message": {"chat": {"id": -100, "type": "group"}}}]
+    r = checks.telegram_find_chat(S(upd))
+    assert r["chat_id"] == "555" and r["name"] == "길동" and r["bot"] == "@my_qtrader_bot"
+    with pytest.raises(RuntimeError, match="@my_qtrader_bot"):
+        checks.telegram_find_chat(S([]))

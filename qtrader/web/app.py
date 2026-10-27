@@ -583,6 +583,20 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         return [e | {"message": say(e["message"], name_of)} for e in
                 c.store.rows("select * from events where level='notice' and id>? order by id desc limit 30", (after,))]
 
+    @app.post("/api/telegram/find-chat", dependencies=[Depends(need_token)])
+    def telegram_find_chat():
+        """내 봇 대화에서 대화방 번호를 찾아 저장하고, 확인 메시지를 보낸다."""
+        from .. import checks
+        try:
+            r = checks.telegram_find_chat()
+        except Exception as e:
+            raise HTTPException(400, str(e))
+        cfg = config_mod.load()
+        cfg.setdefault("notify", {})["telegram_chat_id"] = r["chat_id"]
+        config_mod.save(cfg)
+        extras.notify(Store(config_mod.home() / "qtrader.db"), cfg, "QTrader 알림이 연결됐어요. 앞으로 체결·손절·하루 요약을 여기로 보내 드릴게요", "test")
+        return r
+
     @app.post("/api/notify/test", dependencies=[Depends(need_token)])
     def notify_test():
         c = ctx()
