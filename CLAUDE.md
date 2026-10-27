@@ -16,7 +16,7 @@ QTRADER_HOME=.devhome .venv/Scripts/python -m qtrader serve --no-browser   # htt
 
 ## 구조
 - `qtrader/engine.py` 주문 흐름(목표 비중 → 리스크 → 주문, 체결 동기화, 손절·익절 `check_exits`)
-- `qtrader/scheduler.py` 2분 틱: 체결 확인·기업 이벤트·토스 서버 보호(OCO)·조건주문·장중 감시, 정기 실행 전 AI 회의
+- `qtrader/scheduler.py` 2분 틱: 체결 확인·기업 이벤트·토스 서버 보호(OCO)·조건주문·장중 감시·장중 회의 → 한 종목 매수(`_intraday` → `engine.buy_one`), 정기 실행 전 AI 회의
 - `qtrader/agents/` AI 투자 회의(`meeting.py`, 역할 `roles.py`), 큐비 비서(`assistant.py`, 스트리밍·도구 21개)
 - `qtrader/toss.py` 토스 API (명세 v1.2.24, 호출 그룹별 속도 제한), `guard.py` OCO 서버 보호, `corp.py` 분할·병합 처리, `conditional.py` 조건주문
 - `qtrader/screener.py` 후보 고르기(멀티팩터·DART 공시·재무·종목 기본 정보 거르기), `principles.py` 매수 체크리스트

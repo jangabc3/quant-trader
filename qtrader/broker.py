@@ -83,14 +83,15 @@ class TossBroker:
     def account(self, market: Market) -> Account:
         return self.client.account(market)
 
-    def order(self, req: OrderRequest) -> OrderResult:
+    def order(self, req: OrderRequest, loc: bool | None = None) -> OrderResult:
+        """loc=False 로 부르면 미국 주문도 장 마감(LOC)까지 기다리지 않고 바로 지정가로 낸다 (장중 매수)."""
         from datetime import date
         import uuid
 
         if req.strategy == "manual":  # 사용자가 직접 누른 주문: 같은 주문을 또 낼 수 있게 매번 새 번호, 일반 지정가
             return self.client.order(req, client_order_id="qm" + uuid.uuid4().hex[:30], loc=False)
         coid = f"qt{date.today():%y%m%d}{req.market.value}{req.side.value[0]}{req.qty}-{req.symbol.replace(':', '')}"
-        return self.client.order(req, client_order_id=coid, loc=self.us_loc)
+        return self.client.order(req, client_order_id=coid, loc=self.us_loc if loc is None else loc)
 
 
 class KISBroker:
