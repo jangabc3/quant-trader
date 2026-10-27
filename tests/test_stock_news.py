@@ -145,3 +145,23 @@ def test_stock_endpoints_demo(client):
 def test_dart_key_endpoint(client, fake_vault):
     r = client.put("/api/secrets", json={"kind": "dart", "key": "d" * 40}, headers=client.h).json()
     assert r["keys"]["dart"] and fake_vault["dart_api_key"] == "d" * 40
+
+
+def test_sector_and_account_endpoints(client, isolated_home):
+    from qtrader.data import write_demo_csv
+    write_demo_csv(isolated_home / "data", config.load())
+    sec = client.get("/api/market/sectors").json()
+    assert sec["demo"] and sec["items"][0]["changeRate"] >= sec["items"][-1]["changeRate"]
+    sid = sec["items"][0]["sectorId"]
+    assert client.get(f"/api/sector/{sid}/stocks").json()["items"]
+    assert client.get("/api/stock/005930/extra").json() == {"program": [], "short": [], "credit": []}
+    ov = client.get("/api/account/overview").json()
+    kr = ov["markets"]["KR"]
+    assert ov["broker"] == "paper" and kr["equity"] == kr["cash"] == 10_000_000 and kr["positions"] == 0
+    assert client.get("/api/account/open-orders").json()["items"] == []
+    assert client.post("/api/account/orders/x/cancel", headers=client.h).status_code == 400
+
+
+def test_index_has_build_id(client):
+    html = client.get("/").text
+    assert "__BUILD__" not in html and "/static/chat.js?v=" in html
