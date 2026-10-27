@@ -2,9 +2,10 @@
 
 세 겹으로 움직인다.
 1) 실시간 움직임 (비용 0): 감시 중 종목의 손절·익절까지 거리, 오늘 한 일, 보유 종목 뉴스 -> 캐릭터 말풍선
-2) 다음 후보 재계산 (비용 0): 15분마다 숫자 규칙을 다시 돌려 '무엇이 모자라는지'까지 보여 준다
+2) 다음 후보 재계산 (비용 0): N분(기본 15)마다 숫자 규칙을 다시 돌려 '무엇이 모자라는지'까지 보여 준다
 3) AI 긴급 재점검 (하루 상한): 가진 종목에 일이 생겼을 때만 빠른 모델로 한 번 묻는다.
-   위험을 줄이는 쪽(일찍 팔기)만 바로 하고, 새로 사는 것은 다음 정기 실행으로 미룬다 (뇌동매매 방지).
+   위험을 줄이는 쪽(일찍 팔기)만 바로 한다. 새로 사는 것은 정식 AI 회의와 체크리스트를 거친다
+   (장중 계속이면 scheduler._intraday, 아니면 정기 실행).
 """
 from __future__ import annotations
 
@@ -60,8 +61,8 @@ def watch_list(ctx, market: Market) -> list[dict]:
     return out
 
 
-def next_candidates(ctx, market: Market, n: int = 8) -> list[dict]:
-    """15분마다 다시 계산. 통과한 종목 + 아깝게 떨어진 종목(무엇이 모자라는지)."""
+def next_candidates(ctx, market: Market, n: int = 8, ttl: float = 900) -> list[dict]:
+    """15분(ttl)마다 다시 계산. 통과한 종목 + 아깝게 떨어진 종목(무엇이 모자라는지)."""
     def build():
         R = principles.DEFAULT_RULES | (ctx.cfg["ai"].get("rules") or {})
         syms, held = screener.pool(ctx, market)
@@ -89,7 +90,7 @@ def next_candidates(ctx, market: Market, n: int = 8) -> list[dict]:
                          "rsi": round(sig["rsi"]), "mom": sig["mom12_1"]})
         rows.sort(key=lambda r: (len(r["missing"]), -r["score"]))
         return rows[:n]
-    return _cached(f"cand:{market.value}:{ctx.broker.name}", 900, build)
+    return _cached(f"cand:{market.value}:{ctx.broker.name}", ttl, build)
 
 
 def schedule(ctx, market: Market) -> dict:
@@ -107,7 +108,7 @@ def schedule(ctx, market: Market) -> dict:
 def timeline(ctx, market: Market, limit: int = 30, name_of=lambda s: s) -> list[dict]:
     today = datetime.now(TZ[market]).strftime("%Y-%m-%d")
     rows = ctx.store.rows("select * from events where substr(ts,1,10)>=? order by id desc limit 200", (today,))
-    keep = ("engine", "exit", "sync", "ai", "picks", "alert", "order", "risk", "live", "manual", "report", "approval")
+    keep = ("engine", "exit", "sync", "ai", "picks", "alert", "order", "risk", "live", "manual", "report", "approval", "intraday")
     out = []
     for r in rows:
         src = r["source"].split(".")[0]
@@ -226,6 +227,24 @@ def run_rechecks(ctx, market: Market, llm=None) -> list[dict]:
     return out
 
 
+def intraday_board(ctx, market: Market, name_of=lambda s: s) -> dict:
+    """장중 회의 -> 매수 흐름: 오늘 장중에 연 회의와 그 결과 (scheduler._intraday 가 남긴 기록)."""
+    from .agents import meeting
+    ai = ctx.cfg["ai"]
+    today = trade_date(market)
+    state = json.loads(ctx.store.get(f"intraday_{market.value}_{today}") or "{}")
+    items = []
+    for sym, e in state.items():
+        row = {"symbol": sym, "name": name_of(sym)} | e
+        if e.get("state") == "meeting":
+            run = meeting.get_run(e.get("run_id", ""))
+            row["stage"] = (run or {}).get("stage", "")
+        items.append(row)
+    met = len({r["symbol"] for r in ctx.store.ai_runs(200) if r["trade_date"] == today})
+    return {"on": bool(ai.get("intraday", True)), "every": int(ai.get("intraday_every_min", 15)), "met": met,
+            "cap": int(ai["max_symbols_per_day"]), "items": items[::-1]}
+
+
 def snapshot(ctx, market: Market, name_of=lambda s: s) -> dict:
     """현황판 한 번에: 감시·후보·오늘 한 일·일정·뉴스·재점검."""
     watch = [w | {"name": name_of(w["symbol"])} for w in watch_list(ctx, market)]
@@ -236,4 +255,4 @@ def snapshot(ctx, market: Market, name_of=lambda s: s) -> dict:
             "schedule": schedule(ctx, market), "watch": watch, "candidates": cands,
             "timeline": timeline(ctx, market, name_of=name_of), "news": headlines(ctx, names),
             "rechecks": json.loads(ctx.store.get(f"recheck_{market.value}_{today}") or "{}"),
-            "recheck_cap": int(ctx.cfg["ai"].get("recheck_per_day", 5))}
+            "recheck_cap": int(ctx.cfg["ai"].get("recheck_per_day", 5)), "intraday": intraday_board(ctx, market, name_of)}

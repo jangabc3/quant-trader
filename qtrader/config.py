@@ -89,14 +89,19 @@ DEFAULT = {
         # 최종 등급 -> 목표 비중 배수 (종목당 1/N 기준). Hold 는 보유 유지
         "rating_weights": {"Buy": 1.0, "Overweight": 0.7, "Hold": None, "Underweight": 0.3, "Sell": 0.0},
         "min_confidence": 0.5,  # 이보다 확신이 낮으면 Hold 로 본다
-        "monthly_cost_cap_krw": 30000,
+        "monthly_cost_cap_krw": 30000,  # 이번 달 AI 회의 비용이 이만큼 넘으면 새 회의를 열지 않는다 (0 = 제한 없음)
         # 회의할 종목을 AI 가 매일 고른다 (설정 종목 + 관심 종목 + 보유 + 거래대금 상위 중 숫자 규칙 통과)
         "auto_pick": True,
         # 매매 기간: auto(AI가 종목마다) / long(장기) / swing(스윙, 며칠~2주) / short(단기 1~3일). 단기는 손절·익절이 좁고 기한이 지나면 판다
         "holding": "auto",
         # 장중 AI 긴급 재점검: 가진 종목이 급락하거나 손절선에 가까울 때만, 하루 이만큼까지 (위험을 줄이는 매도만 바로 한다)
         "live_recheck": True,
-        "recheck_per_day": 5,  # 이번 달 AI 회의 비용이 이만큼 넘으면 새 회의를 열지 않는다 (0 = 제한 없음)
+        "recheck_per_day": 5,  # 하루 재점검 횟수 상한 (0 = 재점검 안 함)
+        "recheck_every_min": 2,  # 재점검이 필요한지 몇 분마다 볼지
+        # 장중 계속 사기: 장중 N분마다 새로 규칙을 통과한 후보로 회의를 열고, 결론이 매수이고 체크리스트를 통과하면 그때 바로 산다.
+        # 끄면 하루 한 번 정기 실행 때만 산다. 회의 수는 max_symbols_per_day·monthly_cost_cap_krw 에 함께 센다
+        "intraday": True,
+        "intraday_every_min": 15,
     },
     # 알림: 화면(윈도우 알림)은 항상, 텔레그램은 봇 토큰(키 보관함)과 대화방 번호가 있을 때
     "notify": {"telegram_chat_id": "", "daily_report": True},
@@ -208,6 +213,20 @@ def validate(cfg: dict) -> list[str]:
         errs.append("ai.mode 는 fast 또는 precise")
     if not 0 <= int(ai.get("debate_rounds", 1)) <= 3 or not 0 <= int(ai.get("risk_rounds", 1)) <= 3:
         errs.append("토론 라운드는 0~3 이어야 합니다")
+    if not isinstance(ai.get("intraday", True), bool):
+        errs.append("ai.intraday 는 true 또는 false")
+
+    def _int_in(k, lo, hi, default):
+        v = ai.get(k, default)
+        return isinstance(v, int) and not isinstance(v, bool) and lo <= v <= hi
+    if not _int_in("intraday_every_min", 5, 240, 15):
+        errs.append("장중 회의 간격(ai.intraday_every_min)은 5~240분이어야 합니다")
+    if not _int_in("recheck_every_min", 2, 240, 2):
+        errs.append("재점검 간격(ai.recheck_every_min)은 2~240분이어야 합니다")
+    if not _int_in("recheck_per_day", 0, 50, 5):
+        errs.append("하루 재점검 횟수(ai.recheck_per_day)는 0~50 이어야 합니다")
+    if not _int_in("max_symbols_per_day", 0, 50, 8):
+        errs.append("하루 회의 종목 수(ai.max_symbols_per_day)는 0~50 이어야 합니다")
     return errs
 
 
