@@ -32,10 +32,46 @@ def after_close(market: Market, now: datetime | None = None) -> bool:
     return t.weekday() < 5 and t.time() >= dtime(close.hour, close.minute + 5)
 
 
-def due(market: Market, run_time: str, now: datetime | None = None) -> bool:
+def _hm_range(s: str) -> tuple[dtime, dtime]:
+    a, b = s.split("-")
+    return parse_hm(a), parse_hm(b)
+
+
+def trading_now(cfg: dict, market: Market, now: datetime | None = None) -> bool:
+    """정규장 + 설정에서 켠 시간외 세션까지 (손절·익절 감시와 주문이 가능한 시간).
+    국내: 넥스트레이드(NXT) 08:00~20:00. 미국: 주간거래(한국 낮), 프리마켓(뉴욕 04:00~09:30), 애프터마켓(16:00~20:00)."""
+    if is_open(market, now):
+        return True
+    mc = cfg["markets"][market.value]
+    kst = (now or datetime.now(TZ[Market.KR])).astimezone(TZ[Market.KR])
+    if market == Market.KR:
+        return bool(mc.get("extended")) and kst.weekday() < 5 and dtime(8, 0) <= kst.time() < dtime(20, 0)
+    ext = mc.get("extended_sessions") or []
+    if "day" in ext and kst.weekday() < 5:
+        a, b = _hm_range(mc.get("day_hours", "10:00-17:30"))
+        if a <= kst.time() < b:
+            return True
+    ny = kst.astimezone(TZ[Market.US])
+    if ny.weekday() < 5 and (("pre" in ext and dtime(4, 0) <= ny.time() < dtime(9, 30))
+                             or ("after" in ext and dtime(16, 0) <= ny.time() < dtime(20, 0))):
+        return True
+    return False
+
+
+def run_clock(cfg: dict, market: Market):
+    """정기 실행 시각을 어느 시계로 볼지: 미국을 '주간거래'로 고르면 한국 시각, 아니면 그 나라 시각."""
+    mc = cfg["markets"][market.value]
+    if market == Market.US and mc.get("run_session") == "day":
+        a, b = _hm_range(mc.get("day_hours", "10:00-17:30"))
+        return TZ[Market.KR], b
+    return TZ[market], SESSIONS[market][1]
+
+
+def due(market: Market, run_time: str, now: datetime | None = None, cfg: dict | None = None) -> bool:
     """오늘 실행 시각이 지났고 아직 장중이면 True. 주말은 False. (휴장일은 증권사 거부로 걸러진다)"""
-    t = (now or datetime.now(TZ[market])).astimezone(TZ[market])
-    return t.weekday() < 5 and parse_hm(run_time) <= t.time() < SESSIONS[market][1]
+    tz, end = run_clock(cfg, market) if cfg else (TZ[market], SESSIONS[market][1])
+    t = (now or datetime.now(tz)).astimezone(tz)
+    return t.weekday() < 5 and parse_hm(run_time) <= t.time() < end
 
 
 def next_run(market: Market, run_time: str, now: datetime | None = None) -> datetime:
@@ -79,7 +115,7 @@ class Scheduler:
             except Exception as e:
                 ctx.store.log("warn", "alert", f"가격 알림 확인 실패: {e}")
         # 자산 기록은 자동매매가 꺼져 있어도 장 마감 뒤 하루 한 번 남긴다 (자산 추이 그래프용)
-        if time.monotonic() - getattr(self, "_last_snap", 0) > 600:
+        if ctx.store.get("auto_trading", "0") != "1" and time.monotonic() - getattr(self, "_last_snap", 0) > 600:
             self._last_snap = time.monotonic()
             from .engine import snapshot_equity
             for m in (Market.KR, Market.US):
@@ -107,7 +143,7 @@ class Scheduler:
                 if not cfg["markets"][m.value].get("enabled"):
                     continue
                 try:
-                    if is_open(m):
+                    if trading_now(cfg, m):
                         was_killed = ctx.kill
                         if check_loss(ctx, m) and not was_killed:
                             extras.notify(ctx.store, cfg, f"⛔ {m.value} 하루 손실 한도를 넘어 신규 매수를 멈췄습니다", "risk")
@@ -118,7 +154,7 @@ class Scheduler:
                             from . import live
                             live.run_rechecks(ctx, m)
                             self._new_candidates(ctx, m)
-                    elif after_close(m) and snapshot_equity(ctx, m):
+                    if after_close(m) and snapshot_equity(ctx, m):
                         today = trade_date(m)
                         rep = extras.daily_report(ctx.store, ctx.broker.name, m.value, today)
                         ctx.store.set(f"report_{m.value}", json.dumps(rep, ensure_ascii=False, default=str))
@@ -130,9 +166,9 @@ class Scheduler:
             mc = cfg["markets"].get(m.value, {})
             if mc.get("enabled") and mc.get("strategy") == "ai":
                 self._ai_meetings(ctx, m, mc)
-            if not mc.get("enabled") or not due(m, mc["run_time"]):
+            if not mc.get("enabled") or not due(m, mc["run_time"], cfg=cfg):
                 continue
-            if not self._session_open(ctx, m):
+            if not (m == Market.US and mc.get("run_session") == "day") and not self._session_open(ctx, m):
                 ctx.store.log("info", f"scheduler.{m.value}", "휴장일이라 실행하지 않습니다")
                 ctx.store.mark_run(trade_date(m), ctx.broker.name, m.value)
                 continue
@@ -210,7 +246,7 @@ class Scheduler:
 
         ai = ctx.cfg["ai"]
         hh, mm = (int(x) for x in mc["run_time"].split(":"))
-        t = datetime.now(TZ[m])
+        t = datetime.now(run_clock(ctx.cfg, m)[0])
         start = t.replace(hour=hh, minute=mm, second=0, microsecond=0) - timedelta(minutes=int(ai["run_before_minutes"]))
         if t.weekday() >= 5 or not (start <= t < start + timedelta(minutes=int(ai["run_before_minutes"]))):
             return

@@ -151,6 +151,12 @@ def order_reason(note: dict, plan: dict | None, base_reason: str) -> str:
     return " | ".join(parts + [base_reason])
 
 
+def kr_tick(p: float) -> int:
+    """국내 호가 단위로 내림."""
+    t = 1 if p < 2000 else 5 if p < 5000 else 10 if p < 20000 else 50 if p < 50000 else 100 if p < 200000 else 500 if p < 500000 else 1000
+    return int(p // t * t)
+
+
 def plan_orders(target: dict[str, float], prices: dict[str, float], holdings: dict[str, int],
                 capital: float, market: Market, lim: RiskLimits, strategy: str,
                 limit_offset: float = 0.0, keep: frozenset | set = frozenset()) -> list[OrderRequest]:
@@ -189,7 +195,8 @@ def remember_plan(store: Store, account: str, market: str, o: OrderRequest, toda
     d = store.latest_decision(o.symbol, today) or {}
     plan = d.get("plan")
     if plan:
-        store.save_plan(account, market, o.symbol, d.get("id"), plan["entry"], plan["stop"], plan["take"])
+        h = int(plan.get("horizon_days") or 0)
+        store.save_plan(account, market, o.symbol, d.get("id"), plan["entry"], plan["stop"], plan["take"], h if 0 < h <= 10 else None)
 
 
 TOSS_DONE = {"FILLED": "filled", "CANCELED": "rejected", "REJECTED": "rejected", "EXPIRED": "rejected",
@@ -299,7 +306,7 @@ def check_exits(ctx: Context, market: Market) -> list[dict]:
         px = pos.last_price or ctx.data.price(market, pl["symbol"])
         why = "stop" if px <= pl["stop"] else "take" if px >= pl["take"] else None
         from .principles import HOLDING
-        days = HOLDING.get(ctx.cfg["ai"].get("holding", "long"), {}).get("days")
+        days = pl.get("horizon") or HOLDING.get(ctx.cfg["ai"].get("holding", "auto"), {}).get("days")
         if not why and days:
             age = (datetime.now(timezone.utc) - datetime.fromisoformat(pl["created_at"])).days
             if age >= days * 7 / 5:  # 거래일 -> 달력일 대략
@@ -322,7 +329,13 @@ def check_exits(ctx: Context, market: Market) -> list[dict]:
                 continue
             retry = len(pending)
         # 국내는 시장가, 미국은 지정가만 되므로 현재가보다 낮게 (재주문할수록 1%씩 더 낮게)
-        price = round(px * (0.997 - 0.01 * retry), 2) if market == Market.US else 0
+        from .scheduler import is_open as _regular
+        if market == Market.US:
+            price = round(px * (0.997 - 0.01 * retry), 2)
+        elif _regular(market):
+            price = 0  # 국내 정규장: 시장가
+        else:  # 국내 시간외(NXT): 지정가만 되므로 현재가보다 1% 낮게 호가 단위로
+            price = kr_tick(px * (0.99 - 0.01 * retry))
         label = {"stop": "손절", "take": "익절", "time": "기간 만료"}[why]
         req = OrderRequest(market, pl["symbol"], Side.SELL, pos.qty, price, "ai-exit",
                            f"{label}: 현재가 {px:,} / 손절가 {pl['stop']:,} / 익절가 {pl['take']:,}")
@@ -455,6 +468,7 @@ def run_market(ctx: Context, market: Market, dry_run: bool = False, force: bool 
         store.log("warn", src, f"차단 {o.side.value} {o.symbol} x{o.qty}: {why}")
 
     results = []
+    usd_left, fx_short = None, []
     need_ok = use_ai and cfg["ai"].get("require_approval", False) and not dry_run
     if need_ok:
         store.expire_approvals(market.value, today)
@@ -469,6 +483,21 @@ def run_market(ctx: Context, market: Market, dry_run: bool = False, force: bool 
             results.append({"symbol": o.symbol, "side": o.side.value, "qty": o.qty, "price": o.price,
                             "status": "pending_approval", "message": f"승인 대기 #{aid}"})
             continue
+        if (market == Market.US and o.side == Side.BUY and ctx.broker.name == "toss" and not dry_run
+                and cfg.get("fx_policy", "preferential_only") == "preferential_only"):
+            if usd_left is None:
+                try:
+                    usd_left = float(ctx.broker.client.buying_power("USD"))
+                except Exception:
+                    usd_left = float("inf")
+            need = o.qty * (o.price or prices.get(o.symbol, 0))
+            if need > usd_left:
+                fx_short.append((o.symbol, need - usd_left))
+                store.log("warn", src, f"{o.symbol} 달러 부족(${need - usd_left:,.0f})으로 사지 않았습니다. 환전 우대로 환전해 주세요")
+                results.append({"symbol": o.symbol, "side": "buy", "qty": o.qty, "price": o.price, "status": "skipped_fx",
+                                "message": "달러 부족 · 환전 필요"})
+                continue
+            usd_left -= need
         if dry_run:
             status, res_msg, oid = "dry_run", "모의 실행(주문 안 함)", ""
         else:
@@ -485,6 +514,10 @@ def run_market(ctx: Context, market: Market, dry_run: bool = False, force: bool 
         results.append({"symbol": o.symbol, "side": o.side.value, "qty": o.qty, "price": o.price,
                         "status": status, "message": res_msg})
 
+    if fx_short:
+        from .extras import notify
+        notify(store, cfg, f"💱 달러가 약 ${sum(x[1] for x in fx_short):,.0f} 모자라 {len(fx_short)}종목({', '.join(x[0] for x in fx_short)})을 사지 않았어요. "
+                           "토스 앱에서 환전 우대를 받아 달러로 바꿔 두면 다음 실행 때 삽니다. 비싼 자동 환전은 하지 않아요.", "fx")
     if not dry_run:
         after = ctx.broker.account(market)
         store.add_equity(today, acct_id, market.value, after.equity, after.cash)
