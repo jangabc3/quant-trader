@@ -35,7 +35,7 @@ function apply(sym, px) {
   if (window.flashChanges) $$(`[data-key="p:${CSS.escape(sym)}"]`).forEach((el) => flashChanges(el.parentElement || el));
   if (state.tab === "stock" && (typeof st !== "undefined" && st.symbol) === sym && old != null && px !== old) {
     const el = $("#st-price");
-    el.textContent = (m === "KR" ? "" : "$") + pxFmt(px) + (m === "KR" ? "원" : "");
+    el.innerHTML = bigPriceHtml(px, m);
     el.classList.remove("flash-up", "flash-down"); void el.offsetWidth; el.classList.add(px > old ? "flash-up" : "flash-down");
     st.last = px;
   }

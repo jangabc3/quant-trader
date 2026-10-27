@@ -37,9 +37,9 @@ async function loadSummary() {
     $("#st-sub").textContent = `${s.symbol} · ${s.market || ""}${s.demo ? " · 체험용 데이터" : ""}`;
     const prevPx = st.last;
     st.last = s.price;
-    $("#st-price").textContent = (isKR(s.symbol) ? "" : "$") + pxFmt(s.price) + (isKR(s.symbol) ? "원" : "");
+    $("#st-price").innerHTML = bigPriceHtml(s.price, isKR(s.symbol) ? "KR" : "US");
     $("#st-price").className = prevPx && s.price !== prevPx ? (s.price > prevPx ? "flash-up" : "flash-down") : "";
-    $("#st-chg").innerHTML = `<span class="${cls(s.change)}">${s.change > 0 ? "▲" : s.change < 0 ? "▼" : ""} ${pxFmt(Math.abs(s.change))} (${pct(s.change_rate)})</span>`;
+    $("#st-chg").innerHTML = `<span class="${cls(s.change)}">${s.change > 0 ? "▲" : s.change < 0 ? "▼" : ""} ${isKR(s.symbol) ? pxFmt(Math.abs(s.change)) : money(Math.abs(s.change), "US")} (${pct(s.change_rate)})</span>`;
     $("#st-tags").innerHTML = (s.warnings || []).map((w) => `<span class="badge red">${esc(WARN_KO[w] || w)}</span>`).join("");
     $("#st-info").innerHTML = [["전일 종가", pxFmt(s.prev_close)], ["52주 최고", pxFmt(s.high52)], ["52주 최저", pxFmt(s.low52)],
       ["시가총액", s.market_cap ? (isKR(s.symbol) ? bigKRW(s.market_cap) + "원" : bigUSD(s.market_cap)) : "-"],
