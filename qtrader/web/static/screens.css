@@ -121,3 +121,36 @@
 .inv-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
 .inv-head button { margin-left: auto; }
 @media (max-width: 700px) { .crit-row { grid-template-columns: 20px 1fr auto; } .crit-row em { grid-column: 2 / -1; } }
+
+/* 고급 더보기 메뉴 (지금 바로 실행) */
+.more-menu { position: relative; }
+.more-menu > summary { list-style: none; cursor: pointer; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; display: flex; align-items: center; }
+.more-menu > summary::-webkit-details-marker { display: none; }
+.more-menu > div { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.4); white-space: nowrap; }
+button.danger-soft { color: var(--red); border-color: rgba(240,68,82,.4); background: transparent; }
+
+/* 업종 쏠림 경고 */
+.warn-box { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; margin: 0 0 12px; border-radius: 12px; background: rgba(255,170,0,.08); border: 1px solid rgba(255,170,0,.35); color: var(--text); }
+.warn-box svg { color: #ffb020; flex: none; margin-top: 2px; }
+.warn-box b { display: block; margin-bottom: 4px; }
+
+/* 실현 손익·세금 */
+.rz { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.rz > div { display: flex; flex-direction: column; gap: 4px; padding: 12px; background: var(--panel2); border-radius: 12px; }
+.rz b { font-size: 20px; }
+.rz-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 4px; }
+.rz-list span { padding: 4px 10px; border-radius: 999px; background: var(--panel2); font-size: 12px; }
+.report-pre { white-space: pre-wrap; font-family: inherit; font-size: 13px; line-height: 1.7; margin: 0; color: var(--text); }
+
+/* 가격 알림 */
+.alerts { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.alert-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--panel2); border-radius: 10px; }
+.alert-row span { margin-left: auto; color: var(--muted); }
+.alert-row button { padding: 4px 6px; }
+
+/* 지난 회의 비교 */
+table.cmp { width: 100%; font-size: 13px; }
+table.cmp tr[data-run] { cursor: pointer; }
+table.cmp tr.cur td { background: rgba(49,130,246,.08); }
+table.cmp td.note { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 700px) { .rz { grid-template-columns: 1fr; } table.cmp td.note { display: none; } }

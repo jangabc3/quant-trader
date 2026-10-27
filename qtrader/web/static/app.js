@@ -174,6 +174,7 @@ async function refresh() {
       state.plans = Object.fromEntries(plans.map((p) => [p.symbol, p]));
       renderApprovals(appr);
       window.renderDash && window.renderDash({ positions: pos, orders: ords, events: evs, overview: ov });
+      window.loadDashExtras && window.loadDashExtras();
     }
   } catch (e) { banner("서버 응답 오류: " + e.message); }
 }
@@ -304,7 +305,11 @@ function formatRun(r) {
 }
 
 $("#dry-btn").onclick = () => runNow(true);
-$("#run-btn").onclick = () => runNow(false);
+$("#run-btn").onclick = () => {
+  if (!confirm("실행 시각을 기다리지 않고 지금 바로 주문까지 실행합니다. 진행할까요?")) return;
+  $("#run-btn").closest("details").open = false;
+  runNow(false);
+};
 $("#auto-btn").onclick = async () => {
   const s = state.status;
   const on = !s.auto_trading;
@@ -348,7 +353,11 @@ async function loadConfig() {
   $("#r-loss").value = c.risk.daily_loss_limit;
   $("#r-ordkr").value = c.risk.max_order_value.KR; $("#r-ordus").value = c.risk.max_order_value.US;
   $("#watchlist").value = (c.watchlist || []).join(", ");
-  $("#news-feeds").value = (c.news?.feeds || []).map((f) => `${f.name}|${f.url}`).join("\n");
+  $("#news-feeds").value = (c.news?.feeds || []).map((f) => `${f.name}|${f.url}|${f.cat || "kr"}`).join("\n");
+  $("#tg-chat").value = c.notify?.telegram_chat_id || "";
+  $("#ntf-report").checked = c.notify?.daily_report !== false;
+  $("#ai-cap").value = c.ai.monthly_cost_cap_krw ?? 30000;
+  $("#sec-max").value = c.max_sector_weight ?? 0.4;
   $("#ai-mode").value = c.ai.mode || "fast";
   $("#ai-quick").value = c.ai.quick_model || ""; $("#ai-deep").value = c.ai.deep_model || c.ai.model || "";
   $("#ai-effort").value = c.ai.effort; $("#ai-profile").value = c.ai.profile || "";
@@ -361,12 +370,14 @@ async function loadConfig() {
   $("#rl-conf").value = R.min_confidence; $("#rl-rr").value = R.min_reward_risk; $("#rl-rsi").value = R.max_rsi;
   $("#rl-vol").value = R.max_vol; $("#rl-fact").value = R.min_fact_ok; $("#rl-buys").value = R.max_new_buys_per_day;
   $("#rl-cool").value = R.cooldown_days; $("#rl-trend").checked = R.require_trend; $("#rl-mom").checked = R.require_momentum;
-  const stratOptions = [...Object.keys(state.strategies), "ai"];
+  const ruleKeys = Object.keys(state.strategies);
+  const stratSelect = (cur) => `<option value="ai" ${cur === "ai" ? "selected" : ""}>${STRAT_NAME.ai} (추천)</option>
+    <optgroup label="고급 · 단순 규칙 (AI 검증 없음)">${ruleKeys.map((k) => `<option value="${k}" ${k === cur ? "selected" : ""}>${STRAT_NAME[k] || k}</option>`).join("")}</optgroup>`;
   $("#market-cfg").innerHTML = Object.entries(c.markets).map(([m, mc]) => `
     <div class="mkt-cfg" data-market="${m}">
       <label class="check big"><input type="checkbox" data-f="enabled" ${mc.enabled ? "checked" : ""}> ${MARKET_NAME[m]} 주식 자동매매</label>
       <div class="form-row">
-        <label>전략 <select data-f="strategy">${stratOptions.map((k) => `<option value="${k}" ${k === mc.strategy ? "selected" : ""}>${STRAT_NAME[k]}</option>`).join("")}</select></label>
+        <label>전략 <select data-f="strategy">${stratSelect(mc.strategy)}</select></label>
         <label>쓸 돈 (${m === "KR" ? "원" : "$"}) <input data-f="budget" type="number" value="${mc.budget}"></label>
       </div>
       <details class="mini-adv"><summary>실행 시각·종목·전략 세부</summary>
@@ -392,7 +403,7 @@ async function loadConfig() {
 }
 
 const KEY_LABELS = {
-  toss: ["Client ID", "Client Secret"], anthropic: ["API 키", null], dart: ["인증키 (40자리)", null],
+  toss: ["Client ID", "Client Secret"], anthropic: ["API 키", null], dart: ["인증키 (40자리)", null], telegram: ["봇 토큰", null],
   kis_demo: ["앱키", "앱시크릿"], kis_real: ["앱키", "앱시크릿"],
 };
 function refreshKeyState() {
@@ -404,7 +415,7 @@ function refreshKeyState() {
   const s = state.status;
   if (s) {
     $("#key-state").innerHTML = s.keys[kind] ? "<b class='ok'>저장된 키 있음</b>" : "저장된 키 없음";
-    const names = { toss: "토스증권", anthropic: "Claude", dart: "DART", kis_demo: "KIS 모의", kis_real: "KIS 실전" };
+    const names = { toss: "토스증권", anthropic: "Claude", dart: "DART", telegram: "텔레그램", kis_demo: "KIS 모의", kis_real: "KIS 실전" };
     $("#key-status").innerHTML = Object.entries(names).map(([k, n]) =>
       `<span class="kchip ${s.keys[k] ? "on" : ""}"><i data-lucide="${s.keys[k] ? "check-circle-2" : "circle-dashed"}"></i>${n}</span>`).join("");
     window.lucide && lucide.createIcons();
@@ -426,14 +437,17 @@ $("#cfg-save").onclick = async () => {
   c.risk.daily_loss_limit = Number($("#r-loss").value);
   c.risk.max_order_value = { KR: Number($("#r-ordkr").value), US: Number($("#r-ordus").value) };
   c.watchlist = $("#watchlist").value.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
-  c.news = { feeds: $("#news-feeds").value.split("\n").map((l) => l.split("|")).filter((p) => p.length === 2 && /^https?:\/\//.test(p[1].trim()))
-    .map(([n, u]) => ({ name: n.trim(), url: u.trim() })) };
+  c.news = { feeds: $("#news-feeds").value.split("\n").map((l) => l.split("|")).filter((p) => p.length >= 2 && /^https?:\/\//.test(p[1].trim()))
+    .map(([n, u, k]) => ({ name: n.trim(), url: u.trim(), cat: (k || "").trim() === "global" ? "global" : "kr" })) };
+  c.notify = { ...(c.notify || {}), telegram_chat_id: $("#tg-chat").value.trim(), daily_report: $("#ntf-report").checked };
+  c.max_sector_weight = Number($("#sec-max").value) || 0.4;
   Object.assign(c.ai, {
     mode: $("#ai-mode").value, quick_model: $("#ai-quick").value.trim(), deep_model: $("#ai-deep").value.trim(),
     effort: $("#ai-effort").value, profile: $("#ai-profile").value.trim(), require_approval: $("#ai-approve").checked,
     auto_exit: $("#ai-exit").checked, debate_rounds: Number($("#ai-debate").value),
     run_before_minutes: Number($("#ai-before").value), max_symbols_per_day: Number($("#ai-max").value),
     min_confidence: Number($("#ai-conf").value), web_research: $("#ai-web").checked,
+    monthly_cost_cap_krw: Number($("#ai-cap").value) || 0,
     rules: { min_confidence: Number($("#rl-conf").value), min_reward_risk: Number($("#rl-rr").value),
       max_rsi: Number($("#rl-rsi").value), max_vol: Number($("#rl-vol").value), min_fact_ok: Number($("#rl-fact").value),
       max_new_buys_per_day: Number($("#rl-buys").value), cooldown_days: Number($("#rl-cool").value),

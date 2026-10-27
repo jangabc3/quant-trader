@@ -79,7 +79,12 @@ DEFAULT = {
         # 최종 등급 -> 목표 비중 배수 (종목당 1/N 기준). Hold 는 보유 유지
         "rating_weights": {"Buy": 1.0, "Overweight": 0.7, "Hold": None, "Underweight": 0.3, "Sell": 0.0},
         "min_confidence": 0.5,  # 이보다 확신이 낮으면 Hold 로 본다
+        "monthly_cost_cap_krw": 30000,  # 이번 달 AI 회의 비용이 이만큼 넘으면 새 회의를 열지 않는다 (0 = 제한 없음)
     },
+    # 알림: 화면(윈도우 알림)은 항상, 텔레그램은 봇 토큰(키 보관함)과 대화방 번호가 있을 때
+    "notify": {"telegram_chat_id": "", "daily_report": True},
+    "alerts": [],  # 가격 알림 [{symbol, name, op: above|below, price}]
+    "max_sector_weight": 0.4,  # 한 업종 비중 경고 기준
     "watchlist": ["005930", "000660", "AAPL", "NVDA"],
     "investor": None,  # 투자 성향 검사 결과 (처음 실행 때 묻는다)
     "news": {"feeds": [

@@ -165,6 +165,14 @@ class Meeting:
                             self.run["stages"][k] = "done" if self.run["status"] == "done" else "error"
                     self.run["stage"] = "완료" if self.run["status"] == "done" else "오류"
                 self.store.save_ai_run(self.run)
+            try:
+                from .. import extras
+                f = self.run.get("final") or {}
+                extras.notify(self.store, self.cfg, f"🤖 {self.run.get('name') or self.symbol} AI 회의 끝: "
+                              + (f"{f.get('rating')} (확신 {float(f.get('confidence') or 0):.0%})"
+                                 if self.run["status"] == "done" else f"오류 {self.run.get('error', '')[:80]}"), "ai")
+            except Exception:
+                pass
         return self.run
 
     def _gather(self):
@@ -311,6 +319,11 @@ def start(symbol: str, data, store: Store, cfg: dict, llm: LLM | None = None, to
     existing = running_for(symbol)
     if existing:
         return get_run(existing)
+    from .. import extras
+    cap = float((cfg.get("ai") or {}).get("monthly_cost_cap_krw") or 0)
+    spent = extras.month_cost_krw(store)
+    if cap and spent >= cap:
+        raise ValueError(f"이번 달 AI 비용 {spent:,.0f}원이 상한 {cap:,.0f}원에 닿아 회의를 열지 않습니다. 설정에서 상한을 바꿀 수 있습니다")
     m = Meeting(symbol, data, store, cfg, llm, toss)
     if background:
         threading.Thread(target=m.execute, name=f"meeting-{symbol}", daemon=True).start()
