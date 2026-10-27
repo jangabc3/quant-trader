@@ -116,7 +116,7 @@ python -m venv .venv
    ```bash
    .venv\Scripts\qtrader demo-data
    ```
-2. **대시보드 열기** — `QTrader 실행.cmd` 를 더블클릭하거나:
+2. **대시보드 열기** — 프로그램으로 깔려면 `QTrader 설치.cmd` 를 더블클릭(D:\QTrader 에 설치, 바탕화면 바로가기). 코드 그대로 켜려면 `QTrader 실행.cmd` 를 더블클릭하거나:
    ```bash
    .venv\Scripts\qtrader serve
    ```
