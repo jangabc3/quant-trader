@@ -347,6 +347,10 @@
   <!-- 설정 -->
   <section id="tab-cfg" class="tab hidden">
     <div class="cfg-wrap">
+      <div class="panel" id="upd-panel"><h3><i data-lucide="download"></i> 프로그램 업데이트 <small id="upd-ver"></small></h3>
+        <div id="upd-body" class="note">확인 중...</div>
+        <div class="form-row"><label>업데이트 저장소 (GitHub 아이디/저장소) <input id="upd-repo" placeholder="예: myname/qtrader-releases"></label>
+          <button type="button" id="upd-check"><i data-lucide="refresh-cw"></i> 지금 확인</button></div></div>
       <div class="panel"><h3><i data-lucide="user-check"></i> 내 투자 성향과 매매 기준</h3><div class="criteria-box"></div></div>
       <div class="panel">
         <h3><i data-lucide="shield-check"></i> 1. 운용 모드</h3>
@@ -516,5 +520,6 @@
 <script src="/static/stream.js?v=__BUILD__"></script>
 <script src="/static/perf.js?v=__BUILD__"></script>
 <script src="/static/acct.js?v=__BUILD__"></script>
+  <script src="/static/update.js?v=__BUILD__"></script>
 </body>
 </html>

@@ -1,6 +1,5 @@
 """토스증권 클라이언트(가짜 HTTP), AI 회의(가짜 LLM), AI 등급 -> 주문, 시장 화면 API."""
 import json
-from urllib.parse import parse_qs
 
 import pytest
 from fastapi.testclient import TestClient

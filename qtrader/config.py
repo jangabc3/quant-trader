@@ -68,6 +68,7 @@ DEFAULT = {
         # 분석가·토론자는 빠른 모델, 검증관·팀장·대표는 깊은 모델 (TradingAgents 의 quick/deep 구분,
         # 타민더마켓 가이드의 'Sonnet 기본 + 복잡한 분석만 Opus' 토큰 절약 팁)
         "quick_model": "claude-sonnet-5-5",
+        "chat_effort": "medium",  # 큐비 답변 깊이 (low 는 빠르고 싸지만 분석이 얕아짐)
         "deep_model": "claude-opus-5-5",
         "effort": "medium",
         # fast: Claude 호출 7번 (분석 묶음 + 대표가 팀장·트레이더·리스크 역할 통합), precise: 14번
@@ -102,6 +103,8 @@ DEFAULT = {
     "alerts": [],  # 가격 알림 [{symbol, name, op: above|below, price}]
     "max_sector_weight": 0.4,  # 한 업종 비중 경고 기준
     "security": {"pin": True},
+    # 자동 업데이트: GitHub 저장소 "아이디/저장소이름" (Releases 에 -win.zip 과 .sha256 을 올린다). 비우면 확인 안 함
+    "update": {"repo": "", "check": True},
     # 미국 주식은 달러로만 산다. 달러가 모자라면 자동 환전하지 않고 알려서 환전 우대로 직접 바꾸게 한다
     "fx_policy": "preferential_only",
     # 전략 비교: 같은 회의 결과로 매매 기간만 다른 가상 계좌들을 함께 돌린다 (AI 비용 추가 없음)

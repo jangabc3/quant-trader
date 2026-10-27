@@ -313,7 +313,10 @@ def check_exits(ctx: Context, market: Market) -> list[dict]:
         from .principles import HOLDING
         days = pl.get("horizon") or HOLDING.get(ctx.cfg["ai"].get("holding", "auto"), {}).get("days")
         from . import guard as _guard
+        from .corp import blocked_gap
         from .scheduler import is_open as _reg_open
+        if why == "stop" and blocked_gap(ctx, market, pl["symbol"], px):
+            continue
         if why in ("stop", "take") and _guard.active(ctx, market, pl["symbol"]) and (market == Market.US or _reg_open(market)):
             continue  # 토스 OCO 가 같은 가격에서 판다 (두 번 팔지 않게)
         if not why and days:

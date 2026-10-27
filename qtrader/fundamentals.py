@@ -192,3 +192,23 @@ def ratios(fin: dict, price: float | None = None, shares: float | None = None) -
         if eq and eq > 0:
             out["pbr"] = cap / eq
     return out
+
+
+def for_symbol(t, symbol: str) -> dict:
+    """한 종목의 재무제표 + 밸류에이션(PER·PBR·ROE 등). 국내 DART, 미국 SEC. 실패하면 {"error": ...}."""
+    from . import config as config_mod, stockdata, vault
+    s = symbol.upper().split(":")[-1]
+    try:
+        if s[:1].isdigit():
+            key = vault.get("dart_api_key")
+            if not key:
+                raise FundamentalsError("국내 재무제표는 설정에서 DART 오픈API 인증키(무료)를 등록하면 볼 수 있습니다")
+            fin = dart_financials(s, key, config_mod.home())
+        else:
+            fin = sec_financials(s, config_mod.load().get("sec_contact", ""))
+    except FundamentalsError as e:
+        return {"error": str(e)}
+    except Exception as e:
+        return {"error": f"재무제표를 받지 못했습니다: {e}"}
+    sm = stockdata.summary(t, symbol)
+    return fin | {"ratios": ratios(fin, sm["price"], sm["shares"])}

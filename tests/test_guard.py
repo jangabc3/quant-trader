@@ -9,7 +9,10 @@ from qtrader.storage import Store
 
 class Client:
     def __init__(self):
-        self.calls, self.open = [], {}
+        self.calls, self.open, self.detail, self.orders = [], {}, {}, {}
+
+    def order_detail(self, oid):
+        return self.orders.get(oid, {"status": "PENDING"})
 
     def _call(self, method, path, group, params=None, body=None, account=False):
         self.calls.append((method, path, group, body))
@@ -26,6 +29,8 @@ class Client:
         if method == "DELETE":
             self.open.pop(path.split("/")[-1], None)
             return {}
+        if method == "GET" and "/conditional-orders/" in path:
+            return self.detail.get(path.split("/")[-1], {})
         if method == "GET" and path.endswith("/conditional-orders"):
             return {"conditionalOrders": list(self.open.values())}
         return {}
@@ -146,3 +151,45 @@ def test_guard_notices_toss_sold(ctx):
     ctx.broker.positions.clear()  # 토스가 OCO 로 팔았다
     assert guard.sync(ctx) == ["005930"]
     assert not ctx.store.active_plans("toss") and not guard.active(ctx, Market.KR, "005930")
+
+
+def test_oco_fill_recorded_with_real_price(ctx):
+    from qtrader.engine import sync_orders
+    ctx.store.save_plan("toss", "KR", "005930", "r1", 70000, 66000, 80000)
+    guard.sync(ctx)
+    gid = guard._load(ctx.store)["KR:005930"]["id"]
+    ctx.broker.client.detail[gid] = {"quantity": "10", "first": {"triggerPrice": "80000", "orderPrice": "80000", "triggeredOrderId": None},
+                                     "second": {"triggerPrice": "66000", "orderPrice": "65340", "triggeredOrderId": "T9"}}
+    guard.sync(ctx)
+    row = ctx.store.rows("select * from orders where broker_order_id='T9'")[0]
+    assert row["side"] == "sell" and row["strategy"] == "ai-exit" and "손절" in row["message"]
+    assert len([c for c in ctx.broker.client.calls if c[0] == "POST"]) == 1  # 발동 뒤 다시 걸지 않음
+    ctx.broker.client.orders["T9"] = {"status": "FILLED", "execution": {"filledQuantity": "10", "averageFilledPrice": "65800"}}
+    sync_orders(ctx)
+    row = ctx.store.rows("select * from orders where broker_order_id='T9'")[0]
+    assert row["status"] == "filled" and row["price"] == 65800
+    assert not ctx.store.active_plans("toss")
+
+
+def test_split_rescales_plan_and_blocks_false_stop(ctx):
+    from qtrader import corp
+    ctx.store.save_plan("toss", "KR", "005930", "r1", 70000, 66000, 80000)
+    corp.check(ctx)  # 기준 기록
+    snap = corp._j(ctx.store, corp.SNAP)
+    snap["KR:005930"]["ts"] = "2000-01-01T00:00:00"  # 어제 기록인 것처럼
+    corp._put(ctx.store, corp.SNAP, snap)
+    assert corp.blocked_gap(ctx, Market.KR, "005930", 14400)  # 1:5 분할 직후 가격: 손절 멈춤
+    ctx.broker.positions["005930"] = Position(Market.KR, "005930", 50, 14000, 14400)
+    out = corp.check(ctx)
+    assert out and out[0]["ratio"] == 5
+    pl = ctx.store.active_plans("toss")[0]
+    assert (pl["entry"], pl["stop"], pl["take"]) == (14000, 13200, 16000)
+    assert not corp.blocked_gap(ctx, Market.KR, "005930", 14400)  # 고친 뒤엔 정상
+
+
+def test_unexplained_qty_change_only_warns(ctx):
+    from qtrader import corp
+    ctx.store.save_plan("toss", "KR", "005930", "r1", 70000, 66000, 80000)
+    corp.check(ctx)
+    ctx.broker.positions["005930"] = Position(Market.KR, "005930", 12, 70000, 72000)
+    assert corp.check(ctx) == [] and ctx.store.active_plans("toss")[0]["stop"] == 66000

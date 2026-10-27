@@ -106,9 +106,9 @@ window.renderResult = (run) => {
   if (!run || run.status !== "done") { $("#compare").classList.add("hidden"); return; }
   if (aiCmp.key === run.id) return;
   aiCmp.key = run.id;
-  loadCompare(run);
+  loadRunCompare(run);
 };
-async function loadCompare(run) {
+async function loadRunCompare(run) {
   const box = $("#compare");
   const rows = await api("/api/ai/compare/" + encodeURIComponent(run.symbol)).catch(() => []);
   if (rows.length < 2) { box.classList.add("hidden"); return; }
@@ -132,74 +132,11 @@ async function loadCompare(run) {
 }
 
 // 오늘 자동매매 흐름: 회의 -> 체크리스트 -> 승인 -> 주문 -> 장중 감시 -> 마감 요약
-async function renderFlow() {
-  const s = state.status, c = state.config;
-  if (!s || !$("#flow")) return;
-  const m = dash.market, mi = s.markets[m];
-  const [runs, appr, orders, plans] = await Promise.all([api("/api/ai/runs?limit=60").catch(() => []),
-    api("/api/approvals?status=pending").catch(() => []), api("/api/orders?limit=80").catch(() => []), api("/api/plans").catch(() => [])]);
-  const today = new Date().toLocaleDateString("sv-SE", { timeZone: m === "KR" ? "Asia/Seoul" : "America/New_York" });
-  const isM = (sym) => (m === "KR") === /^\d/.test(sym);
-  const nRuns = runs.filter((r) => r.trade_date === today && isM(r.symbol)).length;
-  const nOrd = orders.filter((o) => o.trade_date === today && o.market === m && o.status !== "dry_run").length;
-  const nPlan = plans.filter((p) => p.market === m).length;
-  const nAppr = appr.filter((a) => a.market === m).length;
-  const ai = mi?.strategy === "ai", rt = mi?.run_time || "-", needOk = !!c?.ai?.require_approval;
-  // [이름, 끝났나, 지금 설명]
-  const steps = [
-    ["AI 회의", !ai || nRuns > 0, ai ? `${rt} 전에 종목마다 AI 회의를 엽니다` : "규칙 전략이라 회의는 건너뜁니다"],
-    ["매수 점검", nOrd > 0 || nAppr > 0, `${rt}에 체크리스트를 모두 넘은 종목만 고릅니다`],
-    ...(needOk ? [["내 승인", nOrd > 0 && nAppr === 0, `승인 대기 ${nAppr}건이 있어요. 근거를 보고 승인해 주세요`]] : []),
-    ["주문", nOrd > 0, s.mode === "paper" ? "가상 계좌로 주문합니다 (돈은 움직이지 않아요)" : "증권사로 실제 주문합니다"],
-    ["손절·익절 감시", nPlan > 0 && !mi?.open, `장중 2분마다 ${nPlan}종목의 손절가·익절가를 확인합니다`],
-    ["마감 요약", false, "장 마감 5분 뒤 오늘 한 일을 정리해 알려 드립니다"],
-  ];
-  let cur = steps.findIndex((x) => !x[1]);
-  if (cur < 0) cur = steps.length - 1;
-  const live = s.auto_trading;
-  $("#flow").innerHTML = `<div class="fl-now ${live ? "on" : ""}"><span class="fl-dot"></span>
-      <div><b>${live ? `지금: ${esc(steps[cur][0])}` : "자동매매가 꺼져 있어요"}</b>
-      <span>${live ? esc(steps[cur][2]) : `켜면 매 거래일 아래 순서로 혼자 움직입니다. 다음 실행 ${(mi?.next_run || "").replace("T", " ").slice(5, 16)}`}</span></div>
-      ${!live && s.mode === "paper" ? `<button class="primary" id="flow-start"><i data-lucide="play"></i> 가상매매로 시작</button>` : ""}</div>
-    <ol class="fl-bar">${steps.map(([name, done], k) => `<li class="${done && k < cur ? "done" : k === cur && live ? "now" : ""}">
-      <i>${done && k < cur ? "✓" : k + 1}</i><span>${esc(name)}</span></li>`).join("")}</ol>
-    <div class="fl-stats"><span>오늘 회의 <b>${nRuns}</b></span><span>주문 <b>${nOrd}</b></span>${needOk ? `<span>승인 대기 <b>${nAppr}</b></span>` : ""}<span>감시 중 <b>${nPlan}</b>종목</span></div>`;
-  $("#flow-sub").textContent = `${MODE_NAME[s.mode]} · ${MARKET_NAME[m]}`;
-  $("#flow-cta").innerHTML = "";
-  if ($("#flow-start")) $("#flow-start").onclick = () => $("#auto-btn").click();
-  icons();
-}
+// renderFlow 는 acct.js (하루 시간표)
 const _loadDashExtras = window.loadDashExtras;
 window.loadDashExtras = async () => { await Promise.all([_loadDashExtras(), renderFlow()]); };
 
-// 왜 사고팔았나요
-async function renderWhy() {
-  const rows = await api("/api/trades/why").catch(() => []);
-  const m = dash.market;
-  const list = rows.filter((r) => r.market === m);
-  $("#why-list").innerHTML = list.length ? list.map((t) => {
-    const buy = t.side === "buy", r = t.run, cur = m;
-    const exit = t.strategy === "ai-exit";
-    const tag = exit ? (t.summary.startsWith("손절") ? "손절" : "익절") : buy ? "매수" : "매도";
-    const reasons = r?.reasons?.length ? r.reasons : t.detail.filter(Boolean);
-    return `<article class="why ${buy ? "buy" : "sell"}">
-      <header>${logo(t.symbol, t.name || r?.name || t.symbol, 32)}<div><b>${esc(t.name || r?.name || t.symbol)}</b><span class="note">${esc(t.date)} · ${t.qty.toLocaleString()}주 @ ${money(t.price, cur)}${t.status === "submitted" ? " · 체결 대기" : ""}</span></div>
-        <span class="why-tag ${buy ? "up" : "down"}">${tag}</span></header>
-      <p class="why-head">${esc(r?.headline || t.summary)}</p>
-      ${reasons.length ? `<ul>${reasons.slice(0, 4).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
-      <div class="why-chips">
-        ${r ? `<span>AI ${esc(r.rating_ko || r.rating)} · 확신 ${Math.round((r.confidence || 0) * 100)}%</span>` : ""}
-        ${r?.rules ? `<span class="ok">체크리스트 ${r.passed.length}/${r.rules} 통과</span>` : ""}
-        ${r?.plan ? `<span class="down">손절 ${money(r.plan.stop, cur)}</span><span class="up">익절 ${money(r.plan.take, cur)}</span>` : ""}
-      </div>
-      ${r?.worry ? `<p class="note why-worry">⚠ 걱정되는 점: ${esc(r.worry)}</p>` : ""}
-      ${r ? `<button class="why-open" data-run="${esc(r.id)}">회의 전체 보기 <i data-lucide="chevron-right"></i></button>` : ""}
-    </article>`;
-  }).join("") : `<div class="empty"><i data-lucide="message-square-quote"></i><p>아직 자동매매 주문이 없어요</p>
-    <span class="note">주문이 나가면 무엇을, 왜, 어떤 근거로 샀는지 여기에 정리됩니다.</span></div>`;
-  $$("#why-list [data-run]").forEach((b) => b.onclick = () => { openTab("office"); window.showRunById && showRunById(b.dataset.run); });
-  icons();
-}
+// renderWhy 는 acct.js (왜 사고팔았나요 타임라인)
 const _loadDashExtras2 = window.loadDashExtras;
 window.loadDashExtras = async () => { await Promise.all([_loadDashExtras2(), renderWhy()]); };
 

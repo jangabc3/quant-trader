@@ -139,6 +139,12 @@ class Scheduler:
                         extras.notify(ctx.store, cfg, f"✅ {o['symbol']} {o['note']}", "order")
             except Exception as e:
                 ctx.store.log("error", "sync", f"체결 확인 실패: {e}")
+            try:  # 분할·병합 반영 (보호를 맞추기 전에 가격을 먼저 고친다), DART 기업 이벤트는 하루 한 번
+                from . import corp
+                corp.check(ctx)
+                corp.dart_scan(ctx)
+            except Exception as e:
+                ctx.store.log("warn", "corp", f"기업 이벤트 확인 실패: {e}")
             try:  # 토스 서버 손절·익절 보호(OCO) 맞추기
                 from . import guard
                 guard.sync(ctx)
