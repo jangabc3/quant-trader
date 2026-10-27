@@ -92,6 +92,13 @@ class CondIn(BaseModel):
     price: float = 0
     days: int = 30
     note: str = ""
+    then_stop: float = 0
+
+
+class CondEdit(BaseModel):
+    trigger: float
+    price: float = 0
+    qty: int = 0
 
 
 class SplitIn(BaseModel):
@@ -246,6 +253,8 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
     def positions():
         c = ctx()
         out = []
+        from ..guard import guarded
+        g = guarded(c)
         for m in (Market.KR, Market.US):
             if not c.cfg["markets"][m.value]["enabled"]:
                 continue
@@ -253,7 +262,8 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             for p in a.positions.values():
                 pnl = (p.last_price / p.avg_price - 1) if p.avg_price else 0
                 out.append({"market": m.value, "symbol": p.symbol, "name": name_of(p.symbol), "qty": p.qty, "avg_price": p.avg_price,
-                            "last_price": p.last_price, "value": p.value, "pnl": round(pnl, 4)})
+                            "last_price": p.last_price, "value": p.value, "pnl": round(pnl, 4), "day_pnl": p.day_pnl,
+                            "server_guard": f"{m.value}:{p.symbol}" in g})
         return out
 
     @app.get("/api/orders")
@@ -284,11 +294,11 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             raise HTTPException(502, f"시장 정보를 받지 못했습니다: {e}")
 
     @app.get("/api/market/rankings")
-    def market_rankings(kind: str = "amount", market: str = "KR", duration: str = "realtime", count: int = 30):
+    def market_rankings(kind: str = "amount", market: str = "KR", duration: str = "realtime", count: int = 30, safe: bool = False):
         if market not in ("KR", "US"):
             raise HTTPException(400, "market 은 KR 또는 US")
         try:
-            return market_mod.rankings(toss(), kind, market, duration, min(max(count, 1), 100))
+            return market_mod.rankings(toss(), kind, market, duration, min(max(count, 1), 100), safe)
         except ValueError as e:
             raise HTTPException(400, str(e))
         except Exception as e:
@@ -407,6 +417,10 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
     def market_industry_chart(sector_id: str, market: str = "KR"):
         return guard(lambda: market_mod.industry_chart(toss(), sector_id, market))
 
+    @app.get("/api/market/sector-tree")
+    def market_sector_tree():
+        return guard(lambda: {"demo": toss() is None, "tree": market_mod.sector_tree(toss())})
+
     @app.get("/api/market/investors")
     def market_investors(side: str = "buy"):
         return guard(lambda: market_mod.investor_flows(toss(), side))
@@ -427,8 +441,12 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         """국내 종목의 프로그램매매·공매도·신용거래 최근 20일."""
         t = toss()
         if t is None or not symbol[:1].isdigit():
-            return {"program": [], "short": [], "credit": []}
+            return {"program": [], "short": [], "credit": [], "lending": []}
         out = {}
+        try:
+            out["lending"] = market_mod.lending(t, symbol.upper(), 20)
+        except Exception:
+            out["lending"] = []
         for k, fn in (("program", t.program_trades), ("short", t.short_selling), ("credit", t.credit_trades)):
             try:
                 out[k] = fn(symbol.upper(), 20).get("records", [])
@@ -455,7 +473,9 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             base = hist[0]["equity"] if hist else (c.cfg["paper"]["initial_cash"].get(m.value) if c.broker.name == "paper" else None)
             prev = hist[-2]["equity"] if len(hist) >= 2 else base
             eq = a.equity
+            dp = [p.day_pnl for p in a.positions.values() if p.day_pnl is not None]
             out["markets"][m.value] = {
+                "day_pnl": sum(dp) if dp else None,  # 토스가 계산한 오늘 손익 (보유 종목)
                 "equity": eq, "cash": a.cash, "invested": value, "cost": cost, "unrealized": value - cost,
                 "unrealized_rate": (value / cost - 1) if cost else 0, "total_return": (eq / base - 1) if base else None,
                 "daily_return": (eq / prev - 1) if prev else None, "positions": len(a.positions),
@@ -623,6 +643,9 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             raise HTTPException(400, "손절가는 지금 가격보다 낮게, 익절가는 높게 정해 주세요")
         if c.broker.live:
             live_pin(x_qtrader_pin)
+        if body.side == "sell":  # 토스 서버 손절·익절이 걸려 있으면 먼저 풀어서 두 번 팔리지 않게
+            from ..guard import release
+            release(c, m, sym)
         req = OrderRequest(m, sym, Side(body.side), int(body.qty), float(body.price), "manual", "직접 주문")
         r = c.broker.order(req)
         status = ("filled" if r.filled_qty else "submitted") if r.ok else "rejected"
@@ -716,7 +739,19 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         if c.broker.live:
             live_pin(x_qtrader_pin)
         try:
-            return guard(lambda: conditional.create(c, body.symbol, body.side, body.qty, body.trigger, body.price, body.days, body.note))
+            return guard(lambda: conditional.create(c, body.symbol, body.side, body.qty, body.trigger, body.price, body.days, body.note,
+                                                    body.then_stop))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.post("/api/conditional/{cid}/modify", dependencies=[Depends(need_token)])
+    def cond_modify(cid: str, body: CondEdit, x_qtrader_pin: str = Header("")):
+        from .. import conditional
+        c = ctx()
+        if c.broker.live:
+            live_pin(x_qtrader_pin)
+        try:
+            return guard(lambda: conditional.modify(c, cid, body.trigger, body.price, body.qty))
         except ValueError as e:
             raise HTTPException(400, str(e))
 
@@ -764,6 +799,11 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         c.store.save_plan(c.broker.name, m.value, sym, "manual", pos.avg_price, body.stop, body.take)
         fmt = (lambda v: f"{v:,.0f}원") if m == Market.KR else (lambda v: f"${v:,.2f}")
         c.store.log("info", "manual", f"{sym} 손절 {fmt(body.stop)} · 익절 {fmt(body.take)} 로 정했습니다")
+        try:  # 토스면 서버 보호(OCO)도 바로 다시 건다
+            from ..guard import sync
+            sync(c)
+        except Exception as e:
+            c.store.log("warn", "guard", f"토스 보호 걸기 실패: {e}")
         return {"ok": True}
 
     @app.delete("/api/plans/{symbol}", dependencies=[Depends(need_token)])
@@ -771,6 +811,8 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         c = ctx()
         sym = symbol.upper()
         c.store.close_plan(c.broker.name, _market_of(sym).value, sym, "user")
+        from ..guard import release
+        guard(lambda: release(c, _market_of(sym), sym))
         c.store.log("info", "manual", f"{sym} 손절·익절 감시를 껐습니다")
         return {"ok": True}
 

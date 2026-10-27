@@ -139,6 +139,11 @@ class Scheduler:
                         extras.notify(ctx.store, cfg, f"✅ {o['symbol']} {o['note']}", "order")
             except Exception as e:
                 ctx.store.log("error", "sync", f"체결 확인 실패: {e}")
+            try:  # 토스 서버 손절·익절 보호(OCO) 맞추기
+                from . import guard
+                guard.sync(ctx)
+            except Exception as e:
+                ctx.store.log("warn", "guard", f"토스 보호 확인 실패: {e}")
             try:  # 가상매매 조건 주문 (토스는 토스가 직접 감시)
                 from . import conditional
                 for r in conditional.check(ctx):

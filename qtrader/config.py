@@ -57,6 +57,8 @@ DEFAULT = {
     "toss": {
         "account_seq": None,  # 비우면 첫 종합매매 계좌
         "us_loc": True,  # 미국 주문을 LOC(장 마감 지정가)로
+        # 손절·익절을 토스 서버 OCO 조건주문으로도 걸어 둔다 (PC 가 꺼져도 토스가 판다)
+        "server_guard": True,
     },
     "kis": {"account": ""},  # "12345678-01"
     "paper": {"initial_cash": {"KR": 10_000_000, "US": 10_000}},

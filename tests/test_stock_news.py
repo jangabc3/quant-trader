@@ -154,7 +154,7 @@ def test_sector_and_account_endpoints(client, isolated_home):
     assert sec["demo"] and sec["items"][0]["changeRate"] >= sec["items"][-1]["changeRate"]
     sid = sec["items"][0]["sectorId"]
     assert client.get(f"/api/sector/{sid}/stocks").json()["items"]
-    assert client.get("/api/stock/005930/extra").json() == {"program": [], "short": [], "credit": []}
+    assert client.get("/api/stock/005930/extra").json() == {"program": [], "short": [], "credit": [], "lending": []}
     ov = client.get("/api/account/overview").json()
     kr = ov["markets"]["KR"]
     assert ov["broker"] == "paper" and kr["equity"] == kr["cash"] == 10_000_000 and kr["positions"] == 0

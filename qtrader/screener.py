@@ -135,6 +135,46 @@ def quality(ctx, symbol: str) -> dict:
     return {"weak": weak, "growth": r.get("revenue_growth"), "margin": r.get("operating_margin")}
 
 
+def _basic_filter(ctx, market: Market, rows: list[dict]) -> list[dict]:
+    """토스 종목 기본 정보로 거르기: 거래정지·정리매매·상장폐지 예정, 레버리지·인버스 ETF/ETN, 우선주, 상장 6개월 안 된 종목."""
+    client = getattr(ctx.data, "client", None) if getattr(ctx.data, "name", "") == "toss" else None
+    if client is None:
+        return rows
+    syms = [r["symbol"] for r in rows if not r["held"]]
+    info = {}
+    for i in range(0, len(syms), 200):
+        try:
+            for x in client.stocks(syms[i:i + 200]):
+                info[x.get("symbol")] = x
+        except Exception:
+            return rows
+    keep = []
+    half_year = (date.today() - timedelta(days=182)).isoformat()
+    for r in rows:
+        x = info.get(r["symbol"].split(":")[-1])
+        why = None
+        if x and not r["held"]:
+            kd = x.get("koreanMarketDetail") or {}
+            lev = x.get("leverageFactor")
+            if x.get("status") != "ACTIVE" or x.get("delistDate"):
+                why = "상장 상태"
+            elif kd.get("krxTradingSuspended") or kd.get("liquidationTrading"):
+                why = "거래정지·정리매매"
+            elif lev not in (None, "", "1", "1.0") and float(lev) != 1.0:
+                why = f"레버리지·인버스 ({lev}배)"
+            elif x.get("isCommonShare") is False:
+                why = "우선주"
+            elif x.get("securityType") in ("ETN", "STOCK_WARRANTS"):
+                why = x.get("securityType")
+            elif x.get("listDate") and x["listDate"] > half_year:
+                why = "상장 6개월 안 됨"
+        if why:
+            ctx.store.log("info", f"picks.{market.value}", f"{r['symbol']} 후보 제외: {why}")
+        else:
+            keep.append(r)
+    return keep
+
+
 def candidates(ctx, market: Market, n: int) -> list[dict]:
     """[{symbol, score, reason, held, fails, factors}] 좋은 순. 가진 종목이 먼저."""
     from . import config as config_mod
@@ -160,6 +200,7 @@ def candidates(ctx, market: Market, n: int) -> list[dict]:
             fails.append(f"변동성 {f['vol']:.0%}")
         if s in held or not fails:
             rows.append({"symbol": s, "held": s in held, "fails": fails, "f": f})
+    rows = _basic_filter(ctx, market, rows)
     if not rows:
         return []
     # 멀티팩터 순위 평균

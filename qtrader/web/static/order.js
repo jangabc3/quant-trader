@@ -19,6 +19,7 @@ function ticketShell() {
     <div class="tk-row"><span>주문 방법</span><div class="seg tk-how"><button data-how="now" class="on">바로</button><button data-how="cond" title="정한 가격에 닿으면 주문">조건</button><button data-how="split" title="여러 번에 나눠서">나눠서</button></div></div>
     <div class="tk-row"><span>주문 유형</span><div class="seg tk-type"><button data-type="limit" class="on">지정가</button><button data-type="market">시장가</button></div></div>
     <div class="tk-extra hidden" id="tk-cond-box"><label>이 가격에 닿으면 <div class="tk-pct"><input id="tk-trig" inputmode="decimal"></div></label>
+      <label class="chk-inline" id="tk-oto-row"><input type="checkbox" id="tk-oto" checked> 사지면 바로 손절도 걸기 <div class="tk-pct"><input id="tk-oto-pct" value="5" inputmode="decimal">%</div></label>
       <p class="note" id="tk-cond-note"></p></div>
     <div class="tk-extra hidden" id="tk-split-box"><div class="tk-guard-row"><label>몇 번에 <select id="tk-parts"><option>2</option><option selected>3</option><option>4</option></select></label>
       <label>간격 <div class="tk-pct"><input id="tk-step" inputmode="decimal" value="3">%</div></label></div><p class="note" id="tk-split-note"></p></div>
@@ -100,7 +101,10 @@ function ticketDraw(syncInputs = true) {
   if (tk.how === "cond") {
     if (!$("#tk-trig").value && i.price) $("#tk-trig").value = tkRound(i.price * (buy ? 0.97 : 1.03));
     const tg = Number($("#tk-trig").value.replace(/,/g, "")) || 0;
-    $("#tk-cond-note").textContent = tg ? `지금 ${tkMoney(i.price)} → ${tkMoney(tg)}에 ${buy ? "내려오면 사요" : "오르면 팔아요"} (${pct(tg / i.price - 1)}). 30일 동안 지켜 봐요.` : "";
+    $("#tk-oto-row").classList.toggle("hidden", !buy);
+    const oto = buy && $("#tk-oto").checked ? tkRound(tg * (1 - (Number($("#tk-oto-pct").value) || 5) / 100)) : 0;
+    $("#tk-cond-note").textContent = tg ? `지금 ${tkMoney(i.price)} → ${tkMoney(tg)}에 ${buy ? (tg < i.price ? "내려오면 사요" : "닿으면 사요") : tg < i.price ? "내려오면 팔아요 (손절)" : "오르면 팔아요"} (${pct(tg / i.price - 1)}). 30일 동안 지켜 봐요.`
+      + (oto ? ` 사지면 ${tkMoney(oto)} 아래로 내릴 때 파는 손절이 이어서 걸려요.` : "") : "";
   }
   if (tk.how === "split") {
     const n = Number($("#tk-parts").value), step = Number($("#tk-step").value) || 0;
@@ -140,7 +144,8 @@ async function sendSpecial() {
   try {
     if (tk.how === "cond") {
       const trig = Number($("#tk-trig").value.replace(/,/g, ""));
-      await api("/api/conditional", { method: "POST", body: { symbol: i.symbol, side: tk.side, qty: tk.qty, trigger: trig, price: tk.type === "market" ? 0 : trig } });
+      const oto = buy && $("#tk-oto").checked ? tkRound(trig * (1 - (Number($("#tk-oto-pct").value) || 5) / 100)) : 0;
+      await api("/api/conditional", { method: "POST", body: { symbol: i.symbol, side: tk.side, qty: tk.qty, trigger: trig, price: tk.type === "market" && !oto ? 0 : trig, then_stop: oto } });
       toast(`조건 주문을 걸었어요. ${tkMoney(trig)}에 닿으면 ${buy ? "사요" : "팔아요"}`, "crosshair");
     } else {
       const r = await api("/api/order/split", { method: "POST", body: { symbol: i.symbol, side: tk.side, qty: tk.qty, parts: Number($("#tk-parts").value), step_pct: Number($("#tk-step").value) || 3, price: tk.type === "market" ? 0 : p } });

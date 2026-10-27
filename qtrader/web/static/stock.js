@@ -257,7 +257,7 @@ async function loadExtra() {
 function drawExtra() {
   const el = $("#st-extra");
   const recs = (extraData?.[extraTab] || []).slice(0, 20);
-  if (!recs.length) { el.innerHTML = "<p class='note'>토스증권 키를 등록하면 국내 종목의 프로그램매매·공매도·신용거래 동향이 보입니다.</p>"; return; }
+  if (!recs.length) { el.innerHTML = "<p class='note'>토스증권 키를 등록하면 국내 종목의 프로그램매매·공매도·신용거래·대차거래 동향이 보입니다.</p>"; return; }
   const n = (v) => Number(v || 0);
   let rows, head, series;
   if (extraTab === "program") {
@@ -268,6 +268,10 @@ function drawExtra() {
     head = ["날짜", "공매도 수량", "공매도 금액", "거래량 비중"];
     rows = recs.map((r) => [r.date.slice(5), n(r.shortSellingVolume), n(r.shortSellingAmount), r.shortSellingVolumeRate == null ? null : n(r.shortSellingVolumeRate)]);
     series = rows.map((r) => r[1]);
+  } else if (extraTab === "lending") {
+    head = ["날짜", "빌린 주식", "갚은 주식", "대차 잔고", "잔고 금액"];
+    rows = recs.map((r) => [String(r.date).slice(5), n(r.exec), n(r.repay), n(r.balance), n(r.amount)]);
+    series = rows.map((r) => r[3]);
   } else {
     head = ["날짜", "신용 신규", "신용 상환", "신용 잔고", "잔고율"];
     rows = recs.map((r) => [r.date.slice(5), n(r.marginLoan?.newQuantity), n(r.marginLoan?.returnQuantity), n(r.marginLoan?.balanceQuantity), n(r.marginLoan?.balanceRate)]);
@@ -276,8 +280,9 @@ function drawExtra() {
   const max = Math.max(...series.map(Math.abs), 1);
   const bars = series.slice().reverse().map((v) => `<i class="${v >= 0 ? "pos" : "neg"}" style="height:${Math.abs(v) / max * 100}%"></i>`).join("");
   const fmt = (v, i) => v == null ? "-" : (extraTab === "short" && i === 3) || (extraTab === "credit" && i === 4) ? (v * 100).toFixed(2) + "%" :
-    (extraTab === "short" && i === 2) ? bigKRW(v) + "원" : `<span class="${extraTab === "program" ? cls(v) : ""}">${Number(v).toLocaleString()}</span>`;
-  el.innerHTML = `<div class="mini-bars">${bars}</div><table><thead><tr>${head.map((h, i) => `<th class="${i ? "r" : ""}">${h}</th>`).join("")}</tr></thead>
+    (extraTab === "short" && i === 2) || (extraTab === "lending" && i === 4) ? bigKRW(v) + "원" : `<span class="${extraTab === "program" ? cls(v) : ""}">${Number(v).toLocaleString()}</span>`;
+  const tip = extraTab === "lending" ? `<p class="note">대차거래: 기관이 주식을 빌리고 갚은 양. 잔고가 빠르게 늘면 공매도가 늘어날 수 있다는 신호로 봐요.</p>` : "";
+  el.innerHTML = `${tip}<div class="mini-bars">${bars}</div><table><thead><tr>${head.map((h, i) => `<th class="${i ? "r" : ""}">${h}</th>`).join("")}</tr></thead>
     <tbody>${rows.map((r) => `<tr>${r.map((v, i) => `<td class="${i ? "r" : ""}">${i ? fmt(v, i) : v}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
 }
 $("#st-extra-tab").addEventListener("click", (e) => {

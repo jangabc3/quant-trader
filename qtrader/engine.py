@@ -215,6 +215,11 @@ def _plan_after_fill(ctx: Context, o: dict, price: float) -> None:
         mp = _json.loads(ctx.store.get(f"manual_plan_{o['id']}") or "null")
         if mp:
             ctx.store.save_plan(ctx.broker.name, o["market"], o["symbol"], "manual", price, mp["stop"], mp["take"])
+    try:  # 체결되자마자 토스 서버 보호(OCO)를 건다
+        from . import guard
+        guard.sync(ctx)
+    except Exception as e:
+        ctx.store.log("warn", "guard", f"체결 뒤 토스 보호 걸기 실패: {e}")
 
 
 def sync_orders(ctx: Context) -> list[dict]:
@@ -307,6 +312,10 @@ def check_exits(ctx: Context, market: Market) -> list[dict]:
         why = "stop" if px <= pl["stop"] else "take" if px >= pl["take"] else None
         from .principles import HOLDING
         days = pl.get("horizon") or HOLDING.get(ctx.cfg["ai"].get("holding", "auto"), {}).get("days")
+        from . import guard as _guard
+        from .scheduler import is_open as _reg_open
+        if why in ("stop", "take") and _guard.active(ctx, market, pl["symbol"]) and (market == Market.US or _reg_open(market)):
+            continue  # 토스 OCO 가 같은 가격에서 판다 (두 번 팔지 않게)
         if not why and days:
             age = (datetime.now(timezone.utc) - datetime.fromisoformat(pl["created_at"])).days
             if age >= days * 7 / 5:  # 거래일 -> 달력일 대략
@@ -337,6 +346,7 @@ def check_exits(ctx: Context, market: Market) -> list[dict]:
         else:  # 국내 시간외(NXT): 지정가만 되므로 현재가보다 1% 낮게 호가 단위로
             price = kr_tick(px * (0.99 - 0.01 * retry))
         label = {"stop": "손절", "take": "익절", "time": "기간 만료"}[why]
+        _guard.release(ctx, market, pl["symbol"])  # QTrader 가 직접 팔기 전에 토스 보호를 푼다
         req = OrderRequest(market, pl["symbol"], Side.SELL, pos.qty, price, "ai-exit",
                            f"{label}: 현재가 {px:,} / 손절가 {pl['stop']:,} / 익절가 {pl['take']:,}")
         r = ctx.broker.order(req)
@@ -375,6 +385,9 @@ def execute_approval(ctx: Context, aid: int) -> dict:
         why = chk.blocked[0][1]
         store.decide_approval(aid, "rejected", f"리스크 차단: {why}")
         raise ValueError(f"리스크 관리에서 막혔습니다: {why}")
+    if req.side == Side.SELL:
+        from . import guard
+        guard.release(ctx, market, req.symbol)
     r = ctx.broker.order(req)
     status = ("filled" if r.filled_qty else "submitted") if r.ok else "rejected"
     store.add_order(trade_date=a["trade_date"], account=ctx.broker.name, market=market.value, symbol=req.symbol,
@@ -501,6 +514,9 @@ def run_market(ctx: Context, market: Market, dry_run: bool = False, force: bool 
         if dry_run:
             status, res_msg, oid = "dry_run", "모의 실행(주문 안 함)", ""
         else:
+            if o.side == Side.SELL:  # 토스 서버 손절·익절이 걸려 있으면 먼저 푼다 (두 번 팔리지 않게)
+                from . import guard
+                guard.release(ctx, market, o.symbol)
             r = ctx.broker.order(o)
             status = ("filled" if r.filled_qty else "submitted") if r.ok else "rejected"
             res_msg, oid = r.message, r.broker_order_id
