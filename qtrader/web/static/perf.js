@@ -142,7 +142,7 @@ window.loadDashExtras = async () => { await Promise.all([_loadDashExtras3(), loa
 
 // 전략 비교 (가상 계좌들)
 const cmp = { chart: null };
-async function loadCompare() {
+async function loadStrategyCompare() {
   const r = await api("/api/compare?market=" + dash.market).catch(() => null);
   if (!r) return;
   $("#cmp-on").checked = r.enabled;
@@ -165,8 +165,8 @@ async function loadCompare() {
 $("#cmp-on")?.addEventListener("change", async (e) => {
   await api("/api/compare", { method: "POST", body: { on: e.target.checked } }).catch((err) => toast(err.message));
   toast(e.target.checked ? "전략 비교 계좌를 켰어요. 다음 정기 실행부터 함께 굴려요" : "전략 비교를 껐어요", "git-compare-arrows");
-  loadCompare();
+  loadStrategyCompare();
 });
 const _loadDashExtras5 = window.loadDashExtras;
-window.loadDashExtras = async () => { await Promise.all([_loadDashExtras5(), document.querySelector('.acct-pane[data-pane="profit"]:not(.hidden)') ? loadCompare() : null]); };
-document.addEventListener("click", (e) => { if (e.target.closest('#acct-sub button[data-v="profit"]')) setTimeout(loadCompare, 100); });
+window.loadDashExtras = async () => { await Promise.all([_loadDashExtras5(), document.querySelector('.acct-pane[data-pane="profit"]:not(.hidden)') ? loadStrategyCompare() : null]); };
+document.addEventListener("click", (e) => { if (e.target.closest('#acct-sub button[data-v="profit"]')) setTimeout(loadStrategyCompare, 100); });

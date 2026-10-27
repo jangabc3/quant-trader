@@ -46,6 +46,12 @@ def cmd_supervise(a):
             return
         if code == 0:
             return
+        from .updater import RESTART_CODE, finish_pending
+        if code == RESTART_CODE:  # 업데이트 준비 끝: 파일을 바꾸는 스크립트를 띄우고 끝낸다 (스크립트가 다시 켠다)
+            from . import config as config_mod
+            if finish_pending(config_mod.home()):
+                return
+            continue
         recent = [t for t in recent if time.time() - t < 600] + [time.time()]
         wait = 300 if len(recent) > 5 else 10  # 10분에 5번 넘게 죽으면 5분 쉬었다가
         try:

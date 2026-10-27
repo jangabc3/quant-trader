@@ -18,7 +18,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from .models import Account, Market, OrderRequest, OrderResult, Position, Side
+from .models import Account, Market, OrderRequest, OrderResult, Position
 
 BASE = "https://openapi.tossinvest.com"
 KST = timezone(timedelta(hours=9))

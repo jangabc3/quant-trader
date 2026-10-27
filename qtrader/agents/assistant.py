@@ -14,20 +14,37 @@ from . import meeting
 from .llm import BETAS, WEB_SEARCH, LLMError, make_client
 from .roles import PROFILE_DEFAULT
 
-SYSTEM = (
-    "너는 QTrader 의 AI 애널리스트 '큐비'다. 한국어로 답한다. 증권사 리서치 애널리스트처럼 숫자와 근거로 말한다. "
-    "종목 질문을 받으면 먼저 ai_decision 으로 그 종목의 최근 AI 투자 회의 결론(등급·확신도·진입/손절/익절 가격·체크리스트)을 확인하고, "
-    "회의가 있으면 그 결론을 중심으로, 없으면 chart_brief·quotes 로 확인한 숫자로 답하며 회의를 열지 제안한다. "
-    "답변 형식: 첫 줄에 **결론** 한 문장 → **근거** 2~4개(숫자 포함) → **리스크** 1~3개 → 해당되면 **실행 계획**(가격·손절·익절). "
-    "사용자가 지금 보고 있는 화면 정보가 주어지면 '이 종목' 같은 말은 그 종목으로 이해한다. "
-    "시세·계좌·차트 숫자는 반드시 도구로 확인한 값만 말하고, 확인 못 한 것은 모른다고 말한다. "
-    "투자 판단을 요청받으면 근거와 위험을 함께 말하고, 최종 판단은 사용자 몫이라고 알린다. "
-    "너는 주문을 낼 수 없다. 매매는 QTrader 엔진이 설정한 전략과 리스크 한도 안에서만 한다. "
-    "깊은 분석이 필요하면 start_meeting 으로 AI 투자 회의를 열 수 있다 (몇 분 걸리고 API 비용이 든다 - 열기 전에 알린다). "
-    "'왜 샀어?', '수익 얼마야?', '오늘 뭐 살 거야?', '내 기준이 뭐야?', '요즘 뜨는 업종은?' 같은 질문은 trades_why·performance·today_picks·"
-    "my_rules·industries·investor_flows·live_board·stock_news 도구로 확인해서 답한다. 앱 사용법을 물으면 app_help 를 본다. "
-    "초보자도 이해하도록 어려운 말은 풀어서 쓰고, 숫자에는 단위(원·$·%)를 붙인다."
-)
+SYSTEM = """너는 QTrader 의 AI 애널리스트 '큐비'다. 한국어로, 증권사 리서치 애널리스트처럼 숫자와 근거로 말한다.
+
+# 종목을 물으면
+도구로 확인한 사실만 쓴다. 아래를 질문에 맞게 골라 확인한다 (여러 개를 한 번에 불러도 된다).
+- ai_decision: 그 종목의 최근 AI 투자 회의 결론 (있으면 이것을 중심으로)
+- stock_profile: 현재가·52주 범위·시가총액·투자 유의사항
+- chart_brief: 수익률·이동평균·RSI·변동성·수급 (추세와 과열 여부)
+- financials: 매출·이익 성장, PER·PBR·ROE·부채비율 (싼지 비싼지, 돈을 잘 버는지)
+- disclosures: 최근 공시 (유상증자·분할·계약 같은 이벤트)
+- stock_news: 최근 뉴스 제목
+산업·시장 흐름이 중요하면 industries·market_overview·investor_flows 로 비교한다.
+
+# 답변 형식
+**결론** 한 문장 (사기 좋음/지켜보기/피하기 같은 의견과 그 확신 정도)
+**근거** 2~4개: 숫자와 기준일을 붙인다 (예: "PER 12배, 업종 평균보다 낮음", "20일 이동평균 위")
+**리스크** 1~3개: 무엇이 틀리면 생각을 바꿔야 하는지
+**실행 계획** (해당될 때): 들어갈 가격대·손절·익절과 비중. 사용자의 투자 성향과 자동매매 기준(my_rules)을 넘지 않게
+마지막 줄: 확인하지 못한 자료가 있으면 무엇인지, 그리고 최종 판단은 사용자 몫이라는 점
+
+# 지켜야 할 것
+- 숫자는 도구로 확인한 값만. 확인 못 한 것은 모른다고 말하고 추측으로 채우지 않는다. 수익을 보장하는 말은 하지 않는다.
+- 사실(도구 숫자)과 의견(너의 해석)을 섞지 않는다. 의견에는 "제 생각에는"처럼 표시한다.
+- 너는 주문을 낼 수 없다. 매매는 QTrader 엔진이 정한 전략과 리스크 한도 안에서만 한다.
+- 깊은 분석이 필요하면 start_meeting 으로 AI 투자 회의를 열 수 있다. 몇 분 걸리고 비용이 드니 열기 전에 사용자에게 묻는다.
+- 사용자가 보고 있는 화면 정보가 주어지면 '이 종목' 같은 말은 그 종목으로 이해한다.
+
+# 내 계좌·앱 질문
+'왜 샀어?' trades_why, '수익 얼마야?' performance, '오늘 뭐 살 거야?' today_picks, '내 기준이 뭐야?' my_rules,
+'지금 뭐 지켜보고 있어?' live_board, '내 주식' portfolio, 사용법은 app_help 로 확인한다.
+
+초보자도 이해하게 어려운 말은 풀어 쓰고, 숫자에는 단위(원·$·%·배)를 붙인다. 짧은 질문에는 짧게 답한다."""
 
 APP_HELP = """QTrader 화면 안내
 - 시장: 맨 위 내 요약, 코스피·코스닥/미국 실제 지수, 실시간 차트(관심·거래대금·거래량·급상승·급하락), 지금 뜨는 산업, 외국인·기관 매매 동향
@@ -66,6 +83,9 @@ TOOLS = [
     _tool("investor_flows", "국내 외국인·기관·개인 순매수 상위 종목.", {}, []),
     _tool("stock_news", "그 종목의 최신 뉴스 제목.", {"symbol": SYM}, ["symbol"]),
     _tool("app_help", "QTrader 화면과 기능 사용법.", {}, []),
+    _tool("stock_profile", "종목 기본: 이름·현재가·전일 대비·52주 최고/최저·시가총액·상하한가·투자 유의사항.", {"symbol": SYM}, ["symbol"]),
+    _tool("financials", "재무제표와 밸류에이션: 매출·영업이익·순이익 추이, PER·PBR·ROE·부채비율.", {"symbol": SYM}, ["symbol"]),
+    _tool("disclosures", "국내 종목의 최근 30일 DART 공시 제목 (증자·분할·계약·실적 등).", {"symbol": SYM}, ["symbol"]),
 ]
 
 
@@ -122,8 +142,10 @@ class Assistant:
                 if not mc["enabled"]:
                     continue
                 a = ctx.broker.account(ctxmod.Market(m))
+                from ..corp import event_of
                 out["accounts"].append({"market": m, "cash": a.cash, "equity": a.equity, "positions": [
-                    {"symbol": p.symbol, "qty": p.qty, "avg": p.avg_price, "last": p.last_price} for p in a.positions.values()]})
+                    {"symbol": p.symbol, "qty": p.qty, "avg": p.avg_price, "last": p.last_price, "today_pnl": p.day_pnl,
+                     "event": event_of(ctx.store, m, p.symbol)} for p in a.positions.values()]})
             return json.dumps(out, ensure_ascii=False)
         if name == "recent_orders":
             return json.dumps(self.get_ctx().store.orders(min(int(args["limit"]), 50)), ensure_ascii=False)
@@ -180,13 +202,31 @@ class Assistant:
                               ensure_ascii=False)
         if name == "app_help":
             return APP_HELP
+        if name == "stock_profile":
+            from .. import stockdata
+            sm = stockdata.summary(t, args["symbol"].upper())
+            return json.dumps({k: v for k, v in sm.items() if k not in ("spark", "candles")}, ensure_ascii=False, default=str)[:8000]
+        if name == "financials":
+            from .. import fundamentals
+            return json.dumps(fundamentals.for_symbol(t, args["symbol"]), ensure_ascii=False, default=str)[:12000]
+        if name == "disclosures":
+            from .. import config as config_mod
+            from ..screener import disclosure_titles
+            s = args["symbol"].upper()
+            if not s[:1].isdigit():
+                return "미국 종목은 DART 공시가 없습니다. stock_news 로 뉴스를 보세요."
+            titles = disclosure_titles(s, config_mod.home(), 30)
+            return json.dumps(titles, ensure_ascii=False) if titles else "최근 30일 공시가 없거나, DART 키가 없어 확인하지 못했습니다."
         raise ValueError(f"알 수 없는 도구 {name}")
 
     def chat(self, thread_id: str | None, text: str, page: str = "") -> dict:
         cfg = self.cfg_loader()
         ai = cfg["ai"]
         tid = thread_id or uuid.uuid4().hex[:10]
+        notice = ""
         with self.lock:
+            if len(self.threads.get(tid, [])) > 60:  # 너무 길어지면 새 대화로 (앞부분을 잘라내면 이어지지 않는다)
+                tid, notice = uuid.uuid4().hex[:10], "대화가 길어져 새 대화로 이어 갈게요. 앞 내용이 필요하면 다시 알려 주세요.\n\n"
             msgs = self.threads.setdefault(tid, [])
             ctx_line = f" ({page})" if page else ""
             msgs.append({"role": "user", "content": f"[{datetime.now():%Y-%m-%d %H:%M}{ctx_line}] {text}"})
@@ -196,10 +236,16 @@ class Assistant:
         for _ in range(8):
             try:
                 resp = self.client.beta.messages.create(
-                    model=ai.get("quick_model") or ai.get("model"), max_tokens=8000,
+                    model=ai.get("quick_model") or ai.get("model"), max_tokens=16000,
                     system=f"{SYSTEM}\n\n# 사용자 투자 프로필\n{ai.get('profile') or PROFILE_DEFAULT}",
-                    messages=msgs, tools=tools,
-                    output_config={"effort": "low"}, betas=BETAS, fallbacks="default")
+                    messages=msgs, tools=tools, cache_control={"type": "ephemeral"},
+                    output_config={"effort": ai.get("chat_effort") or "medium"}, betas=BETAS, fallbacks="default")
+            except TypeError as e:  # 키가 어디에도 없으면 SDK 가 요청을 만들지 못한다
+                if "authentication" in str(e).lower():
+                    with self.lock:
+                        msgs.pop()
+                    raise LLMError("큐비를 쓰려면 설정 → API 키에서 Claude API 키를 저장해 주세요")
+                raise
             except anthropic.AuthenticationError:
                 raise LLMError("Claude API 키가 올바르지 않습니다. 설정에서 키를 확인하세요")
             except anthropic.RateLimitError:
@@ -219,7 +265,9 @@ class Assistant:
                 answer = "".join(b.text for b in resp.content if b.type == "text").strip()
                 if resp.stop_reason == "refusal":
                     answer = "이 요청에는 답할 수 없습니다."
-                return {"thread_id": tid, "answer": answer, "tools": used, "sources": sources[:8]}
+                elif resp.stop_reason == "max_tokens":
+                    answer += "\n\n(답이 길어 여기서 끊겼어요. '이어서'라고 보내면 계속할게요.)"
+                return {"thread_id": tid, "answer": notice + answer, "tools": used, "sources": sources[:8]}
             results = []
             for c in calls:
                 used.append(c.name)

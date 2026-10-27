@@ -221,45 +221,8 @@ document.addEventListener("tab", (e) => { if (e.detail === "mkt") loadMarket(); 
 setInterval(() => { if (state.tab === "mkt" && !document.hidden) loadMarket(); }, 15000);
 
 
-// 섹터 히트맵: 등락률이 클수록 진한 색, 칸을 누르면 구성 종목
-const sec = { market: "KR", dur: "1d" };
-async function loadSectors() {
-  const el = $("#sector-grid");
-  if (!el) return; // '지금 뜨는 산업' 으로 바뀜 (market2.js)
-  if (!el) return;
-  try {
-    const r = await api(`/api/market/sectors?kind=TOP_GAINERS&market=${sec.market}&duration=${sec.dur}`);
-    const items = r.items.slice().sort((a, b) => b.changeRate - a.changeRate);
-    el.innerHTML = items.map((x) => {
-      const a = Math.min(Math.abs(x.changeRate) / 0.04, 1);
-      return `<button class="sector ${cls(x.changeRate)}" data-sector="${esc(x.sectorId)}" data-sname="${esc(x.name)}" style="--a:${(a * 100).toFixed(0)}%">
-        <b>${esc(x.name)}</b><span class="${cls(x.changeRate)}">${pct(x.changeRate)}</span><i class="sbar"></i></button>`;
-    }).join("") || `<p class="note">섹터 데이터가 없습니다.</p>`;
-    $("#sec-note").textContent = (r.demo ? "체험용 · " : "") + "칸을 누르면 그 섹터 종목이 보입니다";
-  } catch (e) { el.innerHTML = `<p class="note">${esc(e.message)}</p>`; }
-}
-function segSimple(id, fn) {
-  $$(`#${id} button`).forEach((b) => b.addEventListener("click", () => {
-    $$(`#${id} button`).forEach((x) => x.classList.toggle("on", x === b));
-    fn(b.dataset.v);
-  }));
-}
-if ($("#sec-market")) segSimple("sec-market", (v) => { sec.market = v; loadSectors(); });
-if ($("#sec-dur")) segSimple("sec-dur", (v) => { sec.dur = v; loadSectors(); });
-document.addEventListener("click", async (e) => {
-  const b = e.target.closest("[data-sector]");
-  if (!b) return;
-  modal(`<h3>${esc(b.dataset.sname)} 섹터</h3><p class="note">불러오는 중...</p>`);
-  try {
-    const r = await api(`/api/sector/${encodeURIComponent(b.dataset.sector)}/stocks?market=${sec.market}`);
-    $("#modal-body").innerHTML = `<h3>${esc(b.dataset.sname)} 섹터 <small class="note">${r.demo ? "체험용" : "시가총액 순"}</small></h3>
-      <div class="sector-list">${r.items.sort((a, b2) => (b2.marketCap || 0) - (a.marketCap || 0)).map((x) => `<div class="gs-item" data-open="${esc(x.symbol)}">
-        ${logo(x.symbol, x.name, 28)}<b>${esc(x.name)}</b><span class="note">${esc(x.symbol)}${x.marketCap ? " · 시총 " + bigKRW(x.marketCap) + "원" : ""}</span></div>`).join("")}</div>`;
-  } catch (err) { $("#modal-body").innerHTML = `<p class="note">${esc(err.message)}</p>`; }
-});
+// 창 안 종목을 누르면 창을 닫는다
 document.addEventListener("click", (e) => { if (e.target.closest("#modal [data-open]")) $("#modal").classList.add("hidden"); }, true);
-document.addEventListener("tab", (e) => { if (e.detail === "mkt") loadSectors(); });
-loadSectors();
 
 // 국고채 금리 곡선: 2·3·5·10·20·30년을 선으로 (짧은 만기가 더 높으면 '역전' — 경기 둔화 신호로 자주 봄)
 function bondCurve(bonds) {

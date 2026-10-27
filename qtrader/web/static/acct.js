@@ -36,12 +36,13 @@ window.renderHoldings = (pos, m) => {
       const open = hd.open === p.symbol;
       return `<div class="hl-row ${open ? "open" : ""}" data-row="${esc(p.symbol)}">
         <div class="hl-main">${logo(p.symbol, p.name || p.symbol, 38)}
-          <div class="hl-name"><b>${esc(p.name || p.symbol)}</b><span>${p.qty.toLocaleString()}주 · 비중 ${(w * 100).toFixed(0)}%</span></div>
+          <div class="hl-name"><b>${esc(p.name || p.symbol)}${p.event ? ` <em class="cd-tag">공시</em>` : ""}</b><span>${p.qty.toLocaleString()}주 · 비중 ${(w * 100).toFixed(0)}%</span></div>
           <div class="hl-guard" title="${p.server_guard ? "토스 서버가 손절·익절을 지켜요 (PC가 꺼져도)" : pl ? "QTrader 가 손절·익절을 지켜요" : "손절·익절 없음"}">${p.server_guard ? `<i data-lucide="server" class="srv"></i>` : pl ? `<i data-lucide="shield-check"></i>` : `<i data-lucide="shield-off" class="off"></i>`}</div>
           <div class="hl-val"><b>${money(p.value, p.market)}</b><em class="hl-px">현재가 <span data-key="p:${esc(p.symbol)}" data-val="${p.last_price}">${money(p.last_price, p.market)}</span></em><span class="${cls(p.pnl)}">${gain > 0 ? "+" : ""}${money(gain, p.market)} (${pct(p.pnl)})</span>${p.day_pnl != null ? `<em class="hl-day">오늘 <span class="${cls(p.day_pnl)}">${p.day_pnl > 0 ? "+" : ""}${money(p.day_pnl, p.market)}</span></em>` : ""}</div></div>
         <div class="hl-more">
           <div class="hl-facts"><div><span>평균 단가</span><b>${money(p.avg_price, p.market)}</b></div><div><span>현재가</span><b>${money(p.last_price, p.market)}</b></div>
             <div><span>투자 원금</span><b>${money(p.qty * p.avg_price, p.market)}</b></div></div>
+          ${p.event ? `<div class="srv-note ev"><i data-lucide="megaphone"></i> 최근 공시: ${esc(p.event.title)}${p.event.kind === "split" ? " — 분할·병합이 반영될 때까지 QTrader 가 지켜 보고, 수량이 바뀌면 손절·익절을 같은 비율로 고쳐요." : ""}</div>` : ""}
           ${p.server_guard ? `<div class="srv-note"><i data-lucide="server"></i> 토스 서버에 손절·익절(OCO)이 걸려 있어요. 이 PC가 꺼져 있어도 국내는 정규장, 미국은 모든 시간에 토스가 팔아 줘요.</div>` : ""}
           ${pl ? guardGauge({ ...pl, price: p.last_price, avg: p.avg_price }, p.market) : `<div class="hold-noplan"><i data-lucide="shield-off"></i><span>손절·익절이 없어 자동으로 팔지 않아요. 정해 두면 장중 2분마다 지켜 봅니다.</span></div>`}
           <div class="hold-acts"><button data-plan="${esc(p.symbol)}"><i data-lucide="shield-check"></i> ${pl ? "손절·익절 바꾸기" : "손절·익절 정하기"}</button>

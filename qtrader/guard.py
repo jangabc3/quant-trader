@@ -89,6 +89,7 @@ def sync(ctx) -> list[str]:
     if not enabled(ctx):
         return []
     changed = []
+    record_fired(ctx)
     g = _load(ctx.store)
     want = {}
     for m in (Market.KR, Market.US):
@@ -101,22 +102,32 @@ def sync(ctx) -> list[str]:
         for p in ctx.store.active_plans(ctx.broker.name, m.value):
             ps = pos.get(p["symbol"])
             k = f"{m.value}:{p['symbol']}"
-            if k in g and not (ps and ps.qty > 0):  # 토스가 OCO 로 팔았다 (손절 또는 익절)
-                ctx.store.close_plan(ctx.broker.name, m.value, p["symbol"], "toss_oco")
-                g.pop(k, None)
-                _save(ctx.store, g)
-                msg = f"🛡 {p['symbol']} 토스 서버 손절·익절이 실행돼 모두 팔렸어요. 체결 가격은 토스 앱 주문내역에서 확인하세요."
+            if k in g and not (ps and ps.qty > 0):  # 토스가 OCO 로 팔았거나 토스 앱에서 직접 팔았다
+                ctx.store.close_plan(ctx.broker.name, m.value, p["symbol"], "toss_oco" if g[k].get("fired") else "gone")
+                msg = (f"🛡 {p['symbol']} 토스 서버 손절·익절이 실행돼 모두 팔렸어요. 체결 가격은 거래 기록에 반영돼요." if g.get(k, {}).get("fired")
+                       else f"ℹ️ {p['symbol']} 보유 주식이 없어져 손절·익절 감시를 끝냈어요 (토스 앱에서 직접 판 경우 등).")
                 ctx.store.log("info", "guard", msg)
                 try:
                     from .extras import notify
                     notify(ctx.store, ctx.cfg, msg, "guard")
                 except Exception:
                     pass
+                g.pop(k, None)
+                _save(ctx.store, g)
                 changed.append(p["symbol"])
+                continue
+            from .corp import held
+            if k in g and g[k].get("fired"):  # 발동해서 파는 중: 다시 걸지 않는다 (계획은 체결되면 닫힌다)
+                want[k] = None
+                continue
+            if held(ctx.store, m, p["symbol"]):  # 분할·병합 공시: 반영될 때까지 QTrader 가 지켜 본다
                 continue
             if ps and ps.qty > 0 and 0 < p["stop"] < (ps.last_price or p["entry"]) < p["take"]:
                 want[f"{m.value}:{p['symbol']}"] = (m, p["symbol"], ps.qty, p["stop"], p["take"])
-    for k, (m, s, q, st, tk) in want.items():
+    for k, w in want.items():
+        if w is None:
+            continue
+        m, s, q, st, tk = w
         cur = g.get(k)
         if not cur or cur["qty"] != q or abs(cur["stop"] - st) > 1e-6 or abs(cur["take"] - tk) > 1e-6:
             try:
@@ -130,3 +141,32 @@ def sync(ctx) -> list[str]:
             release(ctx, Market(m), s)
             changed.append(s)
     return changed
+
+
+def record_fired(ctx) -> list[str]:
+    """걸어 둔 OCO 가 발동했는지 토스에 물어, 나간 매도 주문을 주문 기록에 넣는다.
+    넣어 둔 주문은 sync_orders 가 토스 주문 상세로 실제 체결 수량·평균 가격을 채우고, 체결되면 계획을 닫는다."""
+    from .engine import trade_date
+    g, out = _load(ctx.store), []
+    for k, v in g.items():
+        if v.get("fired"):
+            continue
+        try:
+            d = ctx.broker.client._call("GET", f"/api/v1/conditional-orders/{v['id']}", "CONDITIONAL_ORDER_HISTORY", account=True) or {}
+        except Exception:
+            continue
+        m, sym = k.split(":", 1)
+        for leg, why in ((d.get("first") or {}, "익절"), (d.get("second") or {}, "손절")):
+            oid = leg.get("triggeredOrderId")
+            if not oid or ctx.store.rows("select 1 from orders where broker_order_id=?", (oid,)):
+                continue
+            px = float(leg.get("orderPrice") or leg.get("triggerPrice") or 0)
+            ctx.store.add_order(trade_date=trade_date(Market(m)), account=ctx.broker.name, market=m, symbol=sym, side="sell",
+                                qty=int(float(d.get("quantity") or v["qty"])), price=px, status="submitted", broker_order_id=oid,
+                                strategy="ai-exit", message=f"토스 서버 {why} (OCO 발동, 감시가 {float(leg.get('triggerPrice') or 0):,})")
+            ctx.store.log("info", "guard", f"{sym} 토스 서버 {why} 발동 -> 매도 주문 {oid}")
+            v["fired"] = True
+            out.append(sym)
+    if out:
+        _save(ctx.store, g)
+    return out

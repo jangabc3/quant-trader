@@ -92,22 +92,29 @@ def _rank(vals: list[float]) -> np.ndarray:
     return a.argsort().argsort() / max(len(a) - 1, 1) if len(a) > 1 else np.ones(len(a))
 
 
-def disclosures(symbol: str, home) -> dict:
-    """DART 최근 10일 공시 제목으로 악재·호재 표시. 키가 없거나 실패하면 빈 값."""
+def disclosure_titles(symbol: str, home, days: int = 10) -> list[str]:
+    """DART 최근 공시 제목들. 키가 없거나 실패하면 빈 목록."""
     key = vault.get("dart_api_key")
     if not key or not symbol[:1].isdigit():
-        return {}
+        return []
     try:
         import requests
         from .fundamentals import dart_corp_codes
         corp = dart_corp_codes(key, home).get(symbol)
         if not corp:
-            return {}
+            return []
         d = requests.get("https://opendart.fss.or.kr/api/list.json", timeout=10, params={
-            "crtfc_key": key, "corp_code": corp, "bgn_de": (date.today() - timedelta(days=10)).strftime("%Y%m%d"),
+            "crtfc_key": key, "corp_code": corp, "bgn_de": (date.today() - timedelta(days=days)).strftime("%Y%m%d"),
             "end_de": date.today().strftime("%Y%m%d"), "page_count": 30}).json()
-        titles = [x.get("report_nm", "") for x in d.get("list", [])]
+        return [x.get("report_nm", "") for x in d.get("list", [])]
     except Exception:
+        return []
+
+
+def disclosures(symbol: str, home) -> dict:
+    """DART 최근 10일 공시 제목으로 악재·호재 표시. 키가 없거나 실패하면 빈 값."""
+    titles = disclosure_titles(symbol, home, 10)
+    if not titles:
         return {}
     bad = next((t for t in titles if any(k in t for k in BAD_DISCLOSURE)), None)
     good = next((t for t in titles if any(k in t for k in GOOD_DISCLOSURE)), None)

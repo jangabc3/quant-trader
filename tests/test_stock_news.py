@@ -1,6 +1,5 @@
 """종목 화면 데이터·뉴스·재무제표. 실제 외부 서버에 접속하지 않는다."""
 import io
-import json
 import zipfile
 
 import pandas as pd
@@ -168,7 +167,6 @@ def test_index_has_build_id(client):
 
 
 def test_investor_profile(client):
-    from qtrader import profile
     m = client.get("/api/profile").json()
     assert m["investor"] is None and len(m["questions"]) == 8 and len(m["types"]) == 5
     safe = {"age": 4, "exp": 0, "goal": 0, "horizon": 0, "loss": 0, "share": 0, "drop": 0, "style": 0}

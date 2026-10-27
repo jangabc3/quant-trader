@@ -282,14 +282,6 @@ function renderStatus(s) {
   else if (!s.keys.toss && ["mkt", "stock"].includes(state.tab)) banner("토스증권 키가 없어 체험용 데이터를 보여줍니다. 설정에서 토스증권 Client ID/Secret 을 등록하면 실제 시세로 바뀝니다.", "info");
   else if (!s.keys.anthropic && state.tab === "office") banner("AI 회의와 큐비를 쓰려면 설정에서 Claude API 키를 등록하세요.", "info");
   else banner("");
-
-  if ($("#market-cards")) $("#market-cards").innerHTML = Object.entries(s.markets).map(([m, x]) => `
-    <div class="card">
-      <div class="k">${MARKET_NAME[m]} · ${x.enabled ? STRAT_NAME[x.strategy] || x.strategy : "사용 안 함"} ${x.open ? "· 장중" : ""}</div>
-      <div class="v">${x.enabled ? money(x.equity, m) : "-"}</div>
-      <div class="s">${x.account_error ? esc(x.account_error) :
-        x.enabled ? `현금 ${money(x.cash, m)} · 보유 ${x.positions ?? 0}종목 · 다음 실행 ${x.next_run.replace("T", " ").slice(0, 16)}` : ""}</div>
-    </div>`).join("");
 }
 
 function renderPositions(rows) {

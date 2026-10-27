@@ -254,6 +254,7 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         c = ctx()
         out = []
         from ..guard import guarded
+        from ..corp import event_of as corp_event
         g = guarded(c)
         for m in (Market.KR, Market.US):
             if not c.cfg["markets"][m.value]["enabled"]:
@@ -263,7 +264,7 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
                 pnl = (p.last_price / p.avg_price - 1) if p.avg_price else 0
                 out.append({"market": m.value, "symbol": p.symbol, "name": name_of(p.symbol), "qty": p.qty, "avg_price": p.avg_price,
                             "last_price": p.last_price, "value": p.value, "pnl": round(pnl, 4), "day_pnl": p.day_pnl,
-                            "server_guard": f"{m.value}:{p.symbol}" in g})
+                            "server_guard": f"{m.value}:{p.symbol}" in g, "event": corp_event(c.store, m.value, p.symbol)})
         return out
 
     @app.get("/api/orders")
@@ -362,22 +363,7 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
 
     @app.get("/api/stock/{symbol}/financials")
     def stock_financials(symbol: str):
-        s = symbol.upper().split(":")[-1]
-        cfg = config_mod.load()
-        try:
-            if s[:1].isdigit():
-                key = vault.get("dart_api_key")
-                if not key:
-                    raise fundamentals.FundamentalsError("국내 재무제표는 설정에서 DART 오픈API 인증키(무료)를 등록하면 볼 수 있습니다")
-                fin = fundamentals.dart_financials(s, key, config_mod.home())
-            else:
-                fin = fundamentals.sec_financials(s, cfg.get("sec_contact", ""))
-        except fundamentals.FundamentalsError as e:
-            return {"error": str(e)}
-        except Exception as e:
-            return {"error": f"재무제표를 받지 못했습니다: {e}"}
-        sm = stockdata.summary(toss(), symbol)
-        return fin | {"ratios": fundamentals.ratios(fin, sm["price"], sm["shares"])}
+        return fundamentals.for_symbol(toss(), symbol)
 
     @app.get("/api/stock/{symbol}/news")
     def stock_news(symbol: str, name: str = ""):
@@ -416,6 +402,35 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
     @app.get("/api/market/industry/{sector_id}/chart")
     def market_industry_chart(sector_id: str, market: str = "KR"):
         return guard(lambda: market_mod.industry_chart(toss(), sector_id, market))
+
+    # 자동 업데이트
+    @app.get("/api/update")
+    def update_check(force: bool = False):
+        from .. import updater
+        c = ctx()
+        if not (c.cfg.get("update") or {}).get("check", True) and not force:
+            return {"current": __version__, "available": False}
+        return updater.check(c.cfg, c.store, force)
+
+    @app.post("/api/update/apply", dependencies=[Depends(need_token)])
+    def update_apply():
+        from .. import updater
+        c = ctx()
+        if not updater.frozen():
+            raise HTTPException(400, "개발 버전은 git pull 로 받아 주세요 (자동 업데이트는 설치본 QTrader.exe 에서만)")
+        info = updater.check(c.cfg, c.store, force=True)
+        if not info.get("available"):
+            raise HTTPException(400, info.get("reason") or "이미 최신 버전이에요")
+        try:
+            stage = updater.download(info, config_mod.home())
+        except Exception as e:
+            raise HTTPException(502, f"업데이트를 받지 못했어요: {e}")
+        updater.write_script(stage, config_mod.home())
+        c.store.log("notice", "update", f"업데이트 {__version__} -> {info['latest']} 준비 완료, 다시 켭니다")
+        import os
+        import threading
+        threading.Timer(1.5, lambda: os._exit(updater.RESTART_CODE)).start()
+        return {"ok": True, "latest": info["latest"]}
 
     @app.get("/api/market/sector-tree")
     def market_sector_tree():
