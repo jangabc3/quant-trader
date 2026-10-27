@@ -82,7 +82,7 @@ def next_candidates(ctx, market: Market, n: int = 8) -> list[dict]:
                 miss.append(f"과열 RSI {sig['rsi']:.0f} (식으면 후보)")
             if sig["vol"] > R["max_vol"]:
                 miss.append(f"변동성 {sig['vol']:.0%} 너무 큼")
-            rows.append({"symbol": s, "score": sig["mom12_1"] / max(sig["vol"], 0.05), "missing": miss,
+            rows.append({"symbol": s, "score": sig["mom12_1"] / max(sig["vol"], 0.05), "missing": miss, "origin": screener.ORIGIN.get(s, ""),
                          "rsi": round(sig["rsi"]), "mom": sig["mom12_1"]})
         rows.sort(key=lambda r: (len(r["missing"]), -r["score"]))
         return rows[:n]

@@ -123,6 +123,27 @@ DEFAULT_RULES = {
     "require_momentum": True,
     "market_filter": "half",  # 지수가 200일선 아래면: half=비중 절반, block=신규 매수 중단, off=보지 않음
 }
+# 매매 기간. 단기일수록 손절·익절을 좁히고 오래 들고 있지 않는다 (기한이 지나면 판다)
+HOLDING = {
+    "long": {"name": "장기 (추세 따라 몇 주~몇 달)", "stop": None, "take": None, "days": None, "buys": 0},
+    "swing": {"name": "스윙 (며칠~2주)", "stop": 5.0, "take": 10.0, "days": 10, "buys": 1},
+    "short": {"name": "단기 (1~3일, 짧게 자주)", "stop": 2.5, "take": 5.0, "days": 3, "buys": 2},
+}
+
+
+def adjust_for_holding(final: dict | None, mode: str) -> dict | None:
+    """회의 결론의 손절·익절·보유 기간을 매매 기간에 맞춘다. 손익비 2 : 1 은 유지한다."""
+    h = HOLDING.get(mode or "long")
+    if not final or not h or h["stop"] is None:
+        return final
+    f = dict(final)
+    sl = min(float(f.get("stop_loss_pct") or h["stop"]), h["stop"]) or h["stop"]
+    tp = min(float(f.get("take_profit_pct") or h["take"]), h["take"])
+    f["stop_loss_pct"], f["take_profit_pct"] = round(sl, 2), round(max(tp, sl * 2), 2)
+    f["horizon_days"] = min(int(f.get("horizon_days") or h["days"]), h["days"])
+    return f
+
+
 # 시장 국면을 볼 대표 지수 ETF
 INDEX_ETF = {"KR": "069500", "US": "SPY"}
 

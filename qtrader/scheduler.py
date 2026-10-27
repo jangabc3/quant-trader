@@ -78,6 +78,16 @@ class Scheduler:
                                     config_mod.save)
             except Exception as e:
                 ctx.store.log("warn", "alert", f"가격 알림 확인 실패: {e}")
+        # 자산 기록은 자동매매가 꺼져 있어도 장 마감 뒤 하루 한 번 남긴다 (자산 추이 그래프용)
+        if time.monotonic() - getattr(self, "_last_snap", 0) > 600:
+            self._last_snap = time.monotonic()
+            from .engine import snapshot_equity
+            for m in (Market.KR, Market.US):
+                if cfg["markets"][m.value].get("enabled") and after_close(m):
+                    try:
+                        snapshot_equity(ctx, m)
+                    except Exception:
+                        pass
         auto = ctx.store.get("auto_trading", "0") == "1"
         extras.keep_awake(auto)
         if not auto:

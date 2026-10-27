@@ -93,3 +93,15 @@ def test_screener_picks_held_first_and_filters(isolated_home):
     assert len(picks) <= 3 and all(not p["fails"] for p in picks if not p["held"])
     first = screener.todays(ctx, Market.KR, "2026-10-27", 3)
     assert screener.todays(ctx, Market.KR, "2026-10-27", 3) == first  # 하루 한 번만 고른다
+
+
+def test_performance_round_trips(store):
+    order(store, "buy", 10, 100, d="2026-03-02")
+    order(store, "sell", 10, 110, d="2026-03-05")  # +100
+    order(store, "buy", 5, 200, d="2026-03-06")
+    store.add_order(trade_date="2026-03-09", account="toss", market="US", symbol="AAPL", side="sell", qty=5, price=190,
+                    status="filled", broker_order_id="", strategy="ai-exit", message="손절: x | ok")  # -50
+    r = extras.performance(store, "toss", "US")
+    s = r["summary"]
+    assert s["count"] == 2 and s["realized"] == 50 and s["win_rate"] == 0.5 and s["profit_factor"] == 2
+    assert r["trades"][0]["why"] == "손절" and r["trades"][1]["days"] == 3 and s["mdd"] == -50

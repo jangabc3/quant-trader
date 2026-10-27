@@ -13,7 +13,12 @@ from . import principles
 from .models import Market
 
 
+# 후보를 어디서 데려왔는지 (화면의 '이유'에 붙는다)
+ORIGIN: dict[str, str] = {}
+
+
 def pool(ctx, market: Market) -> tuple[list[str], set[str]]:
+    """대형 우량주만 보지 않도록 여러 곳에서 후보를 모은다. 숫자 규칙은 뒤에서 똑같이 건다."""
     mc = ctx.cfg["markets"][market.value]
     kr = market == Market.KR
     mine = lambda s: s.split(":")[-1][:1].isdigit() == kr
@@ -22,15 +27,30 @@ def pool(ctx, market: Market) -> tuple[list[str], set[str]]:
         held = set(ctx.broker.account(market).positions)
     except Exception:
         pass
-    syms = list(mc.get("universe", [])) + [s for s in ctx.cfg.get("watchlist", []) if mine(s)] + sorted(held)
+    tagged: list[tuple[str, str]] = [(s, "보유") for s in sorted(held)]
+    tagged += [(s, "관심") for s in ctx.cfg.get("watchlist", []) if mine(s)]
+    tagged += [(s, "기본 목록") for s in mc.get("universe", [])]
     client = getattr(ctx.data, "client", None) if getattr(ctx.data, "name", "") == "toss" else None
     if client is not None:
         from . import market as market_mod
-        try:
-            syms += [x["symbol"] for x in market_mod.rankings(client, "amount", market.value, "1d", 30)["items"]]
+        for kind, dur, n, tag in (("amount", "1d", 25, "거래대금 상위"), ("gainers", "1w", 15, "1주 급상승"),
+                                  ("gainers", "1mo", 15, "1개월 급상승 (성장·테마)"), ("volume", "1d", 10, "거래량 급증")):
+            try:
+                tagged += [(x["symbol"], tag) for x in market_mod.rankings(client, kind, market.value, dur, n)["items"]]
+            except Exception:
+                pass
+        try:  # 오늘 가장 강한 섹터 3곳의 거래대금 상위 종목 (요즘 뜨는 업종)
+            for sec in client.sector_rankings("TOP_GAINERS", market.value, "1w")[:3]:
+                for x in client.sector_stocks(sec.get("sectorId"), market.value)[:4]:
+                    tagged.append((x["symbol"], f"강세 섹터 · {sec.get('name', '')}"))
         except Exception:
             pass
-    return list(dict.fromkeys(syms))[:60], held
+    out = []
+    for s, tag in tagged:
+        if s not in ORIGIN or tag == "보유":
+            ORIGIN[s] = tag
+        out.append(s)
+    return list(dict.fromkeys(out))[:80], held
 
 
 def candidates(ctx, market: Market, n: int) -> list[dict]:
@@ -56,9 +76,9 @@ def candidates(ctx, market: Market, n: int) -> list[dict]:
         if sig["vol"] > R["max_vol"]:
             fails.append(f"변동성 {sig['vol']:.0%}")
         score = sig["mom12_1"] / max(sig["vol"], 0.05)
-        reason = (f"12-1개월 {sig['mom12_1']:+.0%} · 변동성 {sig['vol']:.0%} · 200일선 {sig['last'] / sig['sma200'] - 1:+.0%}")
+        reason = (f"{ORIGIN.get(s, '')} · 12-1개월 {sig['mom12_1']:+.0%} · 변동성 {sig['vol']:.0%}").lstrip(" ·")
         if s in held:
-            out.append({"symbol": s, "score": score, "reason": "보유 중 · " + reason, "held": True, "fails": fails})
+            out.append({"symbol": s, "score": score, "reason": reason, "held": True, "fails": fails})
         elif not fails:
             out.append({"symbol": s, "score": score, "reason": reason, "held": False, "fails": []})
     out.sort(key=lambda x: (not x["held"], -x["score"]))

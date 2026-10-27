@@ -597,6 +597,30 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         c = ctx()
         return live.snapshot(c, Market(market), name_of)
 
+    # 수익 리포트
+    @app.get("/api/performance")
+    def performance(market: str = "KR"):
+        import math
+        c = ctx()
+        m = Market(market)
+        try:
+            prices = {s: p.last_price for s, p in c.broker.account(m).positions.items()}
+        except Exception:
+            prices = {}
+        r = extras.performance(c.store, c.broker.name, m.value, prices)
+        for t in r["trades"]:
+            t["name"] = name_of(t["symbol"])
+        pf = r["summary"]["profit_factor"]
+        if pf is not None and math.isinf(pf):
+            r["summary"]["profit_factor"] = None
+            r["summary"]["no_loss"] = True
+        base = c.cfg["paper"]["initial_cash"].get(m.value) if c.broker.name == "paper" else None
+        hist = c.store.equity_history(c.broker.name, m.value)
+        base = base or (hist[0]["equity"] if hist else None)
+        r["summary"]["base"] = base
+        r["summary"]["total_rate"] = r["summary"]["total"] / base if base else None
+        return r
+
     # 매매 이유 보고: 자동 주문 뒤 '왜, 무슨 근거로' 샀고 팔았는지
     @app.get("/api/trades/why")
     def trades_why(limit: int = 20):

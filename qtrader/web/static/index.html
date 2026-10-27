@@ -23,9 +23,9 @@
   <nav>
     <button data-tab="mkt" class="on"><i data-lucide="layout-dashboard"></i>시장</button>
     <button data-tab="stock"><i data-lucide="candlestick-chart"></i>종목</button>
-    <button data-tab="news"><i data-lucide="newspaper"></i>뉴스</button>
     <button data-tab="office"><i data-lucide="building-2"></i>AI 사무실</button>
     <button data-tab="dash"><i data-lucide="wallet"></i>내 계좌</button>
+    <button data-tab="news"><i data-lucide="newspaper"></i>뉴스</button>
     <button data-tab="calc"><i data-lucide="calculator"></i>계산기</button>
     <button data-tab="cfg"><i data-lucide="settings"></i>설정</button>
   </nav>
@@ -203,6 +203,11 @@
       <div id="flow-cta"></div>
     </div>
     <div class="kpis" id="kpis"></div>
+    <div class="panel perf-panel">
+      <div class="rank-bar"><h3 style="margin:0"><i data-lucide="trophy"></i> 수익 리포트 <small>사고판 거래의 확정 손익과 지금 가진 주식의 평가 손익</small></h3>
+        <div class="seg" id="perf-period"><button data-v="all" class="on">전체</button><button data-v="30">30일</button><button data-v="7">7일</button></div></div>
+      <div id="perf"></div>
+    </div>
     <details class="panel adv"><summary><i data-lucide="list-checks"></i> 자동매매는 이 기준으로 사고팝니다 <small>투자 성향에 맞춘 기준 · 눌러서 펼치기</small></summary><div class="criteria-box"></div></details>
     <div class="panel" id="approvals-panel">
       <h3><i data-lucide="hand"></i> 승인 대기 주문 <small>근거를 확인하고 승인해야 주문이 나갑니다</small></h3>
@@ -339,6 +344,12 @@
 
       <div class="panel">
         <h3><i data-lucide="sliders-horizontal"></i> 3. 무엇을 얼마나 <small>시장별로 전략과 쓸 돈만 정하면 됩니다</small></h3>
+        <div class="hold-cards" id="hold-cards">
+          <label class="mode-card"><input type="radio" name="holding" value="long"><b>장기</b><span>추세를 따라 몇 주~몇 달. AI가 정한 손절·익절 그대로. 매매 횟수가 적어 수수료가 적어요</span></label>
+          <label class="mode-card"><input type="radio" name="holding" value="swing"><b>스윙</b><span>며칠~2주. 손절 -5% · 익절 +10%, 10거래일이 지나면 팝니다</span></label>
+          <label class="mode-card"><input type="radio" name="holding" value="short"><b>단기</b><span>1~3일, 짧게 자주. 손절 -2.5% · 익절 +5%, 3거래일이 지나면 팝니다. 하루 매수 종목 +2</span></label>
+        </div>
+        <p class="note">단기일수록 매매가 잦아 수수료·세금(국내 매도 약 0.2%)이 쌓이고, 연구상 잦은 매매는 개인 수익률을 낮추는 경향이 있어요 (Barber &amp; Odean 2000). 소액으로 연습할 때 써 보고 결과를 비교해 보세요.</p>
         <div class="grid2" id="market-cfg"></div>
         <div class="form-row">
           <label>종목당 최대 비중 <input id="r-maxw" type="number" step="0.01" min="0.01" max="1"></label>
@@ -446,5 +457,6 @@
 <script src="/static/chat.js?v=__BUILD__"></script>
 <script src="/static/onboarding.js?v=__BUILD__"></script>
 <script src="/static/extras.js?v=__BUILD__"></script>
+<script src="/static/perf.js?v=__BUILD__"></script>
 </body>
 </html>

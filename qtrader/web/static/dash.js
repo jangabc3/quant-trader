@@ -42,7 +42,7 @@ window.renderDash = (d) => {
     dash.series.setData(hist);
     dash.chart.timeScale().fitContent();
   }
-  $("#eq-note").textContent = hist.length < 2 ? "자동매매가 하루 이상 돌면 날마다의 자산이 쌓여 그래프가 그려집니다." : `${hist.length}거래일 기록`;
+  $("#eq-note").textContent = hist.length < 2 ? "장 마감 5분 뒤마다 그날 자산이 기록돼요. 이틀째부터 선이 그려집니다. 얼마를 벌었는지는 위 '수익 리포트'에서 바로 볼 수 있어요." : `${hist.length}거래일 기록`;
   // 자산 구성 (도넛)
   const parts = pos.map((p) => ({ name: p.name || p.symbol, v: p.value })).concat(ov ? [{ name: "현금", v: ov.cash }] : []);
   const tot = parts.reduce((s, x) => s + x.v, 0) || 1;
