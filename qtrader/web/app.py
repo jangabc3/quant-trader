@@ -68,6 +68,18 @@ class OrderIn(BaseModel):
     side: str
     qty: int
     price: float = 0  # 0 = 시장가
+    stop: float = 0  # 직접 매수 때 정하는 손절가 (0 = 안 정함)
+    take: float = 0
+
+
+class PlanIn(BaseModel):
+    symbol: str
+    stop: float
+    take: float
+
+
+class TestIn(BaseModel):
+    kind: str
 
 
 class PinIn(BaseModel):
@@ -200,6 +212,7 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             "version": __version__, "mode": cfg["mode"], "live_confirmed": cfg.get("live_confirmed", False),
             "broker": c.broker.name if c else None, "data_source": c.data.name if c else None,
             "kill_switch": bool(st and st.get("kill_switch", "0") == "1"),
+            "kill_since": st.get("kill_since") if st else None, "kill_reason": st.get("kill_reason") if st else None,
             "auto_trading": bool(st and st.get("auto_trading", "0") == "1"),
             "keys": key_state(), "markets": markets, "error": err, "scheduler_error": sched.last_error,
         }
@@ -224,7 +237,8 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
 
     @app.get("/api/events")
     def events(limit: int = 100):
-        return ctx().store.events(limit)
+        from ..humanize import say
+        return [e | {"message": say(e["message"], name_of)} for e in ctx().store.events(limit)]
 
     @app.get("/api/equity")
     def equity(market: str = "KR"):
@@ -476,7 +490,9 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
     @app.get("/api/notices")
     def notices(after: int = 0):
         c = ctx()
-        return c.store.rows("select * from events where level='notice' and id>? order by id desc limit 30", (after,))
+        from ..humanize import say
+        return [e | {"message": say(e["message"], name_of)} for e in
+                c.store.rows("select * from events where level='notice' and id>? order by id desc limit 30", (after,))]
 
     @app.post("/api/notify/test", dependencies=[Depends(need_token)])
     def notify_test():
@@ -562,14 +578,24 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         limit = float(c.cfg["risk"]["max_order_value"][m.value])
         if body.qty * ref > limit:
             raise HTTPException(400, f"1회 주문 한도({limit:,.0f}{'원' if m == Market.KR else '$'})를 넘습니다. 설정 → 고급 → 주문 한도에서 바꿀 수 있어요")
+        if body.side == "buy" and (body.stop or body.take) and not (0 < body.stop < ref < body.take):
+            raise HTTPException(400, "손절가는 지금 가격보다 낮게, 익절가는 높게 정해 주세요")
         if c.broker.live:
             live_pin(x_qtrader_pin)
         req = OrderRequest(m, sym, Side(body.side), int(body.qty), float(body.price), "manual", "직접 주문")
         r = c.broker.order(req)
         status = ("filled" if r.filled_qty else "submitted") if r.ok else "rejected"
-        c.store.add_order(trade_date=trade_date(m), account=c.broker.name, market=m.value, symbol=sym, side=body.side,
-                          qty=body.qty, price=r.filled_price or body.price or ref, status=status,
-                          broker_order_id=r.broker_order_id, strategy="manual", message=f"직접 주문 | {r.message}")
+        oid = c.store.add_order(trade_date=trade_date(m), account=c.broker.name, market=m.value, symbol=sym, side=body.side,
+                                qty=body.qty, price=r.filled_price or body.price or ref, status=status,
+                                broker_order_id=r.broker_order_id, strategy="manual", message=f"직접 주문 | {r.message}")
+        if r.ok and body.side == "buy" and body.stop and body.take:
+            import json as _json
+            if status == "filled":
+                c.store.save_plan(c.broker.name, m.value, sym, "manual", r.filled_price or ref, body.stop, body.take)
+            else:  # 토스: 체결되면 그때 계획을 만든다
+                c.store.set(f"manual_plan_{oid}", _json.dumps({"stop": body.stop, "take": body.take}))
+        if r.ok and body.side == "sell":
+            c.store.close_plan(c.broker.name, m.value, sym, "manual")
         c.store.log("info" if r.ok else "error", "manual", f"직접 {'매수' if body.side == 'buy' else '매도'} {sym} x{body.qty} -> {status} {r.message}")
         if not r.ok:
             raise HTTPException(400, r.message or "주문이 거부되었습니다")
@@ -620,6 +646,40 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         r["summary"]["base"] = base
         r["summary"]["total_rate"] = r["summary"]["total"] / base if base else None
         return r
+
+    # 손절·익절 계획 직접 정하기 (직접 산 종목도 자동으로 지켜 준다)
+    @app.post("/api/plans", dependencies=[Depends(need_token)])
+    def plan_set(body: PlanIn):
+        c = ctx()
+        sym = body.symbol.upper()
+        m = _market_of(sym)
+        pos = c.broker.account(m).positions.get(sym)
+        if not pos:
+            raise HTTPException(400, "가진 종목에만 손절·익절을 정할 수 있어요")
+        px = pos.last_price or pos.avg_price
+        if not (0 < body.stop < px < body.take):
+            raise HTTPException(400, f"손절가는 지금 가격({px:,})보다 낮게, 익절가는 높게 정해 주세요")
+        c.store.save_plan(c.broker.name, m.value, sym, "manual", pos.avg_price, body.stop, body.take)
+        c.store.log("info", "manual", f"{sym} 손절 {body.stop:,} · 익절 {body.take:,} 로 정했습니다")
+        return {"ok": True}
+
+    @app.delete("/api/plans/{symbol}", dependencies=[Depends(need_token)])
+    def plan_del(symbol: str):
+        c = ctx()
+        sym = symbol.upper()
+        c.store.close_plan(c.broker.name, _market_of(sym).value, sym, "user")
+        c.store.log("info", "manual", f"{sym} 손절·익절 감시를 껐습니다")
+        return {"ok": True}
+
+    # 키 연결 테스트 (주문은 내지 않는다)
+    @app.post("/api/secrets/test", dependencies=[Depends(need_token)])
+    def secret_test(body: TestIn):
+        from .. import checks
+        fn = checks.TESTS.get(body.kind)
+        if not fn:
+            raise HTTPException(400, "이 키는 연결 테스트를 지원하지 않아요")
+        steps = fn(config_mod.load())
+        return {"kind": body.kind, "ok": all(s["ok"] for s in steps), "steps": steps}
 
     # 매매 이유 보고: 자동 주문 뒤 '왜, 무슨 근거로' 샀고 팔았는지
     @app.get("/api/trades/why")
@@ -874,6 +934,10 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
     def kill(body: ToggleIn):
         c = ctx()
         c.store.set("kill_switch", "1" if body.on else "0")
+        if body.on:
+            from datetime import datetime as _dt, timezone as _tz
+            c.store.set("kill_since", _dt.now(_tz.utc).isoformat(timespec="seconds"))
+            c.store.set("kill_reason", "직접 켬")
         c.store.log("warn" if body.on else "info", "web", f"킬 스위치 {'켬' if body.on else '끔'}")
         return {"kill_switch": body.on}
 

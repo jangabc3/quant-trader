@@ -74,7 +74,8 @@ window.renderDash = (d) => {
     return `<div class="hold" data-open="${esc(p.symbol)}">
       <div class="hold-top">${logo(p.symbol, p.name || p.symbol, 36)}<div><b>${esc(p.name || p.symbol)}</b><span class="note">${esc(p.symbol)} · ${p.qty.toLocaleString()}주 · 평균 ${money(p.avg_price, p.market)}</span></div>
         <div class="hold-pl"><b class="${cls(p.pnl)}">${pct(p.pnl)}</b><span class="note">${money(p.value, p.market)}</span></div></div>
-      ${bar || `<div class="note">손절·익절 계획 없음 · 직접 산 종목이라 자동으로 팔지 않아요</div>`}</div>`;
+      ${bar || `<div class="hold-noplan"><span class="note">손절·익절이 없어 자동으로 팔지 않아요</span></div>`}
+      <div class="hold-acts"><button data-plan="${esc(p.symbol)}">${pl ? "손절·익절 바꾸기" : "손절·익절 정하기"}</button>${pl ? `<button data-unplan="${esc(p.symbol)}">감시 끄기</button>` : ""}</div></div>`;
   }).join("") : `<div class="empty"><i data-lucide="inbox"></i><p>보유 종목이 없습니다</p><span class="note">자동매매를 시작하거나 '미리보기'로 오늘 무엇을 살지 확인해 보세요.</span></div>`;
   if (dash.animKey !== m) { dash.animKey = m; animateIn("#holdings .hold, #kpis .kpi", { y: 12 }); }
   renderOrders(d.orders.filter((o) => o.market === m || !o.market));
@@ -117,4 +118,32 @@ document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-cancel]");
   if (!b || !confirm("이 주문을 취소할까요?")) return;
   try { await api(`/api/account/orders/${b.dataset.cancel}/cancel`, { method: "POST" }); loadOpenOrders(); } catch (err) { alert(err.message); }
+});
+
+// 보유 종목의 손절·익절 정하기
+$("#holdings").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-plan], [data-unplan]");
+  if (!b) return;
+  e.stopPropagation();
+  const sym = b.dataset.plan || b.dataset.unplan;
+  const p = dash.data.positions.find((x) => x.symbol === sym), pl = state.plans[sym];
+  if (b.dataset.unplan) {
+    if (!confirm("이 종목의 손절·익절 감시를 끌까요? 그러면 자동으로 팔지 않아요.")) return;
+    await api("/api/plans/" + encodeURIComponent(sym), { method: "DELETE" }).catch((err) => toast(err.message, "alert-triangle"));
+    return refresh();
+  }
+  const H = { long: [7, 15], swing: [5, 10], short: [2.5, 5] }[state.config?.ai?.holding || "long"] || [7, 15];
+  const r = (v) => p.market === "KR" ? Math.round(v) : Math.round(v * 100) / 100;
+  modal(`<div class="plan-edit"><h3>${esc(p.name || sym)} 손절·익절</h3>
+    <p class="note">지금 ${money(p.last_price, p.market)} · 평균 ${money(p.avg_price, p.market)}. 정한 가격에 닿으면 장중 2분 안에 자동으로 팝니다.</p>
+    <label>손절가 (이 아래로 내리면 판다) <input id="pe-stop" inputmode="decimal" value="${pl?.stop ?? r(p.avg_price * (1 - H[0] / 100))}"></label>
+    <label>익절가 (이 위로 오르면 판다) <input id="pe-take" inputmode="decimal" value="${pl?.take ?? r(p.avg_price * (1 + H[1] / 100))}"></label>
+    <div class="tk-c-btns"><button id="pe-x">취소</button><button class="primary" id="pe-ok">저장</button></div></div>`);
+  $("#pe-x").onclick = () => $("#modal").classList.add("hidden");
+  $("#pe-ok").onclick = async () => {
+    try {
+      await api("/api/plans", { method: "POST", body: { symbol: sym, stop: Number($("#pe-stop").value.replace(/,/g, "")), take: Number($("#pe-take").value.replace(/,/g, "")) } });
+      $("#modal").classList.add("hidden"); toast("손절·익절을 정했어요. 이제 자동으로 지켜 볼게요", "shield-check"); refresh();
+    } catch (err) { toast(err.message, "alert-triangle"); }
+  };
 });

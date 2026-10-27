@@ -163,3 +163,49 @@ def test_holding_modes_tighten_and_time_stop(ctx):
     old = (datetime.now(timezone.utc) - timedelta(days=6)).isoformat(timespec="seconds")
     ctx.store.exec("update plans set created_at=?", (old,))
     assert check_exits(ctx, Market.KR)[0]["reason"] == "time"
+
+
+def test_partial_fill_protects_filled_part_then_settles(ctx):
+    ctx.store.exec("insert into ai_runs (id, symbol, market, trade_date, started_at, status, final, reports) values "
+                   "('r1','005930','KR',?,'x','done','{}', ?)",
+                   (trade_date(Market.KR), '{"agents": {}, "plan": {"entry": 70000, "stop": 65000, "take": 80000}}'))
+    oid = add(ctx, broker_order_id="P1")
+    ctx.broker.client.details["P1"] = {"status": "PARTIALLY_FILLED", "execution": {"filledQuantity": "4", "averageFilledPrice": "70100"}}
+    assert sync_orders(ctx) == []
+    assert ctx.store.active_plans("toss")[0]["stop"] == 65000  # 체결된 4주는 바로 손절 보호
+    assert "부분 체결 4/10" in ctx.store.rows("select message from orders where id=?", (oid,))[0]["message"]
+    ctx.broker.client.details["P1"] = {"status": "CANCELED", "execution": {"filledQuantity": "4", "averageFilledPrice": "70100"}}
+    out = sync_orders(ctx)
+    row = ctx.store.rows("select * from orders where id=?", (oid,))[0]
+    assert out[0]["status"] == "filled" and row["qty"] == 4 and row["price"] == 70100 and row["status"] == "filled"
+
+
+def test_manual_buy_plan_after_toss_fill(ctx):
+    import json
+    oid = add(ctx, broker_order_id="M1", strategy="manual")
+    ctx.store.set(f"manual_plan_{oid}", json.dumps({"stop": 66000, "take": 77000}))
+    ctx.broker.client.details["M1"] = {"status": "FILLED", "execution": {"filledQuantity": "10", "averageFilledPrice": "70000"}}
+    sync_orders(ctx)
+    p = ctx.store.active_plans("toss")[0]
+    assert (p["stop"], p["take"], p["run_id"]) == (66000, 77000, "manual")
+
+
+def test_humanize_messages():
+    from qtrader.humanize import say
+    n = {"105560": "KB금융", "005930": "삼성전자"}
+    f = lambda s: n.get(s, s)
+    assert say("dry_run buy 105560 x8 @ 232,710.00 모의", f) == "KB금융 8주 매수 — 미리보기라 계산만 했어요 (주문 안 함)"
+    assert say("오늘 AI 회의 후보: 005930", f) == "오늘 AI 회의 후보: 삼성전자"
+    assert "긴급 정지" in say("킬 스위치 켬", f)
+
+
+def test_heartbeat_gap_notice(ctx, monkeypatch):
+    from qtrader import scheduler
+    monkeypatch.setattr(scheduler, "is_open", lambda m, now=None: True)
+    old = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(timespec="seconds")
+    ctx.store.set("heartbeat", old)
+    s = scheduler.Scheduler()
+    s._last_exit = 999.0
+    s._heartbeat(ctx, ctx.cfg, True)
+    assert s._last_exit == 0.0
+    assert any("꺼져 있었어요" in r["message"] for r in ctx.store.rows("select * from events where level='notice'"))

@@ -89,6 +89,7 @@ class Scheduler:
                     except Exception:
                         pass
         auto = ctx.store.get("auto_trading", "0") == "1"
+        self._heartbeat(ctx, cfg, auto)
         extras.keep_awake(auto)
         if not auto:
             return []
@@ -151,6 +152,27 @@ class Scheduler:
                 # 같은 날 계속 재시도하며 주문이 쌓이지 않도록 실패도 실행으로 기록
                 ctx.store.mark_run(trade_date(m), ctx.broker.name, m.value)
         return out
+
+    def _heartbeat(self, ctx, cfg, auto: bool) -> None:
+        """20초마다 살아 있다고 적어 둔다. 장중에 10분 넘게 비어 있었으면 (PC·프로그램이 꺼졌던 것) 알리고 바로 다시 점검한다."""
+        from datetime import timezone as _tz
+        from . import extras
+        now = datetime.now(_tz.utc)
+        last = ctx.store.get("heartbeat")
+        ctx.store.set("heartbeat", now.isoformat(timespec="seconds"))
+        if not last or not auto:
+            return
+        prev = datetime.fromisoformat(last)
+        gap = (now - prev).total_seconds()
+        if gap < 600:
+            return
+        hit = [m for m in (Market.KR, Market.US) if cfg["markets"][m.value].get("enabled") and (is_open(m, prev) or is_open(m, now))]
+        if not hit:
+            return
+        loc = lambda t: t.astimezone().strftime("%m-%d %H:%M")
+        extras.notify(ctx.store, cfg, f"⚠️ 프로그램이 {int(gap // 60)}분 동안 꺼져 있었어요 ({loc(prev)} ~ {loc(now)}). "
+                                      f"그동안 손절·익절 감시가 멈췄습니다. 지금 바로 다시 확인합니다.", "live")
+        self._last_exit = 0.0  # 곧바로 체결 확인·손절 점검
 
     def _new_candidates(self, ctx, m: Market) -> None:
         """15분마다 숫자 규칙을 다시 돌려, 새로 통과한 종목을 오늘 회의 후보에 올린다 (매수는 정기 실행 때만)."""

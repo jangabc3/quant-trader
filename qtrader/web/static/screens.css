@@ -309,3 +309,26 @@ nav { scrollbar-width: none; } nav::-webkit-scrollbar { display: none; }
 .pf-demo-note { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 8px 12px; border-radius: 10px; background: rgba(233,162,59,.1); color: #e9c38b; }
 .pf-demo-note button { margin-left: auto; padding: 3px 10px; font-size: 12px; } .pf-demo-note svg { width: 15px; height: 15px; }
 @media (max-width: 900px) { .pf-kpis { grid-template-columns: 1fr 1fr; } .pf-tr { grid-template-columns: 30px 1fr auto; } .pf-tr-p, .pf-why { display: none; } .pf-hero { flex-direction: column; align-items: flex-start; } }
+
+/* 키 연결 테스트 */
+.key-test { margin-top: 10px; background: #0f141b; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.kt-head { font-weight: 800; padding: 2px 0 6px; } .kt-head.ok { color: #2fbf71; } .kt-head.bad { color: #e9a23b; }
+.kt-row { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; } .kt-row b { display: block; } .kt-row span { color: var(--muted); font-size: 12.5px; }
+.kt-ico { width: 22px; height: 22px; border-radius: 50%; display: grid !important; place-items: center; flex: none; font-weight: 900; font-size: 12px !important; color: #fff !important; background: #3a4656; }
+.kt-row.ok .kt-ico { background: #2fbf71; } .kt-row.bad .kt-ico { background: #e9a23b; }
+.kt-row.run .spin { width: 12px; height: 12px; border: 2px solid #fff; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; display: block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+/* 주문창 손절·익절 */
+.tk-guard { background: #0f141b; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.tk-guard-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } .tk-guard-row.off { opacity: .35; pointer-events: none; }
+.tk-guard-row label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.tk-pct { display: flex; align-items: center; gap: 4px; } .tk-pct input { width: 100%; text-align: right; }
+/* 보유 카드 버튼 */
+.hold-acts { display: flex; gap: 6px; margin-top: 8px; } .hold-acts button { font-size: 12px; padding: 5px 10px; }
+.plan-edit { width: min(380px, 86vw); display: flex; flex-direction: column; gap: 10px; } .plan-edit label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+/* 긴급 정지 알림 띠 */
+.kill-strip { display: flex; align-items: center; gap: 12px; padding: 12px 16px; margin-bottom: 12px; border-radius: 14px;
+  background: linear-gradient(90deg, rgba(240,68,82,.22), rgba(240,68,82,.06)); border: 1px solid rgba(240,68,82,.5); animation: openDown .3s ease-out; }
+.kill-strip > svg { color: #f04452; width: 26px; height: 26px; flex: none; }
+.kill-strip div { flex: 1; } .kill-strip b { display: block; color: #ffb3ba; } .kill-strip span { font-size: 12.5px; color: var(--muted); }
+.kill-strip button { background: #f04452; border-color: #f04452; color: #fff; font-weight: 700; white-space: nowrap; }

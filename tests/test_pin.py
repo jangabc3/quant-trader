@@ -107,3 +107,24 @@ def test_pin_switch_off_needs_pin_then_skips(client):
     cfg["mode"], cfg["live_confirmed"] = "toss_real", True
     assert client.put("/api/config", json=cfg, headers=client.h).status_code == 200  # 꺼져 있으면 묻지 않는다
     assert client.get("/api/pin").json()["enabled"] is False
+
+
+def test_plan_endpoint_and_manual_buy_with_stop(client, isolated_home):
+    from qtrader import config
+    from qtrader.data import write_demo_csv
+    write_demo_csv(isolated_home / "data", config.load())
+    px = client.get("/api/order/info/005930").json()["price"]
+    bad = client.post("/api/order", json={"symbol": "005930", "side": "buy", "qty": 1, "stop": px * 1.1, "take": px * 1.2}, headers=client.h)
+    assert bad.status_code == 400
+    r = client.post("/api/order", json={"symbol": "005930", "side": "buy", "qty": 2, "stop": px * 0.93, "take": px * 1.15}, headers=client.h)
+    assert r.status_code == 200
+    plans = client.get("/api/plans").json()
+    assert plans[0]["symbol"] == "005930" and plans[0]["run_id"] == "manual"
+    assert client.post("/api/plans", json={"symbol": "005930", "stop": px * 0.9, "take": px * 1.3}, headers=client.h).json()["ok"]
+    assert client.post("/api/plans", json={"symbol": "000660", "stop": 1, "take": 2}, headers=client.h).status_code == 400
+    assert client.delete("/api/plans/005930", headers=client.h).json()["ok"] and client.get("/api/plans").json() == []
+
+
+def test_key_test_without_keys(client):
+    r = client.post("/api/secrets/test", json={"kind": "anthropic"}, headers=client.h).json()
+    assert not r["ok"] and "저장돼 있지 않아요" in r["steps"][0]["detail"]
