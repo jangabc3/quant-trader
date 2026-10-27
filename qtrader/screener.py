@@ -148,7 +148,7 @@ def quality(ctx, symbol: str) -> dict:
     return {"weak": weak, "growth": r.get("revenue_growth"), "margin": r.get("operating_margin")}
 
 
-def _basic_filter(ctx, market: Market, rows: list[dict]) -> list[dict]:
+def _basic_filter(ctx, market: Market, rows: list[dict], stats: dict | None = None) -> list[dict]:
     """토스 종목 기본 정보로 거르기: 거래정지·정리매매·상장폐지 예정, 레버리지·인버스 ETF/ETN, 우선주, 상장 6개월 안 된 종목."""
     client = getattr(ctx.data, "client", None) if getattr(ctx.data, "name", "") == "toss" else None
     if client is None:
@@ -183,25 +183,43 @@ def _basic_filter(ctx, market: Market, rows: list[dict]) -> list[dict]:
                 why = "상장 6개월 안 됨"
         if why:
             ctx.store.log("info", f"picks.{market.value}", f"{r['symbol']} 후보 제외: {why}")
+            if stats is not None:
+                stats["basic"] = stats.get("basic", 0) + 1
         else:
             keep.append(r)
     return keep
 
 
-def candidates(ctx, market: Market, n: int) -> list[dict]:
-    """[{symbol, score, reason, held, fails, factors}] 좋은 순. 가진 종목이 먼저."""
+def new_stats() -> dict:
+    """후보가 왜 적은지 세는 칸. 한 종목이 규칙 여러 개에 걸리면 걸린 규칙마다 센다."""
+    return {"pool": 0, "no_data": 0, "checked": 0, "trend": 0, "momentum": 0, "rsi": 0, "vol": 0, "rules_out": 0,
+            "basic": 0, "disclosure": 0, "weak_finance": 0, "passed": 0, "picked": 0}
+
+
+def candidates(ctx, market: Market, n: int, stats: dict | None = None) -> list[dict]:
+    """[{symbol, score, reason, held, fails, factors}] 좋은 순. 가진 종목이 먼저.
+    stats 를 주면 규칙별로 몇 종목이 빠졌는지 채운다 (화면의 '왜 후보가 적나요?')."""
     from . import config as config_mod
     R = principles.DEFAULT_RULES | (ctx.cfg["ai"].get("rules") or {})
+    st = new_stats()
+    if stats is not None:
+        stats.clear()
+        stats.update(st)
+        st = stats
     syms, held = pool(ctx, market)
+    st["pool"] = len(syms)
     rows = []
     for s in syms:
         try:
             bars = ctx.data.bars(market, s, 300)
             if len(bars) < 60:
+                st["no_data"] += 1
                 continue
             f = factors(bars)
         except Exception:
+            st["no_data"] += 1
             continue
+        st["checked"] += 1
         fails = []
         if R["require_trend"] and f["last"] <= f["sma200"]:
             fails.append("200일선 아래")
@@ -211,9 +229,14 @@ def candidates(ctx, market: Market, n: int) -> list[dict]:
             fails.append(f"과열 RSI {f['rsi']:.0f}")
         if f["vol"] > R["max_vol"]:
             fails.append(f"변동성 {f['vol']:.0%}")
+        for k, hit in (("trend", "200일선"), ("momentum", "모멘텀"), ("rsi", "과열"), ("vol", "변동성")):
+            st[k] += any(x.startswith(hit) for x in fails)
+        if fails and s not in held:
+            st["rules_out"] += 1
         if s in held or not fails:
             rows.append({"symbol": s, "held": s in held, "fails": fails, "f": f})
-    rows = _basic_filter(ctx, market, rows)
+    rows = _basic_filter(ctx, market, rows, st)
+    st["passed"] = sum(not r["held"] for r in rows)
     if not rows:
         return []
     # 멀티팩터 순위 평균
@@ -231,6 +254,7 @@ def candidates(ctx, market: Market, n: int) -> list[dict]:
         d = disclosures(s, home)
         if d.get("bad") and not r["held"]:
             ctx.store.log("info", f"picks.{market.value}", f"{s} 제외: 최근 공시 '{d['bad'][:30]}'")
+            st["disclosure"] += 1
             continue
         if d.get("good"):
             notes.append(f"공시: {d['good'][:18]}")
@@ -238,23 +262,35 @@ def candidates(ctx, market: Market, n: int) -> list[dict]:
         if q.get("weak") and not r["held"]:
             r["score"] -= 0.3
             notes.append("적자·매출 감소")
+            st["weak_finance"] += 1
         elif q.get("growth") is not None:
             notes.append(f"매출 {q['growth']:+.0%}")
         reason = " · ".join([x for x in (ORIGIN.get(s, ""),) if x] + [f"모멘텀 {f['mom12_1']:+.0%}", f"52주 고가의 {f['near_high']:.0%}"] + notes)
         out.append({"symbol": s, "score": round(r["score"], 3), "reason": reason, "held": r["held"], "fails": r["fails"],
                     "factors": {"mom": f["mom12_1"], "near_high": f["near_high"], "vol": f["vol"], "vol_ratio": f["vol_ratio"]}})
     out.sort(key=lambda x: (not x["held"], -x["score"]))
+    st["picked"] = sum(not x["held"] for x in out)
     return out
 
 
-def todays(ctx, market: Market, today: str, n: int) -> list[dict]:
-    """하루 한 번 고르고 저장해 둔다 (화면·엔진이 같은 목록을 본다)."""
+def todays(ctx, market: Market, today: str, n: int, stats: dict | None = None) -> list[dict]:
+    """하루 한 번 고르고 저장해 둔다 (화면·엔진이 같은 목록을 본다). stats 를 주면 그날 거른 숫자도 채운다."""
     key = f"picks_{market.value}_{today}"
     saved = ctx.store.get(key)
     if saved:
+        if stats is not None:
+            stats.update(json.loads(ctx.store.get(stats_key(market, today)) or "{}"))
         return json.loads(saved)
-    picks = candidates(ctx, market, n)
+    st: dict = {}
+    picks = candidates(ctx, market, n, st)
+    if stats is not None:
+        stats.update(st)
+    ctx.store.set(stats_key(market, today), json.dumps(st))
     ctx.store.set(key, json.dumps(picks, ensure_ascii=False))
     ctx.store.log("info", f"picks.{market.value}", "오늘 AI 회의 후보: " + ", ".join(p["symbol"] for p in picks) if picks
                   else "오늘은 숫자 규칙을 통과한 후보가 없어 회의를 열지 않습니다")
     return picks
+
+
+def stats_key(market: Market, today: str) -> str:
+    return f"picks_stats_{market.value}_{today}"
