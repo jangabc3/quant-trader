@@ -350,7 +350,18 @@ def run_market(ctx: Context, market: Market, dry_run: bool = False, force: bool 
     strat = None if use_ai else strategies.build(mc["strategy"], mc.get("params"))
     strat_name = "ai" if use_ai else strat.name
     errors: list[str] = []
-    p = panel(ctx.data, market, mc["universe"], cfg["history_days"], errors)
+    universe = list(mc["universe"])
+    if use_ai and cfg["ai"].get("auto_pick", True):
+        # AI 가 고른 오늘 후보 + 오늘 회의한 종목 + 가진 종목까지 (가진 종목은 손절·매도 판단이 필요)
+        import json as _json
+        picks = _json.loads(store.get(f"picks_{market.value}_{today}") or "[]")
+        met = [r["symbol"] for r in store.ai_runs(200) if r["trade_date"] == today and r["market"] == market.value]
+        try:
+            held = list(ctx.broker.account(market).positions)
+        except Exception:
+            held = []
+        universe = list(dict.fromkeys(universe + [p["symbol"] for p in picks] + met + held))
+    p = panel(ctx.data, market, universe, cfg["history_days"], errors)
     for e in errors:
         store.log("warn", src, f"데이터 실패 {e}")
     if not p:

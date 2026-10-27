@@ -46,7 +46,7 @@ window.loadDashExtras = async () => {
   $("#conc-warn").innerHTML = c?.warnings?.length
     ? `<div class="warn-box"><i data-lucide="alert-triangle"></i><div><b>한쪽으로 쏠려 있어요</b>${c.warnings.map((w) => `<div>${esc(w)}</div>`).join("")}
        <div class="note">총자산 대비 업종 비중: ${c.sectors.map((s) => `${esc(s.name)} ${Math.round(s.weight * 100)}%`).join(" · ")}</div></div></div>` : "";
-  if (rep?.text) $("#day-report").innerHTML = `<pre class="report-pre">${esc(rep.text)}</pre>`;
+  if (rep) renderDayReport(rep, m);
   renderAlerts(alerts);
   icons();
 };
@@ -183,7 +183,7 @@ async function renderWhy() {
     const tag = exit ? (t.summary.startsWith("손절") ? "손절" : "익절") : buy ? "매수" : "매도";
     const reasons = r?.reasons?.length ? r.reasons : t.detail.filter(Boolean);
     return `<article class="why ${buy ? "buy" : "sell"}">
-      <header>${logo(t.symbol, r?.name || t.symbol, 32)}<div><b>${esc(r?.name || t.symbol)}</b><span class="note">${esc(t.date)} · ${t.qty.toLocaleString()}주 @ ${money(t.price, cur)}${t.status === "submitted" ? " · 체결 대기" : ""}</span></div>
+      <header>${logo(t.symbol, t.name || r?.name || t.symbol, 32)}<div><b>${esc(t.name || r?.name || t.symbol)}</b><span class="note">${esc(t.date)} · ${t.qty.toLocaleString()}주 @ ${money(t.price, cur)}${t.status === "submitted" ? " · 체결 대기" : ""}</span></div>
         <span class="why-tag ${buy ? "up" : "down"}">${tag}</span></header>
       <p class="why-head">${esc(r?.headline || t.summary)}</p>
       ${reasons.length ? `<ul>${reasons.slice(0, 4).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
@@ -202,3 +202,70 @@ async function renderWhy() {
 }
 const _loadDashExtras2 = window.loadDashExtras;
 window.loadDashExtras = async () => { await Promise.all([_loadDashExtras2(), renderWhy()]); };
+
+// 오늘 AI 가 고른 회의 후보 (AI 사무실 위)
+const pk = { market: "KR" };
+async function loadPicks() {
+  const box = $("#picks");
+  if (!box) return;
+  box.innerHTML = `<div class="skeleton" style="height:58px"></div>`;
+  const rows = await api("/api/picks?market=" + pk.market).catch((e) => ({ error: e.message }));
+  if (rows.error) { box.innerHTML = `<p class="note">${esc(rows.error)}</p>`; return; }
+  box.innerHTML = rows.length ? rows.map((p, i) => `<button class="pick" data-open="${esc(p.symbol)}" title="${esc(p.reason)}">
+      <span class="pk-n">${i + 1}</span>${logo(p.symbol, p.name, 28)}
+      <span class="pk-t"><b>${esc(p.name)}</b><em>${esc(p.reason)}</em></span>
+      <span class="pk-s ${p.met ? "done" : ""}">${p.held ? "보유 점검" : ""}${p.met ? ` · ${esc(RATING_KO[p.rating] || "회의 완료")}` : p.held ? "" : "회의 대기"}</span></button>`).join("")
+    : `<div class="empty"><i data-lucide="filter-x"></i><p>오늘은 숫자 규칙을 통과한 후보가 없어요</p>
+       <span class="note">하락 추세이거나 과열된 종목뿐이라 회의를 열지 않습니다. 이렇게 쉬는 날이 있어야 손실을 줄일 수 있어요.</span></div>`;
+  animateIn("#picks .pick", { step: 30 });
+  icons();
+}
+$("#picks-mkt")?.addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  pk.market = b.dataset.v;
+  $$("#picks-mkt button").forEach((x) => x.classList.toggle("on", x === b));
+  loadPicks();
+});
+document.addEventListener("tab", (e) => { if (e.detail === "office") loadPicks(); });
+
+// 오늘 마감 요약: 숫자 카드 + 최근 10일 자산 막대 + 오늘 거래 목록 + 감시 중 종목
+function renderDayReport(rep, m) {
+  const el = $("#day-report");
+  const buys = rep.orders.filter((o) => o.side === "buy"), sells = rep.orders.filter((o) => o.side === "sell");
+  const dr = rep.daily_return, yr = rep.realized_year || {};
+  const hist = rep.history || [];
+  const lo = Math.min(...hist.map((h) => h.equity)), hi = Math.max(...hist.map((h) => h.equity));
+  const bars = hist.map((h, i) => {
+    const prev = i ? hist[i - 1].equity : h.equity, up = h.equity >= prev;
+    const ht = hi > lo ? 18 + (h.equity - lo) / (hi - lo) * 82 : 60;
+    return `<div class="dr-bar ${up ? "up" : "down"}" style="--h:${ht}%" title="${esc(h.date)} ${money(h.equity, m)}"><i></i><span>${esc(h.date.slice(5))}</span></div>`;
+  }).join("");
+  el.className = "day-report";
+  el.innerHTML = `<div class="dr-head"><span class="note">${esc(rep.date)} · ${rep.final ? "장 마감 확정" : "장중 실시간 (마감 5분 뒤 확정)"}</span></div>
+    <div class="dr-kpis">
+      <div class="dr-k big"><span>오늘 수익률</span><b class="${cls(dr)}" id="dr-ret">${dr == null ? "-" : pct(dr)}</b><em>${rep.equity ? "자산 " + money(rep.equity, m) : "자산 기록 전"}</em></div>
+      <div class="dr-k"><span>매수</span><b class="up" id="dr-buy">${buys.length}</b><em>건</em></div>
+      <div class="dr-k"><span>매도</span><b class="down" id="dr-sell">${sells.length}</b><em>건</em></div>
+      <div class="dr-k"><span>올해 실현 손익</span><b class="${cls(yr.total)}">${money(yr.total || 0, m)}</b><em>${yr.trades || 0}번 매도</em></div>
+    </div>
+    ${hist.length > 1 ? `<div class="dr-chart"><span class="note">최근 ${hist.length}거래일 자산</span><div class="dr-bars">${bars}</div></div>` : ""}
+    <div class="dr-lists">
+      <div><h4>오늘 거래</h4>${rep.orders.length ? rep.orders.map((o) => `<div class="dr-row" data-open="${esc(o.symbol)}">
+          ${logo(o.symbol, o.name || o.symbol, 26)}<b>${esc(o.name || o.symbol)}</b><span class="side ${o.side}">${o.side === "buy" ? "매수" : "매도"}</span>
+          <span class="r">${o.qty.toLocaleString()}주 · ${money(o.price, m)}</span><em>${esc(String(o.message || "").split(" | ")[0])}</em></div>`).join("")
+        : `<p class="note">오늘은 사고판 것이 없어요. 규칙을 넘는 종목이 없으면 쉬는 것도 전략입니다.</p>`}</div>
+      <div><h4>내일도 지켜보는 종목</h4>${rep.plans.length ? rep.plans.map((p) => `<div class="dr-row">${logo(p.symbol, p.name || p.symbol, 26)}<b>${esc(p.name || p.symbol)}</b>
+          <span class="r"><span class="down">손절 ${money(p.stop, m)}</span> · <span class="up">익절 ${money(p.take, m)}</span></span></div>`).join("")
+        : `<p class="note">손절·익절을 지켜보는 종목이 없어요.</p>`}</div>
+    </div>`;
+  const key = rep.date + m + rep.orders.length + hist.length;
+  const fresh = renderDayReport.key !== key;
+  renderDayReport.key = key;
+  if (fresh && !REDUCED && window.anime) {
+    anime({ targets: "#day-report .dr-bar i", scaleY: [0, 1], delay: anime.stagger(40), duration: 600, easing: "easeOutCubic" });
+    anime({ targets: "#day-report .dr-k", opacity: [0, 1], translateY: [8, 0], delay: anime.stagger(60), duration: 400, easing: "easeOutQuad" });
+  }
+  if (fresh && dr != null) countTo($("#dr-ret"), dr * 100, { decimals: 2, format: (v) => (v > 0 ? "+" : "") + v.toFixed(2) + "%" });
+  icons();
+}

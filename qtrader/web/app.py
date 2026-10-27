@@ -137,6 +137,20 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         except pinlock.PinError as e:
             raise HTTPException(428 if e.code in ("need_pin", "wrong") else 423, f"PIN:{e.code}:{e}")
 
+    _names: dict = {"t": 0.0, "map": {}}
+
+    def name_of(sym: str) -> str:
+        """종목 코드 -> 이름 (토스 종목 목록, 없으면 체험용 목록). 1시간마다 새로 읽는다."""
+        import time as _t
+        if _t.time() - _names["t"] > 3600 or not _names["map"]:
+            m = {s: n for s, n, _ in market_mod.DEMO_KR + market_mod.DEMO_US}
+            try:
+                m |= {r["symbol"]: r["name"] for r in stockdata.master(toss(), config_mod.home())}
+            except Exception:
+                pass
+            _names.update(t=_t.time(), map=m)
+        return _names["map"].get(sym.split(":")[-1], sym)
+
     def ctx():
         try:
             return build_context()
@@ -198,13 +212,13 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             a = c.broker.account(m)
             for p in a.positions.values():
                 pnl = (p.last_price / p.avg_price - 1) if p.avg_price else 0
-                out.append({"market": m.value, "symbol": p.symbol, "qty": p.qty, "avg_price": p.avg_price,
+                out.append({"market": m.value, "symbol": p.symbol, "name": name_of(p.symbol), "qty": p.qty, "avg_price": p.avg_price,
                             "last_price": p.last_price, "value": p.value, "pnl": round(pnl, 4)})
         return out
 
     @app.get("/api/orders")
     def orders(limit: int = 100):
-        return ctx().store.orders(limit)
+        return [o | {"name": name_of(o["symbol"])} for o in ctx().store.orders(limit)]
 
     @app.get("/api/events")
     def events(limit: int = 100):
@@ -444,12 +458,17 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
     @app.get("/api/report")
     def daily_report(market: str = "KR"):
         import json as _json
-        c = ctx()
-        saved = c.store.get(f"report_{market}")
-        if saved:
-            return _json.loads(saved)
         from ..engine import trade_date
-        return extras.daily_report(c.store, c.broker.name, market, trade_date(Market(market)))
+        c = ctx()
+        today = trade_date(Market(market))
+        saved = _json.loads(c.store.get(f"report_{market}") or "null")
+        rep = saved if saved and saved.get("date") == today else extras.daily_report(c.store, c.broker.name, market, today)
+        rep["final"] = bool(saved and saved.get("date") == today)  # 장 마감 뒤 확정본인지
+        rep["orders"] = [o | {"name": name_of(o["symbol"])} for o in rep.get("orders", [])]
+        rep["plans"] = [p | {"name": name_of(p["symbol"])} for p in rep.get("plans", [])]
+        rep["history"] = [{"date": h["trade_date"], "equity": h["equity"]} for h in c.store.equity_history(c.broker.name, market)[-10:]]
+        rep["by_symbol"] = [{"symbol": s, "name": name_of(s), "pnl": v} for s, v in (rep.get("realized_year") or {}).get("by_symbol", {}).items()]
+        return rep
 
     # 알림
     @app.get("/api/notices")
@@ -554,6 +573,21 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             raise HTTPException(400, r.message or "주문이 거부되었습니다")
         return {"ok": True, "status": status, "message": r.message, "price": r.filled_price or body.price or ref, "order_id": r.broker_order_id}
 
+    @app.get("/api/picks")
+    def picks(market: str = "KR", refresh: bool = False):
+        """오늘 AI 회의 후보. 아직 없으면 지금 고른다 (숫자 규칙만 쓰고 AI 호출은 없다)."""
+        from ..engine import trade_date
+        from ..screener import todays
+        c = ctx()
+        m = Market(market)
+        today = trade_date(m)
+        if refresh:
+            c.store.exec("delete from state where key=?", (f"picks_{m.value}_{today}",))
+        rows = todays(c, m, today, int(c.cfg["ai"]["max_symbols_per_day"]))
+        met = {r["symbol"]: r for r in c.store.ai_runs(200) if r["trade_date"] == today}
+        return [p | {"name": name_of(p["symbol"]), "met": bool(met.get(p["symbol"])),
+                     "rating": (met.get(p["symbol"]) or {}).get("rating")} for p in rows]
+
     # 매매 이유 보고: 자동 주문 뒤 '왜, 무슨 근거로' 샀고 팔았는지
     @app.get("/api/trades/why")
     def trades_why(limit: int = 20):
@@ -564,7 +598,7 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         out = []
         for o in rows:
             parts = (o.get("message") or "").split(" | ")
-            item = {"id": o["id"], "date": o["trade_date"], "ts": o.get("ts"), "market": o["market"], "symbol": o["symbol"],
+            item = {"id": o["id"], "date": o["trade_date"], "ts": o.get("ts"), "market": o["market"], "symbol": o["symbol"], "name": name_of(o["symbol"]),
                     "side": o["side"], "qty": o["qty"], "price": o["price"], "status": o["status"], "strategy": o.get("strategy"),
                     "summary": parts[0], "detail": parts[1:-1], "run": None}
             if o.get("strategy") == "ai" and o["side"] == "buy":
@@ -677,7 +711,7 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
     @app.get("/api/plans")
     def plans():
         c = ctx()
-        return c.store.active_plans(c.broker.name)
+        return [p | {"name": name_of(p["symbol"])} for p in c.store.active_plans(c.broker.name)]
 
     # AI 투자 회의
     @app.get("/api/ai/roles")

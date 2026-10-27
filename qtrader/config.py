@@ -21,7 +21,7 @@ DEFAULT = {
     "markets": {
         "KR": {
             "enabled": True,
-            "strategy": "momentum",
+            "strategy": "ai",
             "params": {"lookback": 120, "skip": 5, "top_k": 3, "rebalance_days": 20},
             # 예시 종목: 삼성전자, SK하이닉스, NAVER, 현대차, LG에너지솔루션, 카카오, 셀트리온, KB금융
             "universe": ["005930", "000660", "035420", "005380", "373220", "035720", "068270", "105560"],
@@ -30,7 +30,7 @@ DEFAULT = {
         },
         "US": {
             "enabled": False,
-            "strategy": "trend",
+            "strategy": "ai",
             "params": {"fast": 20, "slow": 60},
             # "AAPL" 은 나스닥으로 본다. 다른 거래소는 "NYSE:KO", "AMEX:SPY" 처럼 쓴다
             "universe": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "AMEX:SPY", "NYSE:KO"],
@@ -79,7 +79,9 @@ DEFAULT = {
         # 최종 등급 -> 목표 비중 배수 (종목당 1/N 기준). Hold 는 보유 유지
         "rating_weights": {"Buy": 1.0, "Overweight": 0.7, "Hold": None, "Underweight": 0.3, "Sell": 0.0},
         "min_confidence": 0.5,  # 이보다 확신이 낮으면 Hold 로 본다
-        "monthly_cost_cap_krw": 30000,  # 이번 달 AI 회의 비용이 이만큼 넘으면 새 회의를 열지 않는다 (0 = 제한 없음)
+        "monthly_cost_cap_krw": 30000,
+        # 회의할 종목을 AI 가 매일 고른다 (설정 종목 + 관심 종목 + 보유 + 거래대금 상위 중 숫자 규칙 통과)
+        "auto_pick": True,  # 이번 달 AI 회의 비용이 이만큼 넘으면 새 회의를 열지 않는다 (0 = 제한 없음)
     },
     # 알림: 화면(윈도우 알림)은 항상, 텔레그램은 봇 토큰(키 보관함)과 대화방 번호가 있을 때
     "notify": {"telegram_chat_id": "", "daily_report": True},

@@ -44,7 +44,7 @@ window.renderDash = (d) => {
   }
   $("#eq-note").textContent = hist.length < 2 ? "자동매매가 하루 이상 돌면 날마다의 자산이 쌓여 그래프가 그려집니다." : `${hist.length}거래일 기록`;
   // 자산 구성 (도넛)
-  const parts = pos.map((p) => ({ name: p.symbol, v: p.value })).concat(ov ? [{ name: "현금", v: ov.cash }] : []);
+  const parts = pos.map((p) => ({ name: p.name || p.symbol, v: p.value })).concat(ov ? [{ name: "현금", v: ov.cash }] : []);
   const tot = parts.reduce((s, x) => s + x.v, 0) || 1;
   const colors = ["#3182f6", "#f04452", "#2fbf71", "#e9a23b", "#8b5cf6", "#0ea5e9", "#e11d74", "#14b8a6", "#6b7785"];
   let acc = 0;
@@ -72,9 +72,9 @@ window.renderDash = (d) => {
         <div class="sl-lbl"><span class="down">손절 ${money(pl.stop, p.market)}</span><span class="up">익절 ${money(pl.take, p.market)}</span></div>`;
     }
     return `<div class="hold" data-open="${esc(p.symbol)}">
-      <div class="hold-top">${logo(p.symbol, p.symbol, 36)}<div><b>${esc(p.symbol)}</b><span class="note">${p.qty.toLocaleString()}주 · 평균 ${money(p.avg_price, p.market)}</span></div>
+      <div class="hold-top">${logo(p.symbol, p.name || p.symbol, 36)}<div><b>${esc(p.name || p.symbol)}</b><span class="note">${esc(p.symbol)} · ${p.qty.toLocaleString()}주 · 평균 ${money(p.avg_price, p.market)}</span></div>
         <div class="hold-pl"><b class="${cls(p.pnl)}">${pct(p.pnl)}</b><span class="note">${money(p.value, p.market)}</span></div></div>
-      ${bar || `<div class="note">AI 계획 없음 (직접 산 종목이거나 규칙 전략)</div>`}</div>`;
+      ${bar || `<div class="note">손절·익절 계획 없음 · 직접 산 종목이라 자동으로 팔지 않아요</div>`}</div>`;
   }).join("") : `<div class="empty"><i data-lucide="inbox"></i><p>보유 종목이 없습니다</p><span class="note">자동매매를 시작하거나 '미리보기'로 오늘 무엇을 살지 확인해 보세요.</span></div>`;
   if (dash.animKey !== m) { dash.animKey = m; animateIn("#holdings .hold, #kpis .kpi", { y: 12 }); }
   renderOrders(d.orders.filter((o) => o.market === m || !o.market));
