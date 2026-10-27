@@ -74,12 +74,13 @@ function renderBoard(d) {
   const box = $("#live-board");
   const first = !box.dataset.ready;
   box.dataset.ready = "1";
-  const bar = (w) => w.pos == null ? `<div class="lb-nobar note">손절·익절 계획 없음</div>`
-    : `<div class="lb-bar"><i style="left:${(w.pos * 100).toFixed(1)}%"></i></div><div class="lb-lbl"><span class="down">손절 ${money(w.stop, d.market)}</span><span class="up">익절 ${money(w.take, d.market)}</span></div>`;
   box.innerHTML = `
-    <section><h4><i data-lucide="radar"></i> 감시 중 <small>${d.watch.length}종목</small></h4>
-      ${d.watch.map((w) => `<div class="lb-watch" data-open="${esc(w.symbol)}"><div class="lb-top">${logo(w.symbol, nm(w), 24)}<b>${esc(nm(w))}</b><span class="${cls(w.pnl)}">${pct(w.pnl)}</span></div>${bar(w)}</div>`).join("")
-        || `<p class="note">가진 종목이 없어요. 사면 여기서 손절~익절 사이 지금 위치를 보여 줘요.</p>`}</section>
+    <section class="lb-guard"><h4><i data-lucide="shield-check"></i> 손절·익절 지키는 중 <small>${d.watch.length}종목</small>
+        <span class="lb-help" title="산 종목마다 정해 둔 손절가(이 아래로 내리면 판다)와 익절가(이 위로 오르면 판다)를 장중 2분마다 확인해서, 닿으면 사람 손 없이 자동으로 팝니다.">?</span></h4>
+      <p class="lb-desc">산 주식이 정해 둔 가격에 닿으면 자동으로 팔아요. 흰 점이 지금 가격이에요.</p>
+      ${d.watch.map((w) => `<div class="lb-watch" data-open="${esc(w.symbol)}"><div class="lb-top">${logo(w.symbol, nm(w), 24)}<b>${esc(nm(w))}</b><span class="${cls(w.pnl)}">${pct(w.pnl)}</span></div>
+        ${w.stop ? guardGauge(w, d.market) : `<div class="lb-nobar">손절·익절이 없어 자동으로 팔지 않아요 · 내 계좌에서 정할 수 있어요</div>`}</div>`).join("")
+        || `<div class="lb-emptyg"><i data-lucide="shield"></i><span>가진 주식이 없어요. 사면 여기서 손절~익절 사이 지금 위치를 실시간으로 보여 줘요.</span></div>`}</section>
     <section><h4><i data-lucide="sparkles"></i> 다음 후보 <small>15분마다 다시 계산</small></h4>
       ${d.candidates.slice(0, 6).map((c) => `<div class="lb-cand" data-open="${esc(c.symbol)}">${logo(c.symbol, nm(c), 22)}<div class="lb-ct"><b>${esc(nm(c))}</b>
         ${c.missing.length ? `<span class="lb-miss">${esc(c.missing[0])}</span>` : `<span class="lb-ok">규칙 통과</span>`}</div></div>`).join("") || `<p class="note">후보가 없어요.</p>`}</section>
@@ -178,3 +179,18 @@ document.addEventListener("tab", (e) => {
   if (s?.auto_trading || open) liveOn();
 });
 icons();
+
+// 이번 달 AI 비용 (사무실 위)
+async function loadAiCost() {
+  const c = await api("/api/ai/cost").catch(() => null);
+  if (!c) return;
+  let el = $("#ai-cost-chip");
+  if (!el) { el = document.createElement("span"); el.id = "ai-cost-chip"; $(".office-bar").appendChild(el); }
+  const r = c.cap_krw ? c.month_krw / c.cap_krw : 0;
+  el.className = "ai-cost " + (r >= 1 ? "full" : r >= 0.8 ? "warn" : "");
+  el.title = "회의·재점검에 쓴 Claude 비용 (환율 1,400원 기준 대략값). 상한은 설정 4번에서 바꿀 수 있어요";
+  el.innerHTML = `<i data-lucide="coins"></i> 이번 달 AI 비용 <b>${Math.round(c.month_krw).toLocaleString()}원</b>${c.cap_krw ? ` / ${Math.round(c.cap_krw).toLocaleString()}원 <span class="bar"><i style="width:${Math.min(100, r * 100)}%"></i></span>` : ""}`;
+  icons();
+}
+document.addEventListener("tab", (e) => { if (e.detail === "office") loadAiCost(); });
+setInterval(() => { if (state.tab === "office") loadAiCost(); }, 60000);

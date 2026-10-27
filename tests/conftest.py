@@ -14,6 +14,7 @@ def isolated_home(tmp_path, monkeypatch):
 def fake_vault(monkeypatch):
     """실제 윈도우 자격 증명 관리자를 건드리지 않는다."""
     store: dict[str, str] = {}
+    monkeypatch.setenv("QTRADER_OFFLINE", "1")  # 시험 중에는 외부(야후 지수 등)로 나가지 않는다
     monkeypatch.setattr("qtrader.vault.put", lambda n, v: store.__setitem__(n, v.strip()))
     monkeypatch.setattr("qtrader.vault.get", lambda n: store.get(n))
     monkeypatch.setattr("qtrader.vault.delete", lambda n: store.pop(n, None))

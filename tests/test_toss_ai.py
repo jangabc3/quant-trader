@@ -427,3 +427,22 @@ def test_auto_order_reports_why(isolated_home):
     assert [(o["symbol"], o["side"], o["status"]) for o in r["orders"]] == [("005930", "buy", "filled")]
     why = TestClient(create_app()).get("/api/trades/why").json()
     assert why[0]["symbol"] == "005930" and why[0]["run"]["rating"] == "Buy" and why[0]["run"]["plan"]["stop"] > 0
+
+
+def test_compare_accounts_follow_same_meeting(isolated_home):
+    from qtrader import compare
+    cfg = loose_cfg()
+    cfg["ai"]["require_approval"] = False
+    cfg["markets"]["KR"]["strategy"] = "ai"
+    cfg["compare"] = {"enabled": True, "modes": ["long", "short"]}
+    config.save(cfg)
+    write_demo_csv(isolated_home / "data", cfg)
+    ctx = build_context()
+    meeting.start("005930", ctx.data, ctx.store, ctx.cfg, llm=FakeLLM("Buy", 0.9), background=False)
+    run_market(ctx, Market.KR)
+    out = compare.run(ctx, Market.KR)
+    assert [o["mode"] for o in out] == ["long", "short"] and all(o["orders"] == 1 for o in out)
+    short = ctx.store.active_plans("cmp-short", "KR")[0]
+    assert short["stop"] == pytest.approx(short["entry"] * 0.975) and short["horizon"] == 3  # 단기 규칙으로 다시 잡힘
+    rows = compare.summary(ctx, Market.KR)
+    assert {r["mode"] for r in rows} == {"long", "short"} and all(r["positions"] == 1 for r in rows)

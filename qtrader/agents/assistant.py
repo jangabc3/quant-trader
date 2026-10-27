@@ -23,8 +23,20 @@ SYSTEM = (
     "시세·계좌·차트 숫자는 반드시 도구로 확인한 값만 말하고, 확인 못 한 것은 모른다고 말한다. "
     "투자 판단을 요청받으면 근거와 위험을 함께 말하고, 최종 판단은 사용자 몫이라고 알린다. "
     "너는 주문을 낼 수 없다. 매매는 QTrader 엔진이 설정한 전략과 리스크 한도 안에서만 한다. "
-    "깊은 분석이 필요하면 start_meeting 으로 AI 투자 회의를 열 수 있다 (몇 분 걸리고 API 비용이 든다 - 열기 전에 알린다)."
+    "깊은 분석이 필요하면 start_meeting 으로 AI 투자 회의를 열 수 있다 (몇 분 걸리고 API 비용이 든다 - 열기 전에 알린다). "
+    "'왜 샀어?', '수익 얼마야?', '오늘 뭐 살 거야?', '내 기준이 뭐야?', '요즘 뜨는 업종은?' 같은 질문은 trades_why·performance·today_picks·"
+    "my_rules·industries·investor_flows·live_board·stock_news 도구로 확인해서 답한다. 앱 사용법을 물으면 app_help 를 본다. "
+    "초보자도 이해하도록 어려운 말은 풀어서 쓰고, 숫자에는 단위(원·$·%)를 붙인다."
 )
+
+APP_HELP = """QTrader 화면 안내
+- 시장: 맨 위 내 요약, 코스피·코스닥/미국 실제 지수, 실시간 차트(관심·거래대금·거래량·급상승·급하락), 지금 뜨는 산업, 외국인·기관 매매 동향
+- 종목: 차트·호가·체결·재무·투자자 매매·뉴스, 오른쪽 주문창에서 직접 구매·판매 (손절·익절도 함께 정할 수 있음, 정정·조건 주문)
+- AI 사무실: 실시간(장중 감시·후보 계산을 캐릭터로) / 회의 보기, 오늘 AI가 고른 회의 후보와 고른 기준, 회의 시연
+- 내 계좌: 보유 종목 · 수익(수익 리포트, 지수 대비) · 거래 기록(왜 사고팔았나요, 내보내기) · 하루 리포트 · 알림
+- 설정: 운용 모드(가상매매/토스 실전), 실전 주문 PIN, API 키와 연결 테스트, 매매 기간(AI에게 맡기기/장기/스윙/단기), 쓸 돈, 알림·비용 상한
+- 자동매매 순서: 실행 40분 전 AI 회의 후보 선정 → 회의 → 체크리스트 통과 종목만 주문 → 장중 2분마다 손절·익절 감시 → 장 마감 요약
+- 긴급 정지: 새로 사는 것만 멈춤 (손절·익절 매도는 계속). 하루 손실 한도를 넘으면 자동으로 켜짐"""
 
 
 def _tool(name: str, desc: str, props: dict, required: list[str]) -> dict:
@@ -45,6 +57,15 @@ TOOLS = [
     _tool("recent_orders", "최근 주문 내역.", {"limit": {"type": "integer"}}, ["limit"]),
     _tool("ai_decision", "그 종목의 가장 최근 AI 투자 회의 결론.", {"symbol": SYM}, ["symbol"]),
     _tool("start_meeting", "그 종목으로 AI 투자 회의를 연다. 몇 분 걸리고 비용이 든다.", {"symbol": SYM}, ["symbol"]),
+    _tool("today_picks", "오늘 AI 회의 후보와 고른 이유(멀티팩터 점수·공시·재무).", {"market": {"type": "string", "enum": ["KR", "US"]}}, ["market"]),
+    _tool("performance", "수익 리포트: 총 손익·승률·손익비·최대 낙폭·거래별 결과.", {"market": {"type": "string", "enum": ["KR", "US"]}}, ["market"]),
+    _tool("trades_why", "최근 사고판 거래와 그 근거(AI 회의 결론·체크리스트·손절·익절).", {"limit": {"type": "integer"}}, ["limit"]),
+    _tool("my_rules", "내 투자 성향과 자동매매 기준(비중·손실 한도·매수 조건·매매 기간).", {}, []),
+    _tool("live_board", "장중 감시 중인 종목(손절·익절까지 거리)·다음 후보·오늘 한 일·다음 일정.", {"market": {"type": "string", "enum": ["KR", "US"]}}, ["market"]),
+    _tool("industries", "지금 뜨는 산업(섹터) 순위.", {"market": {"type": "string", "enum": ["KR", "US"]}}, ["market"]),
+    _tool("investor_flows", "국내 외국인·기관·개인 순매수 상위 종목.", {}, []),
+    _tool("stock_news", "그 종목의 최신 뉴스 제목.", {"symbol": SYM}, ["symbol"]),
+    _tool("app_help", "QTrader 화면과 기능 사용법.", {}, []),
 ]
 
 
@@ -66,7 +87,7 @@ class Assistant:
         t = self.get_toss()
         if name == "market_overview":
             ov = market_mod.overview(t)
-            for i in ov.get("indices", []):
+            for i in ov.get("indices", []) + ov.get("us", []) + ov.get("us_index", []):
                 i.pop("spark", None)
             return json.dumps(ov, ensure_ascii=False)
         if name == "rankings":
@@ -121,6 +142,44 @@ class Assistant:
             ctx = self.get_ctx()
             run = meeting.start(args["symbol"], ctx.data, ctx.store, ctx.cfg, toss=t)
             return f"AI 투자 회의를 시작했습니다 (회의 번호 {run['id']}). 'AI 사무실' 화면에서 진행 상황을 볼 수 있습니다."
+        if name in ("today_picks", "performance", "live_board"):
+            from .. import extras, live, screener
+            from ..engine import trade_date
+            ctx = self.get_ctx()
+            m = ctxmod.Market(args["market"])
+            if name == "today_picks":
+                return json.dumps({"기준": screener.__doc__, "후보": screener.todays(ctx, m, trade_date(m), int(ctx.cfg["ai"]["max_symbols_per_day"]))},
+                                  ensure_ascii=False)[:15000]
+            if name == "performance":
+                r = extras.performance(ctx.store, ctx.broker.name, m.value)
+                return json.dumps({"summary": r["summary"], "trades": r["trades"][:15]}, ensure_ascii=False, default=str)
+            return json.dumps(live.snapshot(ctx, m), ensure_ascii=False, default=str)[:15000]
+        if name == "trades_why":
+            ctx = self.get_ctx()
+            rows = ctx.store.rows("select trade_date, market, symbol, side, qty, price, status, strategy, message from orders "
+                                  "where status in ('filled','submitted') order by id desc limit ?", (min(int(args["limit"]), 30),))
+            return json.dumps(rows, ensure_ascii=False)
+        if name == "my_rules":
+            from .. import profile as profile_mod
+            cfg = self.cfg_loader()
+            return json.dumps({"investor": cfg.get("investor"), "criteria": profile_mod.criteria(cfg), "holding": cfg["ai"].get("holding"),
+                               "mode": cfg["mode"]}, ensure_ascii=False)
+        if name == "industries":
+            return json.dumps(market_mod.industries(t, args["market"]), ensure_ascii=False)
+        if name == "investor_flows":
+            return json.dumps(market_mod.investor_flows(t), ensure_ascii=False)
+        if name == "stock_news":
+            from .. import news as news_mod
+            from .. import stockdata
+            s = args["symbol"].upper()
+            try:
+                nm = stockdata.summary(t, s).get("name") or s
+            except Exception:
+                nm = s
+            return json.dumps([{"title": x["title"], "time": x.get("time"), "source": x.get("source")} for x in news_mod.stock_news(nm, 10)],
+                              ensure_ascii=False)
+        if name == "app_help":
+            return APP_HELP
         raise ValueError(f"알 수 없는 도구 {name}")
 
     def chat(self, thread_id: str | None, text: str, page: str = "") -> dict:

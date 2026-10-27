@@ -78,6 +78,31 @@ class PlanIn(BaseModel):
     take: float
 
 
+class ModifyIn(BaseModel):
+    price: float = 0
+    qty: int = 0
+    symbol: str = ""
+
+
+class CondIn(BaseModel):
+    symbol: str
+    side: str
+    qty: int
+    trigger: float
+    price: float = 0
+    days: int = 30
+    note: str = ""
+
+
+class SplitIn(BaseModel):
+    symbol: str
+    side: str
+    qty: int  # 전체 수량
+    parts: int = 2  # 2~4번에 나눠서
+    step_pct: float = 3.0  # 다음 번은 이만큼 더 싸게(매수)/비싸게(매도)
+    price: float = 0  # 첫 번째 주문 가격 (0 = 현재가 지정가)
+
+
 class TestIn(BaseModel):
     kind: str
 
@@ -370,6 +395,18 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
                                           "changeRate": num(x.get("changeRate")), "tradingAmount": num(x.get("tradingAmount")) or None,
                                           "marketCap": num(x.get("marketCapitalization")) or None} for x in rows]}
 
+    @app.get("/api/market/industries")
+    def market_industries(market: str = "KR", kind: str = "TOP_GAINERS", duration: str = "1d"):
+        return guard(lambda: market_mod.industries(toss(), market, kind, duration))
+
+    @app.get("/api/market/industry/{sector_id}")
+    def market_industry(sector_id: str, market: str = "KR"):
+        return guard(lambda: market_mod.industry_detail(toss(), sector_id, market))
+
+    @app.get("/api/market/investors")
+    def market_investors(side: str = "buy"):
+        return guard(lambda: market_mod.investor_flows(toss(), side))
+
     @app.get("/api/sector/{sector_id}/stocks")
     def sector_stocks(sector_id: str, market: str = "KR"):
         t = toss()
@@ -647,6 +684,67 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         r["summary"]["total_rate"] = r["summary"]["total"] / base if base else None
         return r
 
+    # 주문 정정 (토스)
+    @app.post("/api/account/orders/{order_id}/modify", dependencies=[Depends(need_token)])
+    def modify_order(order_id: str, body: ModifyIn, x_qtrader_pin: str = Header("")):
+        c = ctx()
+        if c.broker.name != "toss":
+            raise HTTPException(400, "주문 정정은 토스증권 실전 모드에서 됩니다 (가상매매는 바로 체결돼요)")
+        live_pin(x_qtrader_pin)
+        m = _market_of(body.symbol.upper()) if body.symbol else Market.KR
+        if m == Market.KR and body.qty <= 0:
+            raise HTTPException(400, "국내 주식은 정정할 수량을 넣어야 해요")
+        r = guard(lambda: c.broker.client.modify(order_id, body.price or None, body.qty or None, m))
+        c.store.log("info", "manual", f"주문 정정 {order_id}: 가격 {body.price or '시장가'} · 수량 {body.qty or '그대로'}")
+        return r
+
+    # 조건 주문 · 분할 매수/매도
+    @app.get("/api/conditional")
+    def cond_list():
+        from .. import conditional
+        c = ctx()
+        return [r | {"name": name_of(r["symbol"])} for r in reversed(conditional.listing(c))]
+
+    @app.post("/api/conditional", dependencies=[Depends(need_token)])
+    def cond_create(body: CondIn, x_qtrader_pin: str = Header("")):
+        from .. import conditional
+        c = ctx()
+        if c.broker.live:
+            live_pin(x_qtrader_pin)
+        try:
+            return guard(lambda: conditional.create(c, body.symbol, body.side, body.qty, body.trigger, body.price, body.days, body.note))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+    @app.delete("/api/conditional/{cid}", dependencies=[Depends(need_token)])
+    def cond_cancel(cid: str):
+        from .. import conditional
+        guard(lambda: conditional.cancel(ctx(), cid))
+        return {"ok": True}
+
+    @app.post("/api/order/split", dependencies=[Depends(need_token)])
+    def order_split(body: SplitIn, x_qtrader_pin: str = Header("")):
+        """첫 번째는 바로 주문, 나머지는 가격이 step% 씩 움직일 때 나가는 조건 주문으로."""
+        from .. import conditional
+        c = ctx()
+        sym = body.symbol.upper()
+        m = _market_of(sym)
+        n = max(2, min(int(body.parts), 4))
+        if body.qty < n:
+            raise HTTPException(400, f"{n}번에 나누려면 최소 {n}주가 필요해요")
+        ref = body.price or float(c.data.price(m, sym))
+        each = [body.qty // n + (1 if i < body.qty % n else 0) for i in range(n)]
+        if c.broker.live:
+            live_pin(x_qtrader_pin)
+        first = place_order(OrderIn(symbol=sym, side=body.side, qty=each[0], price=body.price), x_qtrader_pin)
+        sign = -1 if body.side == "buy" else 1
+        conds = []
+        for i in range(1, n):
+            trig = ref * (1 + sign * body.step_pct / 100 * i)
+            conds.append(conditional.create(c, sym, body.side, each[i], trig, trig if m == Market.US else 0, 30, f"분할 {i + 1}/{n}"))
+        c.store.log("info", "manual", f"분할 {'매수' if body.side == 'buy' else '매도'} {sym} {body.qty}주를 {n}번에 ({body.step_pct}% 간격)")
+        return {"first": first, "conditions": conds}
+
     # 손절·익절 계획 직접 정하기 (직접 산 종목도 자동으로 지켜 준다)
     @app.post("/api/plans", dependencies=[Depends(need_token)])
     def plan_set(body: PlanIn):
@@ -660,7 +758,8 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         if not (0 < body.stop < px < body.take):
             raise HTTPException(400, f"손절가는 지금 가격({px:,})보다 낮게, 익절가는 높게 정해 주세요")
         c.store.save_plan(c.broker.name, m.value, sym, "manual", pos.avg_price, body.stop, body.take)
-        c.store.log("info", "manual", f"{sym} 손절 {body.stop:,} · 익절 {body.take:,} 로 정했습니다")
+        fmt = (lambda v: f"{v:,.0f}원") if m == Market.KR else (lambda v: f"${v:,.2f}")
+        c.store.log("info", "manual", f"{sym} 손절 {fmt(body.stop)} · 익절 {fmt(body.take)} 로 정했습니다")
         return {"ok": True}
 
     @app.delete("/api/plans/{symbol}", dependencies=[Depends(need_token)])
@@ -680,6 +779,105 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             raise HTTPException(400, "이 키는 연결 테스트를 지원하지 않아요")
         steps = fn(config_mod.load())
         return {"kind": body.kind, "ok": all(s["ok"] for s in steps), "steps": steps}
+
+    # 지수 대비 성과: 내 계좌 수익률 vs 코스피 / S&P 500 (같은 날짜부터)
+    @app.get("/api/benchmark")
+    def benchmark(market: str = "KR"):
+        c = ctx()
+        hist = c.store.equity_history(c.broker.name, market)
+        idx = market_mod.index_daily(toss(), market)
+        name = "코스피" if market == "KR" else "S&P 500"
+        if len(hist) < 2 or not idx:
+            return {"name": name, "ours": [], "index": [], "note": "자산 기록이 이틀 이상 쌓이면 지수와 비교한 선이 그려져요" if len(hist) < 2
+                    else f"{name} 시세를 받지 못했어요 (토스 키가 필요해요)" if market == "KR" else f"{name} 시세를 받지 못했어요"}
+        start = hist[0]["trade_date"]
+        base = hist[0]["equity"]
+        ours = [{"time": h["trade_date"], "value": h["equity"] / base - 1} for h in hist]
+        ix = [x for x in idx if x["time"] >= start]
+        ib = ix[0]["close"] if ix else None
+        index = [{"time": x["time"], "value": x["close"] / ib - 1} for x in ix] if ib else []
+        diff = (ours[-1]["value"] - index[-1]["value"]) if index else None
+        return {"name": name, "ours": ours, "index": index, "diff": diff}
+
+    # 거래 기록 내보내기 (엑셀에서 바로 열리게 UTF-8 BOM)
+    @app.get("/api/export/trades.csv")
+    def export_trades(market: str = "KR"):
+        import csv
+        import io
+        from fastapi.responses import Response
+        c = ctx()
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["날짜", "시각(UTC)", "시장", "종목코드", "종목명", "구분", "수량", "가격", "금액", "상태", "방식", "근거"])
+        kind = {"ai": "AI 자동", "ai-exit": "자동 손절·익절", "manual": "직접 주문"}
+        for o in reversed(c.store.rows("select * from orders where account=? and market=? and status in ('filled','submitted') order by id desc limit 5000",
+                                       (c.broker.name, market))):
+            w.writerow([o["trade_date"], o.get("ts", ""), o["market"], o["symbol"], name_of(o["symbol"]), "매수" if o["side"] == "buy" else "매도",
+                        o["qty"], o["price"], round(o["qty"] * o["price"], 2), {"filled": "체결", "submitted": "접수"}.get(o["status"], o["status"]),
+                        kind.get(o.get("strategy") or "", o.get("strategy") or "규칙 전략"), (o.get("message") or "").split(" | ")[0]])
+        w.writerow([])
+        w.writerow(["실현 손익 (사고판 거래)"])
+        w.writerow(["종목코드", "종목명", "산 날", "판 날", "수량", "산 가격", "판 가격", "손익", "수익률", "보유일", "판 이유"])
+        for t in reversed(extras.performance(c.store, c.broker.name, market)["trades"]):
+            w.writerow([t["symbol"], name_of(t["symbol"]), t["buy_date"], t["sell_date"], t["qty"], t["buy"], t["sell"], round(t["pnl"], 2),
+                        f"{t['pct']:.2%}", t["days"], t["why"]])
+        from datetime import date as _d
+        fn = f"qtrader_{market}_{_d.today():%Y%m%d}.csv"
+        return Response("\ufeff" + buf.getvalue(), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f"attachment; filename={fn}"})
+
+    # 실시간 시세: 2초마다 서버가 밀어 준다 (Server-Sent Events). 토스 Open API 에 WebSocket 이 없어서
+    #   서버가 여러 화면의 종목을 한 번에 묶어 조회하고, 모든 화면이 그 결과를 나눠 쓴다.
+    _px: dict = {"t": 0.0, "key": "", "data": {}}
+
+    def _prices(symbols: list[str]) -> dict:
+        import time as _t
+        key = ",".join(sorted(symbols))
+        if key == _px["key"] and _t.time() - _px["t"] < 1.5:
+            return _px["data"]
+        t = toss()
+        out = {}
+        if t is not None:
+            try:
+                got = t.prices(symbols)
+                out = {s: got.get(s) or got.get(s.split(":")[-1]) for s in symbols}
+            except Exception:
+                out = {}
+        # 토스 키가 없으면(체험용) 실시간 시세를 보내지 않는다 (화면마다 합성 시세가 달라 섞이면 헷갈림)
+        _px.update(t=_t.time(), key=key, data=out)
+        return out
+
+    @app.get("/api/stream")
+    async def price_stream(symbols: str = ""):
+        import asyncio
+        import json as _json
+        from fastapi.responses import StreamingResponse
+        syms = [s for s in dict.fromkeys(x.strip().upper() for x in symbols.split(",")) if s][:100]
+
+        async def gen():
+            last = {}
+            yield "retry: 3000\n\n"
+            while True:
+                data = await asyncio.to_thread(_prices, syms) if syms else {}
+                changed = {k: v for k, v in data.items() if v and last.get(k) != v}
+                last.update(data)
+                yield f"data: {_json.dumps({'prices': changed, 'ts': __import__('time').time()})}\n\n"
+                await asyncio.sleep(2)
+        return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    # 전략 비교 (가상 계좌들)
+    @app.get("/api/compare")
+    def compare_view(market: str = "KR"):
+        from .. import compare
+        c = ctx()
+        return {"enabled": bool((c.cfg.get("compare") or {}).get("enabled")), "rows": compare.summary(c, Market(market))}
+
+    @app.post("/api/compare", dependencies=[Depends(need_token)])
+    def compare_toggle(body: ToggleIn):
+        cfg = config_mod.load()
+        cfg.setdefault("compare", {"modes": ["auto", "long", "swing", "short"]})["enabled"] = body.on
+        config_mod.save(cfg)
+        return {"enabled": body.on}
 
     # 매매 이유 보고: 자동 주문 뒤 '왜, 무슨 근거로' 샀고 팔았는지
     @app.get("/api/trades/why")

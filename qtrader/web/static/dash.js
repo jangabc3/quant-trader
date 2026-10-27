@@ -39,10 +39,8 @@ window.renderDash = (d) => {
       });
       dash.series = dash.chart.addAreaSeries({ lineColor: "#3182f6", topColor: "rgba(49,130,246,.3)", bottomColor: "rgba(0,0,0,0)", lineWidth: 2 });
     }
-    dash.series.setData(hist);
-    dash.chart.timeScale().fitContent();
+    loadBenchmark(m);
   }
-  $("#eq-note").textContent = hist.length < 2 ? "장 마감 5분 뒤마다 그날 자산이 기록돼요. 이틀째부터 선이 그려집니다. 얼마를 벌었는지는 위 '수익 리포트'에서 바로 볼 수 있어요." : `${hist.length}거래일 기록`;
   // 자산 구성 (도넛)
   const parts = pos.map((p) => ({ name: p.name || p.symbol, v: p.value })).concat(ov ? [{ name: "현금", v: ov.cash }] : []);
   const tot = parts.reduce((s, x) => s + x.v, 0) || 1;
@@ -61,27 +59,8 @@ window.renderDash = (d) => {
     <text x="90" y="104" text-anchor="middle" fill="#e8edf3" font-size="18" font-weight="800">${Math.round((1 - (ov?.cash || 0) / tot) * 100)}%</text></svg>
     <div class="legend">${arcs.map((a) => `<div><i style="background:${a.c}"></i><span>${esc(a.x.name)}</span><b>${(a.x.v / tot * 100).toFixed(1)}%</b></div>`).join("")}</div></div>`
     : `<p class="note">자산 정보가 없습니다.</p>`;
-  // 보유 종목 카드
-  $("#holdings").innerHTML = pos.length ? pos.map((p) => {
-    const pl = state.plans[p.symbol];
-    let bar = "";
-    if (pl) {
-      const lo = pl.stop, hi = pl.take, at = Math.max(0, Math.min(100, (p.last_price - lo) / (hi - lo) * 100));
-      const en = Math.max(0, Math.min(100, (pl.entry - lo) / (hi - lo) * 100));
-      bar = `<div class="sl-bar"><i class="fill" style="width:${at}%"></i><i class="entry" style="left:${en}%"></i><i class="now" style="left:${at}%"></i></div>
-        <div class="sl-lbl"><span class="down">손절 ${money(pl.stop, p.market)}</span><span class="up">익절 ${money(pl.take, p.market)}</span></div>`;
-    }
-    const gain = p.value - p.qty * p.avg_price;
-    return `<div class="hold" data-open="${esc(p.symbol)}">
-      <div class="hold-top">${logo(p.symbol, p.name || p.symbol, 40)}
-        <div class="hold-name"><b>${esc(p.name || p.symbol)}</b><span class="note">${p.qty.toLocaleString()}주 · 평균 ${money(p.avg_price, p.market)} · 지금 ${money(p.last_price, p.market)}</span></div>
-        <div class="hold-pl"><b>${money(p.value, p.market)}</b><span class="${cls(p.pnl)}">${gain > 0 ? "+" : ""}${money(gain, p.market)} (${pct(p.pnl)})</span></div></div>
-      ${bar || `<div class="hold-noplan"><i data-lucide="shield-off"></i><span>손절·익절이 없어 자동으로 팔지 않아요</span></div>`}
-      <div class="hold-acts"><button data-plan="${esc(p.symbol)}"><i data-lucide="shield-check"></i> ${pl ? "손절·익절 바꾸기" : "손절·익절 정하기"}</button>${pl ? `<button data-unplan="${esc(p.symbol)}">감시 끄기</button>` : ""}</div></div>`;
-  }).join("") : `<div class="empty"><i data-lucide="inbox"></i><p>보유 종목이 없습니다</p><span class="note">자동매매를 시작하거나 '미리보기'로 오늘 무엇을 살지 확인해 보세요.</span></div>`;
-  if (dash.animKey !== m) { dash.animKey = m; animateIn("#holdings .hold, #kpis .kpi", { y: 12 }); }
-  const tv = pos.reduce((s, p) => s + p.value, 0), tg = pos.reduce((s, p) => s + p.value - p.qty * p.avg_price, 0);
-  $("#hold-sum").innerHTML = pos.length ? `${pos.length}종목 · 평가 ${money(tv, m)} · <span class="${cls(tg)}">${tg > 0 ? "+" : ""}${money(tg, m)}</span>` : "";
+  window.renderHoldings(pos, m);
+  if (dash.animKey !== m) { dash.animKey = m; animateIn("#holdings .hl-row, #kpis .kpi", { y: 12 }); }
   renderOrders(d.orders.filter((o) => o.market === m || !o.market));
   renderEvents(d.events);
   icons();
@@ -113,11 +92,29 @@ async function loadOpenOrders() {
       ${r.items.map((o) => `<tr><td>${esc((o.orderedAt || "").slice(5, 16).replace("T", " "))}</td><td>${esc(o.symbol)}</td>
         <td class="${o.side === "BUY" ? "up" : "down"}">${o.side === "BUY" ? "매수" : "매도"}</td><td class="r">${esc(o.quantity)}</td>
         <td class="r">${esc(o.execution?.filledQuantity || 0)}</td><td class="r">${esc(o.price || "시장가")}</td><td>${esc(o.status)}</td>
-        <td><button data-cancel="${esc(o.orderId)}"><i data-lucide="x-circle"></i> 취소</button></td></tr>`).join("")}</tbody></table>`
+        <td><button data-modify="${esc(o.orderId)}" data-sym="${esc(o.symbol)}" data-qty="${esc(o.quantity)}" data-px="${esc(o.price || "")}"><i data-lucide="pencil"></i> 정정</button>
+          <button data-cancel="${esc(o.orderId)}"><i data-lucide="x-circle"></i> 취소</button></td></tr>`).join("")}</tbody></table>`
       : `<p class="note">미체결 주문이 없습니다.</p>`;
     icons();
   } catch (e) { el.innerHTML = `<p class="note">${esc(e.message)}</p>`; }
 }
+// 주문 정정: 가격(미국) 또는 가격·수량(국내)
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-modify]");
+  if (!b) return;
+  const kr = /^\d/.test(b.dataset.sym);
+  modal(`<div class="plan-edit"><h3>주문 정정</h3><p class="note">${esc(b.dataset.sym)} · 지금 ${esc(b.dataset.px || "시장가")} · ${esc(b.dataset.qty)}주</p>
+    <label>새 가격 (비우면 시장가) <input id="md-px" inputmode="decimal" value="${esc(b.dataset.px)}"></label>
+    ${kr ? `<label>수량 <input id="md-qty" inputmode="numeric" value="${esc(b.dataset.qty)}"></label>` : `<p class="note">미국 주식은 가격만 바꿀 수 있어요.</p>`}
+    <div class="tk-c-btns"><button id="md-x">취소</button><button class="primary" id="md-ok">정정하기</button></div></div>`);
+  $("#md-x").onclick = () => $("#modal").classList.add("hidden");
+  $("#md-ok").onclick = async () => {
+    try {
+      await api(`/api/account/orders/${b.dataset.modify}/modify`, { method: "POST", body: { symbol: b.dataset.sym, price: Number($("#md-px").value.replace(/,/g, "")) || 0, qty: kr ? Number($("#md-qty").value) : 0 } });
+      $("#modal").classList.add("hidden"); toast("주문을 정정했어요", "pencil"); loadOpenOrders();
+    } catch (err) { toast(err.message, "alert-triangle"); }
+  };
+});
 document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-cancel]");
   if (!b || !confirm("이 주문을 취소할까요?")) return;
@@ -162,3 +159,19 @@ function acctSub(v) {
 }
 $("#acct-sub").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) acctSub(b.dataset.v); });
 try { const v = localStorage.getItem("qtrader.acct.sub"); if (v) acctSub(v); } catch {}
+
+// 지수 대비 성과: 두 선 (내 수익률 = 파랑, 지수 = 회색)
+async function loadBenchmark(m) {
+  const b = await api("/api/benchmark?market=" + m).catch(() => null);
+  if (!b || !dash.chart) return;
+  if (!dash.bmSeries) dash.bmSeries = dash.chart.addLineSeries({ color: "#8a97a6", lineWidth: 2, lineStyle: 2, priceLineVisible: false, lastValueVisible: true });
+  dash.series.applyOptions({ priceFormat: { type: "custom", formatter: (v) => (v * 100).toFixed(1) + "%" } });
+  dash.series.setData(b.ours);
+  dash.bmSeries.setData(b.index);
+  dash.chart.timeScale().fitContent();
+  $("#bm-sub").textContent = `내 계좌 수익률 vs ${b.name}`;
+  $("#bm-head").innerHTML = b.ours.length ? `<div><span><i style="background:#3182f6"></i>내 계좌</span><b class="${cls(b.ours.at(-1).value)}">${pct(b.ours.at(-1).value)}</b></div>
+    <div><span><i style="background:#8a97a6"></i>${esc(b.name)}</span><b class="${cls(b.index.at(-1)?.value)}">${pct(b.index.at(-1)?.value)}</b></div>
+    ${b.diff != null ? `<div class="bm-diff ${b.diff >= 0 ? "win" : "lose"}">${b.diff >= 0 ? "시장보다" : "시장보다"} <b>${b.diff >= 0 ? "+" : ""}${(b.diff * 100).toFixed(1)}%p</b> ${b.diff >= 0 ? "앞서요" : "뒤처져요"}</div>` : ""}` : "";
+  $("#eq-note").textContent = b.ours.length ? `같은 날(${b.ours[0].time})부터 잰 수익률이에요. 자동매매가 시장보다 나은지 판단하는 가장 중요한 기준이에요.` : b.note || "";
+}

@@ -326,5 +326,14 @@ class Toss:
     def order_detail(self, order_id: str) -> dict:
         return self._call("GET", f"/api/v1/orders/{order_id}", "ORDER_HISTORY", account=True) or {}
 
+    def modify(self, order_id: str, price: float | None, qty: int | None, market: Market) -> dict:
+        """주문 정정. 국내는 수량 필수, 미국은 가격만 바꿀 수 있다."""
+        body: dict = {"orderType": "LIMIT" if price else "MARKET"}
+        if price:
+            body["price"] = str(int(price)) if market == Market.KR else f"{price:.2f}"
+        if market == Market.KR:
+            body["quantity"] = str(int(qty or 0))
+        return self._call("POST", f"/api/v1/orders/{order_id}/modify", "ORDER", body=body, account=True) or {}
+
     def cancel(self, order_id: str) -> dict:
         return self._call("POST", f"/api/v1/orders/{order_id}/cancel", "ORDER", body={}, account=True) or {}

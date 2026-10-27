@@ -123,6 +123,7 @@ def overview(t: Toss | None) -> dict:
             return {
                 "demo": False, "asof": datetime.now(KST).isoformat(timespec="seconds"), "session": safe(sess, ""),
                 "indices": indices, "us": [x | {"spark": safe(spark[x["symbol"]], [])} for x in (safe(us[s]) for s in US_PROXIES) if x],
+                "us_index": us_indices(),
                 "fx": {"rate": num(f.get("rate")), "change": num(f.get("basisPoint")), "dir": f.get("rateChangeType")},
                 "bonds": [{"symbol": b["symbol"], "name": NAMES.get(b["symbol"], b["symbol"]),
                            "value": num(b.get("lastPrice"))} for b in (safe(bonds, []) or [])],
@@ -199,7 +200,7 @@ def demo_overview() -> dict:
         return {"symbol": sym, "name": NAMES[sym], "price": last, "change": last - base, "change_rate": last / base - 1,
                 "prev": base, "high": max(vals), "low": min(vals), "volume": float(rng.integers(20, 90)) * 1e6, "spark": spark}
 
-    return {"demo": True, "asof": datetime.now(KST).isoformat(timespec="seconds"), "session": "체험용 데이터",
+    return {"demo": True, "asof": datetime.now(KST).isoformat(timespec="seconds"), "session": "체험용 데이터", "us_index": us_indices(),
             "indices": [idx("KOSPI", 3200.0), idx("KOSDAQ", 880.0)],
             "us": [us("SPY", 640.0), us("QQQ", 560.0), us("DIA", 450.0)],
             "fx": {"rate": round(1390 + float(rng.normal(0, 4)), 1), "change": round(float(rng.normal(0, 3)), 1), "dir": "UP"},
@@ -231,3 +232,178 @@ def demo_rankings(kind: str, market: str, count: int) -> dict:
     for i, x in enumerate(items):
         x["rank"] = i + 1
     return {"demo": True, "rankedAt": None, "kind": kind, "market": market, "duration": "1d", "items": items}
+
+
+# 미국 실제 지수 (토스 Open API 에는 미국 지수가 없어 야후 파이낸스 공개 차트 데이터를 쓴다. 비공식이라 실패하면 ETF 로 대신)
+US_INDEX = [("^GSPC", "S&P 500"), ("^IXIC", "나스닥 종합"), ("^DJI", "다우존스")]
+
+
+def us_indices() -> list[dict]:
+    import os
+    import requests
+    if os.environ.get("QTRADER_OFFLINE"):
+        return []
+
+    def one(sym, name):
+        r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}", params={"range": "1d", "interval": "5m"},
+                         headers={"User-Agent": "Mozilla/5.0 QTrader"}, timeout=8)
+        res = r.json()["chart"]["result"][0]
+        meta, q = res["meta"], res["indicators"]["quote"][0]
+        last = float(meta["regularMarketPrice"])
+        prev = float(meta.get("chartPreviousClose") or meta.get("previousClose") or last)
+        spark = [{"time": int(t), "value": round(float(c), 2)} for t, c in zip(res.get("timestamp") or [], q.get("close") or []) if c is not None]
+        highs = [h for h in (q.get("high") or []) if h is not None]
+        lows = [x for x in (q.get("low") or []) if x is not None]
+        return {"symbol": sym, "name": name, "price": last, "change": last - prev, "change_rate": last / prev - 1 if prev else 0,
+                "prev": prev, "high": max(highs) if highs else last, "low": min(lows) if lows else last, "spark": spark, "index": True}
+
+    def build():
+        out = []
+        for s, n in US_INDEX:
+            try:
+                out.append(one(s, n))
+            except Exception:
+                return []
+        return out
+
+    return cached("us_indices", 30, build)
+
+
+# 지금 뜨는 산업 (토스 섹터 랭킹 + 대표 종목)
+DEMO_INDUSTRY = [("s1", "소프트웨어", 0.0858, 7558e8, 115.4e12, "SK스퀘어", 54), ("s2", "음원", 0.0833, 7336e8, 116.0e12, "SK스퀘어", 7),
+                 ("s3", "온라인쇼핑", 0.0717, 8434e8, 135.5e12, "SK스퀘어", 17), ("s4", "전자부품", 0.0696, 1.9e12, 117.6e12, "삼성전기", 72),
+                 ("s5", "스마트폰부품", 0.0694, 1.6e12, 108.2e12, "삼성전기", 89), ("s6", "반도체부품소재", 0.0671, 2.6e12, 183.3e12, "삼성전기", 64),
+                 ("s7", "알루미늄", 0.0652, 737e8, 2.6e12, "삼아알미늄", 9), ("s8", "반도체패키징", 0.0555, 1833e8, 7.9e12, "하나마이크론", 14),
+                 ("s9", "반도체장비", 0.0513, 1.3e12, 87.7e12, "한미반도체", 90), ("s10", "지주사", 0.0504, 1.3e12, 308.2e12, "SK스퀘어", 110)]
+
+
+def industries(t: Toss | None, market: str = "KR", kind: str = "TOP_GAINERS", duration: str = "1d") -> dict:
+    if t is None:
+        items = [{"rank": i + 1, "sectorId": sid, "name": n, "changeRate": r, "tradingAmount": amt, "marketCap": cap,
+                  "leader": lead, "count": cnt} for i, (sid, n, r, amt, cap, lead, cnt) in enumerate(DEMO_INDUSTRY)]
+        if kind == "MARKET_TRADING_AMOUNT":
+            items.sort(key=lambda x: -x["tradingAmount"])
+        return {"demo": True, "items": items}
+
+    def build():
+        from concurrent.futures import ThreadPoolExecutor
+        rows = t.sector_rankings(kind, market, duration)[:15]
+
+        def lead(x):
+            try:
+                st = t.sector_stocks(x["sectorId"], market)
+                top = max(st, key=lambda s: num(s.get("tradingAmount"))) if st else None
+                return (top or {}).get("name"), (top or {}).get("symbol"), len(st)
+            except Exception:
+                return None, None, None
+        with ThreadPoolExecutor(5) as ex:
+            leads = list(ex.map(lead, rows))
+        return {"demo": False, "items": [{"rank": x.get("rank"), "sectorId": x.get("sectorId"), "name": x.get("name"),
+                                          "changeRate": num(x.get("changeRate")), "tradingAmount": num(x.get("tradingAmount")) or None,
+                                          "marketCap": num(x.get("marketCapitalization")) or None, "leader": ld[0], "leader_symbol": ld[1],
+                                          "count": ld[2]} for x, ld in zip(rows, leads)]}
+
+    return cached(f"industries:{market}:{kind}:{duration}", 300, build)
+
+
+def industry_detail(t: Toss | None, sector_id: str, market: str = "KR") -> dict:
+    """기간별 등락률 (섹터 vs 코스피) + 구성 종목 상위."""
+    durs = ["1d", "1w", "1mo", "3mo", "1y"]
+    if t is None:
+        rng = _rng("ind" + sector_id)
+        return {"demo": True, "name": dict((a, b) for a, b, *_ in DEMO_INDUSTRY).get(sector_id, sector_id),
+                "perf": [{"duration": d, "sector": float(rng.normal(0.02, 0.06)) * (i + 1), "index": float(rng.normal(0.01, 0.03)) * (i + 1)}
+                         for i, d in enumerate(durs)],
+                "stocks": [{"symbol": s, "name": n, "price": p, "tradingAmount": None} for s, n, p in DEMO_KR[:6]]}
+
+    def build():
+        d = t.sector_detail(sector_id, market)
+        rates = {x.get("duration"): num(x.get("changeRate")) for x in ((d.get("performance") or {}).get("changeRates") or [])}
+        idx = {}
+        try:  # 비교용 코스피 기간 수익률 (지수 일봉, 최신이 앞)
+            r = t._call("GET", "/api/v1/market-indicators/KOSPI/candles", "MARKET_INDICATOR", {"interval": "1d", "count": 200}) or {}
+            closes = [num(c.get("closePrice") or c.get("close")) for c in (r.get("candles") or [])]
+            closes = [c for c in closes if c]
+            for k, n in {"1d": 1, "1w": 5, "1mo": 21, "3mo": 63}.items():
+                if len(closes) > n:
+                    idx[k] = closes[0] / closes[n] - 1
+        except Exception:
+            pass
+        st = sorted(t.sector_stocks(sector_id, market), key=lambda s: -num(s.get("tradingAmount")))[:8]
+        px = {}
+        try:
+            px = t.prices([s["symbol"] for s in st])
+        except Exception:
+            pass
+        return {"demo": False, "name": d.get("name"), "summary": d.get("summary"),
+                "perf": [{"duration": k, "sector": rates.get(k), "index": idx.get(k)} for k in durs],
+                "stocks": [{"symbol": s["symbol"], "name": s.get("name"), "price": px.get(s["symbol"]), "tradingAmount": num(s.get("tradingAmount"))}
+                           for s in st]}
+
+    return cached(f"industry:{sector_id}:{market}", 300, build)
+
+
+# 외국인·기관·개인 순매수 상위 (토스는 종목별 투자자 동향만 줘서, 거래대금 상위 종목을 모아 금액으로 줄 세운다)
+def investor_flows(t: Toss | None, side: str = "buy") -> dict:
+    sgn = 1 if side == "buy" else -1
+    pick = lambda rows: {k: sorted(rows, key=lambda r: -sgn * r[k])[:8] for k in ("foreigner", "institution", "individual")}
+    if t is None:
+        rng = _rng("flows")
+        rows = [{"symbol": s, "name": n, "price": p, "change_rate": float(rng.normal(0.01, 0.03)),
+                 "foreigner": float(rng.normal(0, 300)) * 1e8, "institution": float(rng.normal(0, 200)) * 1e8,
+                 "individual": float(rng.normal(0, 250)) * 1e8} for s, n, p in DEMO_KR]
+        return {"demo": True, "updated": None, **pick(rows)}
+
+    def build():
+        from concurrent.futures import ThreadPoolExecutor
+        base = rankings(t, "amount", "KR", "1d", 40)["items"]
+
+        def one(x):
+            try:
+                rec = (t.stock_investor_trading(x["symbol"], 1).get("records") or [None])[0]
+            except Exception:
+                rec = None
+            if not rec:
+                return None
+            net = lambda k: num((rec.get(k) or {}).get("netBuyVolume")) * (x["price"] or 0)
+            return {"symbol": x["symbol"], "name": x["name"], "price": x["price"], "change_rate": x["change_rate"],
+                    "foreigner": net("foreigner"), "institution": net("institution"), "individual": net("individual"),
+                    "updated": rec.get("updatedAt") or rec.get("date")}
+        with ThreadPoolExecutor(6) as ex:
+            rows = [r for r in ex.map(one, base) if r]
+        return {"updated": max((r["updated"] or "" for r in rows), default=None), "rows": rows}
+
+    data = cached("investor_flows", 600, build)
+    return {"demo": False, "updated": data["updated"], **pick(data["rows"])}
+
+
+def index_daily(t: Toss | None, market: str, days: int = 260) -> list[dict]:
+    """지수 일봉 [{time: 'YYYY-MM-DD', close}] 오래된 순. 국내=코스피(토스), 미국=S&P 500(야후)."""
+    import os
+    if market == "KR":
+        if t is None:
+            return []
+        def build_kr():
+            r = t._call("GET", "/api/v1/market-indicators/KOSPI/candles", "MARKET_INDICATOR", {"interval": "1d", "count": min(days, 200)}) or {}
+            out = []
+            for c in r.get("candles") or []:
+                v = num(c.get("closePrice") or c.get("close"))
+                d = str(c.get("timestamp") or c.get("date") or "")[:10]
+                if v and d:
+                    out.append({"time": d, "close": v})
+            return sorted(out, key=lambda x: x["time"])
+        return cached("idx_daily_kr", 600, build_kr)
+    if os.environ.get("QTRADER_OFFLINE"):
+        return []
+
+    def build_us():
+        import requests
+        r = requests.get("https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC", params={"range": "1y", "interval": "1d"},
+                         headers={"User-Agent": "Mozilla/5.0 QTrader"}, timeout=8).json()["chart"]["result"][0]
+        from datetime import datetime as _dt
+        return [{"time": _dt.utcfromtimestamp(ts).strftime("%Y-%m-%d"), "close": float(c)}
+                for ts, c in zip(r["timestamp"], r["indicators"]["quote"][0]["close"]) if c is not None]
+    try:
+        return cached("idx_daily_us", 600, build_us)
+    except Exception:
+        return []

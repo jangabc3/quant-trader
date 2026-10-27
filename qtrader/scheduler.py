@@ -139,6 +139,12 @@ class Scheduler:
                         extras.notify(ctx.store, cfg, f"✅ {o['symbol']} {o['note']}", "order")
             except Exception as e:
                 ctx.store.log("error", "sync", f"체결 확인 실패: {e}")
+            try:  # 가상매매 조건 주문 (토스는 토스가 직접 감시)
+                from . import conditional
+                for r in conditional.check(ctx):
+                    extras.notify(ctx.store, cfg, f"🎯 조건 주문 실행: {r['symbol']} {r['qty']}주 {'매수' if r['side'] == 'buy' else '매도'} ({r['trigger']:,} 도달)", "order")
+            except Exception as e:
+                ctx.store.log("warn", "cond", f"조건 주문 확인 실패: {e}")
             for m in (Market.KR, Market.US):
                 if not cfg["markets"][m.value].get("enabled"):
                     continue
@@ -147,6 +153,9 @@ class Scheduler:
                         was_killed = ctx.kill
                         if check_loss(ctx, m) and not was_killed:
                             extras.notify(ctx.store, cfg, f"⛔ {m.value} 하루 손실 한도를 넘어 신규 매수를 멈췄습니다", "risk")
+                        if (cfg.get("compare") or {}).get("enabled"):
+                            from . import compare
+                            compare.watch(ctx, m)
                         for x in check_exits(ctx, m):
                             extras.notify(ctx.store, cfg, f"{'🛑 손절' if x['reason'] == 'stop' else '🎯 익절'} "
                                                           f"{x['symbol']} @ {x['price']:,} ({x['status']})", "exit")
@@ -154,6 +163,9 @@ class Scheduler:
                             from . import live
                             live.run_rechecks(ctx, m)
                             self._new_candidates(ctx, m)
+                    if after_close(m) and (cfg.get("compare") or {}).get("enabled"):
+                        from . import compare
+                        compare.snapshot(ctx, m)
                     if after_close(m) and snapshot_equity(ctx, m):
                         today = trade_date(m)
                         rep = extras.daily_report(ctx.store, ctx.broker.name, m.value, today)
@@ -177,6 +189,9 @@ class Scheduler:
             try:
                 res = run_market(ctx, m)
                 out.append(res)
+                if (cfg.get("compare") or {}).get("enabled") and mc.get("strategy") == "ai":
+                    from . import compare
+                    compare.run(ctx, m)
                 for o in res.get("orders", []):
                     if o.get("status") in ("filled", "submitted"):
                         why = (ctx.store.rows("select message from orders where symbol=? and trade_date=? order by id desc limit 1",
