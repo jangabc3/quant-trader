@@ -165,11 +165,19 @@ class Scheduler:
         done = {r["symbol"] for r in ctx.store.ai_runs(200) if r["trade_date"] == today}
         if len(done) >= int(ai["max_symbols_per_day"]):
             return
-        for s in mc["universe"]:
+        if ai.get("auto_pick", True):  # 종목을 정하지 않아도 AI 가 후보를 고른다
+            from .screener import todays
+            symbols = [p["symbol"] for p in todays(ctx, m, today, int(ai["max_symbols_per_day"]))]
+        else:
+            symbols = mc["universe"]
+        for s in symbols:
             if s not in done:
                 ctx.store.log("info", f"ai.{m.value}", f"{s} AI 회의 시작")
-                meeting.start(s, ctx.data, ctx.store, ctx.cfg, toss=getattr(ctx.data, "client", None)
-                              if getattr(ctx.data, "name", "") == "toss" else None)
+                try:
+                    meeting.start(s, ctx.data, ctx.store, ctx.cfg, toss=getattr(ctx.data, "client", None)
+                                  if getattr(ctx.data, "name", "") == "toss" else None)
+                except ValueError as e:  # 월 비용 상한 등
+                    ctx.store.log("warn", f"ai.{m.value}", str(e))
                 return
 
     def _loop(self) -> None:

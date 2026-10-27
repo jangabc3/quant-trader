@@ -109,6 +109,7 @@ def test_engine_paper_end_to_end(isolated_home):
     from qtrader.data import write_demo_csv
     cfg = config.load()
     cfg["markets"]["US"]["enabled"] = True
+    cfg["markets"]["KR"]["strategy"], cfg["markets"]["US"]["strategy"] = "momentum", "trend"  # 규칙 전략 경로 시험 (기본은 AI)
     config.save(cfg)
     write_demo_csv(isolated_home / "data", cfg)
     ctx = build_context()

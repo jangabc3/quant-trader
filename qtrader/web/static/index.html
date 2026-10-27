@@ -161,6 +161,11 @@
       <span id="meet-stage" class="note"></span>
     </div>
     <div class="office-status"><div class="office-hud" id="office-hud"></div><div class="stage-line" id="stage-line"></div></div>
+    <div class="panel picks" id="picks-panel">
+      <div class="rank-bar"><h3 style="margin:0"><i data-lucide="sparkles"></i> 오늘 AI가 고른 회의 후보 <small id="picks-sub">자동매매가 켜져 있으면 실행 시각 전에 이 종목들로 차례로 회의합니다</small></h3>
+        <div class="seg" id="picks-mkt"><button data-v="KR" class="on">국내</button><button data-v="US">미국</button></div></div>
+      <div id="picks" class="pick-list"></div>
+    </div>
     <div class="office-wrap" id="office-wrap">
       <canvas id="office" width="640" height="360"></canvas>
       <div id="office-overlay"></div>
@@ -400,6 +405,7 @@
               <label>최소 확신도 <input id="ai-conf" type="number" step="0.05" min="0" max="1"></label>
             </div>
             <label class="check"><input type="checkbox" id="ai-web"> 웹 검색으로 뉴스·재무·여론 조사</label>
+            <label class="check"><input type="checkbox" id="ai-autopick"> 회의할 종목을 AI가 매일 고르기 (설정 종목·관심 종목·보유·거래대금 상위 중 숫자 규칙 통과)</label>
             <label>투자자 프로필 <textarea id="ai-profile" rows="4" placeholder="예: 3년 안에 1천만원을 3천만원으로. 빚투·공매도·옵션 안 함. 한 종목 손실은 -10% 이내."></textarea></label>
             <h4>매수 체크리스트 기준 <small class="note">하나라도 어기면 사지 않습니다</small></h4>
             <div class="form-row">

@@ -59,7 +59,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const isUS = (m) => m === "US" || m === "USD";
 const money = (v, m) => v == null || isNaN(v) ? "-" : (isUS(m) ? "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 })
   : Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 0 }) + "원");
-const pct = (v) => v == null || isNaN(v) ? "-" : (v > 0 ? "+" : "") + (v * 100).toFixed(2) + "%";
+const pct = (v) => v == null || isNaN(v) ? "-" : Math.abs(v) < 0.00005 ? "0.00%" : (v > 0 ? "+" : "") + (v * 100).toFixed(2) + "%";
 const cls = (v) => v > 0 ? "up" : v < 0 ? "down" : "";
 const bigKRW = (v) => {
   const a = Math.abs(v);
@@ -301,7 +301,7 @@ function renderOrders(rows) {
   state.orders = rows;
   const stc = { submitted: "amber", filled: "green", rejected: "red", dry_run: "" };
   $("#ord-table tbody").innerHTML = rows.length ? rows.map((o, i) => `<tr class="clickable" data-ord="${i}">
-    <td>${esc(o.trade_date.slice(5))}</td><td><div class="namecell">${logo(o.symbol, o.symbol, 22)}${esc(o.symbol)}</div></td>
+    <td>${esc(o.trade_date.slice(5))}</td><td><div class="namecell">${logo(o.symbol, o.name || o.symbol, 22)}<div><div class="nm">${esc(o.name || o.symbol)}</div><div class="sym">${esc(o.symbol)}</div></div></div></td>
     <td><span class="side ${o.side}">${o.side === "buy" ? "매수" : "매도"}</span>${o.strategy === "ai-exit" ? ' <span class="badge">자동 손익절</span>' : ""}</td>
     <td class="r">${o.qty.toLocaleString()}</td><td class="r">${money(o.price, o.market)}</td><td class="r">${money(o.price * o.qty, o.market)}</td>
     <td><span class="badge ${stc[o.status] || ""}">${st[o.status] || o.status}</span></td>
@@ -312,7 +312,7 @@ $("#ord-table").addEventListener("click", (e) => {
   const tr = e.target.closest("[data-ord]");
   if (!tr) return;
   const o = state.orders[tr.dataset.ord];
-  modal(`<h3>${o.side === "buy" ? "매수" : "매도"} ${esc(o.symbol)} ${o.qty}주 · ${money(o.price, o.market)}</h3>
+  modal(`<h3>${o.side === "buy" ? "매수" : "매도"} ${esc(o.name || o.symbol)} ${o.qty}주 · ${money(o.price, o.market)}</h3>
     <p class="note">${esc(o.ts)} · ${esc(o.strategy || "")} · ${esc(o.status)}</p><h4>이 주문의 근거</h4><ul class="why">${reasonHtml(o.message)}</ul>`);
 });
 
@@ -440,6 +440,7 @@ async function loadConfig() {
   $("#ai-debate").value = c.ai.debate_rounds;
   $("#ai-before").value = c.ai.run_before_minutes; $("#ai-max").value = c.ai.max_symbols_per_day;
   $("#ai-conf").value = c.ai.min_confidence; $("#ai-web").checked = !!c.ai.web_research;
+  $("#ai-autopick").checked = c.ai.auto_pick !== false;
   const R = pr.rules;
   $("#rl-conf").value = R.min_confidence; $("#rl-rr").value = R.min_reward_risk; $("#rl-rsi").value = R.max_rsi;
   $("#rl-vol").value = R.max_vol; $("#rl-fact").value = R.min_fact_ok; $("#rl-buys").value = R.max_new_buys_per_day;
@@ -523,7 +524,7 @@ $("#cfg-save").onclick = async () => {
     auto_exit: $("#ai-exit").checked, debate_rounds: Number($("#ai-debate").value),
     run_before_minutes: Number($("#ai-before").value), max_symbols_per_day: Number($("#ai-max").value),
     min_confidence: Number($("#ai-conf").value), web_research: $("#ai-web").checked,
-    monthly_cost_cap_krw: Number($("#ai-cap").value) || 0,
+    monthly_cost_cap_krw: Number($("#ai-cap").value) || 0, auto_pick: $("#ai-autopick").checked,
     rules: { min_confidence: Number($("#rl-conf").value), min_reward_risk: Number($("#rl-rr").value),
       max_rsi: Number($("#rl-rsi").value), max_vol: Number($("#rl-vol").value), min_fact_ok: Number($("#rl-fact").value),
       max_new_buys_per_day: Number($("#rl-buys").value), cooldown_days: Number($("#rl-cool").value),

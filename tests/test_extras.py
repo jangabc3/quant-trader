@@ -80,3 +80,16 @@ def test_feeds_keep_category_after_save(tmp_path, monkeypatch):
 def test_concentration_counts_cash():
     c = extras.concentration([{"symbol": "005930", "value": 250}], max_weight=0.2, cash=9750)
     assert c["warnings"] == [] and c["sectors"][0]["weight"] == pytest.approx(0.025)
+
+
+def test_screener_picks_held_first_and_filters(isolated_home):
+    from qtrader.data import write_demo_csv
+    from qtrader.engine import build_context
+    from qtrader.models import Market
+    from qtrader import screener
+    write_demo_csv(isolated_home / "data", config.load())
+    ctx = build_context()
+    picks = screener.candidates(ctx, Market.KR, 3)
+    assert len(picks) <= 3 and all(not p["fails"] for p in picks if not p["held"])
+    first = screener.todays(ctx, Market.KR, "2026-10-27", 3)
+    assert screener.todays(ctx, Market.KR, "2026-10-27", 3) == first  # 하루 한 번만 고른다

@@ -256,3 +256,20 @@ nav { scrollbar-width: none; } nav::-webkit-scrollbar { display: none; }
 .idx-card .flows .flow { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .idx-card .flows .flow span { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .idx-card .flows .flow b { font-size: 14px; white-space: nowrap; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
+
+/* 오늘 마감 요약 */
+.day-report { display: flex; flex-direction: column; gap: 14px; color: var(--text); }
+.dr-kpis { display: grid; grid-template-columns: 1.6fr 1fr 1fr 1.4fr; gap: 8px; }
+.dr-k { background: #0f141b; border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 2px; }
+.dr-k span { font-size: 12px; color: var(--muted); } .dr-k b { font-size: 20px; font-variant-numeric: tabular-nums; } .dr-k.big b { font-size: 26px; }
+.dr-k em { font-style: normal; font-size: 12px; color: var(--muted); }
+.dr-chart { background: #0f141b; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.dr-bars { display: flex; align-items: flex-end; gap: 6px; height: 90px; margin-top: 6px; }
+.dr-bar { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; }
+.dr-bar i { display: block; width: 100%; max-width: 28px; height: var(--h); border-radius: 6px 6px 2px 2px; transform-origin: bottom; background: #3182f6; }
+.dr-bar.up i { background: #f04452; } .dr-bar span { font-size: 10.5px; color: var(--muted); }
+.dr-lists { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; } .dr-lists h4 { margin: 0 0 6px; font-size: 13.5px; }
+.dr-row { display: grid; grid-template-columns: 26px 1fr auto auto; gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.04); font-size: 13px; cursor: pointer; }
+.dr-row .r { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dr-row em { grid-column: 2 / -1; font-style: normal; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 900px) { .dr-kpis { grid-template-columns: 1fr 1fr; } .dr-lists { grid-template-columns: 1fr; } }
