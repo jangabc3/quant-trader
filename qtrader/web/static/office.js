@@ -361,6 +361,7 @@ function renderReport() {
   el.innerHTML = `<h3>${esc(role.name)} · ${esc(role.title)} ${role.web ? "<small>웹 검색</small>" : ""} ${role.deep ? "<small>깊은 추론</small>" : ""}</h3>` +
     (a?.report ? `<div class="report-text">${mdLite(a.report)}</div>` : `<p class="note">${a?.status === "working" ? "작성 중입니다..." : "아직 보고서가 없습니다."}</p>`) +
     (a?.sources?.length ? `<div class="sources"><b>출처</b>${a.sources.slice(0, 10).map((s) => `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a>`).join("")}</div>` : "");
+  fillDrawer();
 }
 
 async function showRun(id) {
@@ -404,8 +405,11 @@ async function loadTrack() {
         <td style="color:${RATING_COLOR[x.rating]}">${RATING_KO[x.rating]}</td><td class="r">${money(x.price, x.market)}</td>
         <td class="r">${money(x.last, x.market)}</td><td class="r ${cls(x.return)}">${pct(x.return)}</td>
         <td>${x.correct == null ? "<span class='note'>보유 의견</span>" : x.days === 0 ? "<span class='note'>대기</span>" : x.correct ? "<b class='up'>적중</b>" : "<b class='down'>빗나감</b>"}${x.hit_take ? " · 익절가 도달" : ""}${x.hit_stop ? " · 손절가 도달" : ""}</td></tr>`).join("")
-        || `<tr><td colspan="7" class="note">아직 기록이 없습니다.</td></tr>`}</tbody></table>
-      <p class="note">어떤 분석도 승률 100%를 보장할 수 없습니다. 결정을 숨김없이 쌓아 어떤 경우에 AI 판단이 믿을 만한지 직접 확인하세요.</p>`;
+        || `<tr><td colspan="7"><div class="empty"><i data-lucide="clipboard-list"></i><p>아직 회의 기록이 없어요</p>
+          <span class="note">AI 회의를 하면 결론(매수·보유·매도)과 그때 가격이 여기 남고, 며칠 뒤 실제 가격과 비교해 <b>맞았는지 틀렸는지</b>를 자동으로 채점합니다.
+          기록이 쌓이면 '방향 적중률'로 AI 판단을 얼마나 믿어도 되는지 알 수 있어요.</span></div></td></tr>`}</tbody></table>
+      <p class="note">시연 회의는 기록에 남지 않습니다. 어떤 분석도 승률 100%를 보장할 수 없습니다. 결정을 숨김없이 쌓아 어떤 경우에 AI 판단이 믿을 만한지 직접 확인하세요.</p>`;
+    icons();
   } catch (e) { el.innerHTML = `<h3>AI 판단 기록</h3><p class="note">${esc(e.message)}</p>`; }
 }
 
@@ -431,8 +435,49 @@ $("#office-overlay").addEventListener("click", (e) => {
   office.selected = a.dataset.agent;
   renderReport(); updateOverlay();
   if (office.selected === "assistant") $("#qbi-btn").dispatchEvent(new PointerEvent("pointerup"));
-  else $("#report").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  else openDrawer();
 });
+
+// 참석자 보고서: 페이지를 내리지 않고 오른쪽에서 밀려 나오는 창으로
+const STATUS_KO = { idle: "대기", working: "작업 중", done: "완료", error: "오류" };
+function openDrawer() {
+  let d = $("#agent-drawer");
+  if (!d) {
+    d = document.createElement("aside");
+    d.id = "agent-drawer";
+    d.innerHTML = `<header><div class="ad-who"></div><div class="ad-nav"><button data-nav="-1" title="이전 사람">‹</button><button data-nav="1" title="다음 사람">›</button>
+      <button data-close title="닫기 (Esc)">×</button></div></header><div class="ad-body"></div>`;
+    document.body.appendChild(d);
+    d.addEventListener("click", (e) => {
+      if (e.target.closest("[data-close]")) return closeDrawer();
+      const n = e.target.closest("[data-nav]");
+      if (n) {
+        const ids = office.roles.filter((r) => SEATS[r.id]).map((r) => r.id);
+        office.selected = ids[(ids.indexOf(office.selected) + Number(n.dataset.nav) + ids.length) % ids.length];
+        renderReport(); updateOverlay();
+      }
+    });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
+  }
+  d.classList.add("open");
+  fillDrawer();
+}
+function closeDrawer() { $("#agent-drawer")?.classList.remove("open"); office.selected = null; updateOverlay(); }
+function fillDrawer() {
+  const d = $("#agent-drawer");
+  if (!d || !d.classList.contains("open") || !office.selected) return;
+  const role = office.roles.find((r) => r.id === office.selected);
+  const a = office.run?.agents?.[office.selected] || {};
+  const [shirt] = LOOKS[role.look] || LOOKS.gray;
+  d.querySelector(".ad-who").innerHTML = `<span class="ad-ava" style="background:${shirt}">${esc(role.name.slice(0, 1))}</span>
+    <div><b>${esc(role.name)}</b><span>${esc(role.title)} · ${esc(ROOMS.find((x) => x.id === (SEATS[role.id] ? roomOf(role.id) : ""))?.label || "")}</span></div>
+    <span class="ad-st ${a.status || "idle"}">${STATUS_KO[a.status || "idle"]}</span>`;
+  d.querySelector(".ad-body").innerHTML = (a.bubble ? `<div class="ad-bubble">“${esc(a.bubble)}”</div>` : "") + $("#report").innerHTML.replace(/^<h3>.*?<\/h3>/, "");
+}
+function roomOf(id) {
+  const [x, y] = SEATS[id].home;
+  return ROOMS.find((r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h)?.id;
+}
 
 (async () => {
   const meta = await api("/api/ai/roles");

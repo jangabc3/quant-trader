@@ -75,3 +75,8 @@ def test_feeds_keep_category_after_save(tmp_path, monkeypatch):
     cfg["news"]["feeds"] = [{"name": "A", "url": "https://a.example/rss", "cat": "global"}]
     config.save(cfg)
     assert config.load()["news"]["feeds"][0]["cat"] == "global"
+
+
+def test_concentration_counts_cash():
+    c = extras.concentration([{"symbol": "005930", "value": 250}], max_weight=0.2, cash=9750)
+    assert c["warnings"] == [] and c["sectors"][0]["weight"] == pytest.approx(0.025)

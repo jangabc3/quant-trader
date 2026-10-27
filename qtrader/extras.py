@@ -75,9 +75,9 @@ SECTORS = {
 SECTOR_OF = {s: k for k, v in SECTORS.items() for s in v}
 
 
-def concentration(holdings: list[dict], max_weight: float, max_sector: float = 0.4) -> dict:
-    """holdings: [{symbol, value}] (같은 통화). 한 종목·한 업종 비중이 기준을 넘으면 경고."""
-    total = sum(h["value"] for h in holdings) or 0
+def concentration(holdings: list[dict], max_weight: float, max_sector: float = 0.4, cash: float = 0.0) -> dict:
+    """holdings: [{symbol, value}] (같은 통화). 비중은 현금까지 더한 총자산 기준. 한 종목·한 업종이 기준을 넘으면 경고."""
+    total = (sum(h["value"] for h in holdings) + max(cash, 0)) if holdings else 0
     if not total:
         return {"sectors": [], "warnings": []}
     sec: dict[str, float] = {}
