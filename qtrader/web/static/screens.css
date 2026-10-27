@@ -276,9 +276,6 @@ nav { scrollbar-width: none; } nav::-webkit-scrollbar { display: none; }
 
 .hold-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 6px; }
 @media (max-width: 800px) { .hold-cards { grid-template-columns: 1fr; } }
-.when-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-@media (max-width: 800px) { .when-cards { grid-template-columns: 1fr; } }
-#when-opts label.muted { opacity: .45; }
 
 /* 수익 리포트 */
 .perf-panel { display: flex; flex-direction: column; gap: 14px; }

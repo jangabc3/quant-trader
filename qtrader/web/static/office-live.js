@@ -42,7 +42,7 @@ function liveAgents(d) {
       : `다음 회의 ${hhmm(d.schedule.next_meeting)} · 실행 ${hhmm(d.schedule.next_run)}`,
     "### 장중 회의 → 매수\n\n" + (it.on ? `장이 열린 동안 ${it.every}분마다 새 후보 하나로 AI 회의를 열고, 결론이 매수이고 체크리스트를 통과하면 그 종목만 바로 삽니다. 오늘 회의 ${it.met}/${it.cap}종목.\n\n`
       + (it.items.map((x) => `- ${x.at || ""} **${nm(x)}** ${IN_STATE[x.state]?.[0] || x.state}${x.note ? ` — ${x.note}` : ""}`).join("\n") || "- 아직 없음")
-      : "꺼져 있어요. 하루 한 번 정기 실행 때만 삽니다 (설정 '3. 투자 방식'에서 바꿀 수 있어요)."));
+      : "꺼져 있어요. 정기 실행 때만 삽니다."));
   // 팀장: 재점검 현황
   const rc = Object.keys(d.rechecks).length;
   set("lead", rc ? "done" : "idle", `AI 긴급 재점검 ${rc}/${d.recheck_cap}`,
@@ -116,7 +116,7 @@ function flowBoard(d) {
   const it = d.intraday;
   if (!it) return "";
   if (!it.on) return `<section class="lb-flow off"><h4><i data-lucide="shopping-cart"></i> 장중 회의 → 매수 <small>꺼짐</small></h4>
-    <p class="lb-desc">하루 한 번 정기 실행 때만 사요. 설정 '3. 투자 방식'에서 '장중 계속'을 고르면 장중에도 회의하고 바로 사요.</p></section>`;
+    <p class="lb-desc">장중 회의가 꺼져 있어 정기 실행 때만 사요.</p></section>`;
   const steps = [["sparkles", "새 후보", `${it.every}분마다 규칙 통과 종목`], ["users", "AI 회의", "한 번에 하나, 같은 종목은 하루 한 번"],
     ["list-checks", "체크리스트", "하나라도 못 넘으면 안 사요"], ["shopping-cart", "바로 매수", "안전장치 한도 안에서"]];
   return `<section class="lb-flow"><h4><i data-lucide="shopping-cart"></i> 장중 회의 → 매수 <small>오늘 회의 ${it.met}/${it.cap}종목${d.kill ? " · 긴급 정지 중이라 사지 않아요" : ""}</small></h4>

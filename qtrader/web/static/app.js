@@ -548,11 +548,6 @@ async function loadConfig() {
   $("#rl-market").value = R.market_filter || "half";
   $("#pin-enabled").checked = c.security?.pin !== false;
   $$("input[name=holding]").forEach((i) => (i.checked = i.value === (c.ai.holding || "auto")));
-  $$("input[name=buywhen]").forEach((i) => (i.checked = i.value === (c.ai.intraday === false ? "daily" : "intraday")));
-  $("#ai-every").value = String(c.ai.intraday_every_min ?? 15);
-  if (!$("#ai-every").value) $("#ai-every").insertAdjacentHTML("beforeend", `<option value="${c.ai.intraday_every_min}" selected>${c.ai.intraday_every_min}분마다</option>`);
-  $("#ai-recheck-every").value = c.ai.recheck_every_min ?? 2; $("#ai-recheck-max").value = c.ai.recheck_per_day ?? 5;
-  whenOpts();
   loadPin();
   const ruleKeys = Object.keys(state.strategies);
   const stratSelect = (cur) => `<option value="ai" ${cur === "ai" ? "selected" : ""}>${STRAT_NAME.ai} (추천)</option>
@@ -600,13 +595,6 @@ async function loadConfig() {
 
 // 저장하지 않은 변경 표시 (키·PIN·업데이트 칸은 따로 저장되니 제외)
 let cfgDirty = false;
-// '하루 한 번'을 고르면 장중 회의 간격 칸은 쓰지 않으니 흐리게
-function whenOpts() {
-  const daily = $$("input[name=buywhen]").find((i) => i.checked)?.value === "daily";
-  $("#ai-every").disabled = daily;
-  $("#ai-every").closest("label").classList.toggle("muted", daily);
-}
-$("#when-cards").addEventListener("change", whenOpts);
 function setDirty(v) { cfgDirty = v; $("#cfg-dirty")?.classList.toggle("hidden", !v); }
 $("#tab-cfg").addEventListener("input", (e) => { if (!e.target.closest("#cfg-keys, #pin-panel, #upd-panel")) setDirty(true); });
 $("#tab-cfg").addEventListener("change", (e) => { if (!e.target.closest("#cfg-keys, #pin-panel, #upd-panel")) setDirty(true); });
@@ -716,10 +704,6 @@ $("#cfg-save").onclick = async () => {
     min_confidence: conf, web_research: $("#ai-web").checked,  // 확신도 기준은 하나로 (회의 비중·체크리스트 같이)
     monthly_cost_cap_krw: Number($("#ai-cap").value) || 0, auto_pick: $("#ai-autopick").checked,
     holding: ($$("input[name=holding]").find((i) => i.checked) || {}).value || "auto",
-    intraday: ($$("input[name=buywhen]").find((i) => i.checked) || {}).value !== "daily",
-    intraday_every_min: Number($("#ai-every").value) || 15,
-    recheck_every_min: Number($("#ai-recheck-every").value) || 2,
-    recheck_per_day: Math.max(0, Math.round(Number($("#ai-recheck-max").value) || 0)),
     rules: { min_confidence: conf, min_reward_risk: Number($("#rl-rr").value),
       max_rsi: Number($("#rl-rsi").value), max_vol: getPct("rl-vol"), min_fact_ok: getPct("rl-fact"),
       max_new_buys_per_day: Number($("#rl-buys").value), cooldown_days: Number($("#rl-cool").value),

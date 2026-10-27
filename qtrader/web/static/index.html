@@ -406,8 +406,8 @@
       <!-- 3. 투자 방식: ① 시장별로 켜고 쓸 돈 ② 매매 기간 -->
       <div class="panel" id="cfg-how">
         <h3><i data-lucide="sliders-horizontal"></i> 3. 투자 방식</h3>
-        <p class="note how-intro">세 가지만 정하면 돼요. <b>① 어느 시장에서 얼마로</b> 할지, <b>② 산 주식을 얼마 동안</b> 들고 있을지, <b>③ 언제 살지</b>.
-          무엇을 살지는 매일 AI 회의가 고르고, 아래 '4. 안전장치' 안에서만 주문해요.</p>
+        <p class="note how-intro">두 가지만 정하면 돼요. <b>① 어느 시장에서 얼마로</b> 할지, <b>② 산 주식을 얼마 동안</b> 들고 있을지.
+          장이 열려 있는 동안 AI가 계속 후보를 살피고 회의해서 사고팔아요. 주문은 아래 '4. 안전장치' 안에서만 나가요.</p>
         <h4 class="step"><span>1</span> 어느 시장에서, 얼마로</h4>
         <div class="grid2" id="market-cfg"></div>
         <h4 class="step"><span>2</span> 산 주식을 얼마 동안 들고 있을까 <small class="note">국내·미국 모두 같은 방식이 적용돼요</small></h4>
@@ -417,18 +417,6 @@
           <label class="mode-card"><input type="radio" name="holding" value="swing"><b>스윙</b><span>며칠~2주. 손절 -5% · 익절 +10%, 10거래일이 지나면 팔아요</span></label>
           <label class="mode-card"><input type="radio" name="holding" value="short"><b>단기</b><span>1~3일. 손절 -2.5% · 익절 +5%, 3거래일이 지나면 팔아요. 하루에 2종목 더 살 수 있어요</span></label>
         </div>
-        <h4 class="step"><span>3</span> 언제 살까 <small class="note">파는 것(손절·익절, 기간 만료, AI 재점검)은 어느 쪽이든 장중 내내 해요</small></h4>
-        <div class="hold-cards when-cards" id="when-cards">
-          <label class="mode-card"><input type="radio" name="buywhen" value="daily"><b>하루 한 번</b><span>장 마감 전 정기 실행 때만 사요 (국내 15:10, 미국 뉴욕 15:45). 매매가 적어 수수료가 적어요</span></label>
-          <label class="mode-card rec"><input type="radio" name="buywhen" value="intraday"><b>장중 계속 <small>추천</small></b><span>장이 열려 있는 동안 몇 분마다 새 후보를 AI 회의에 올리고, 회의가 '매수'이고 체크리스트를 모두 통과하면 그때 바로 사요</span></label>
-        </div>
-        <div class="form-row" id="when-opts">
-          <label>새 후보 회의 간격 <em class="hint">몇 분마다 회의를 하나 열지. 짧을수록 AI 비용이 빨리 쌓여요</em><select id="ai-every">
-            <option value="5">5분마다</option><option value="10">10분마다</option><option value="15">15분마다 (추천)</option><option value="30">30분마다</option><option value="60">1시간마다</option></select></label>
-          <label>가진 종목 AI 재점검 간격 <em class="hint">급락·손절선 근처인지 몇 분마다 볼지</em><input id="ai-recheck-every" type="number" min="2" max="240"></label>
-          <label>AI 재점검 하루 최대 <em class="hint">번. 0 이면 재점검 안 함</em><input id="ai-recheck-max" type="number" min="0" max="50"></label>
-        </div>
-        <p class="note">장중 회의도 '하루 회의 종목 수'와 'AI 비용 한 달 상한' 안에서만 열고, 같은 종목은 하루 한 번만 회의해요. 회의는 한 번에 하나씩이고, 긴급 정지 중에는 새로 사지 않아요.</p>
         <p class="note">짧게 자주 사고팔수록 수수료·세금(국내 매도 약 0.2%)이 쌓이고, 연구상 잦은 매매는 개인 수익률을 낮추는 경향이 있어요 (Barber &amp; Odean 2000).</p>
         <details class="mini-adv"><summary>내 투자 성향과, 그에 맞춰 정해진 기준 보기</summary><div class="criteria-box"></div></details>
       </div>
