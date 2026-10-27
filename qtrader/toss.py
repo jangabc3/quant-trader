@@ -111,6 +111,9 @@ class Toss:
         if r.status_code == 401 and _retry == 0:
             self.token(force=True)  # 다른 곳에서 재발급해 무효가 된 토큰
             return self._call(method, path, group, params, body, account, 1)
+        if r.status_code == 401:
+            raise TossError(401, "unauthorized", "토스증권 인증이 끊겼습니다. 같은 Client ID 로 다른 프로그램이 토큰을 받으면 "
+                            "이 앱의 토큰이 무효가 됩니다(클라이언트당 토큰 1개). 다른 프로그램을 끄거나 키를 따로 발급받으세요")
         try:
             data = r.json()
         except ValueError:
@@ -319,6 +322,9 @@ class Toss:
         if symbol:
             p["symbol"] = toss_symbol(symbol)
         return (self._call("GET", "/api/v1/orders", "ORDER_HISTORY", p, account=True) or {}).get("orders", [])
+
+    def order_detail(self, order_id: str) -> dict:
+        return self._call("GET", f"/api/v1/orders/{order_id}", "ORDER_HISTORY", account=True) or {}
 
     def cancel(self, order_id: str) -> dict:
         return self._call("POST", f"/api/v1/orders/{order_id}/cancel", "ORDER", body={}, account=True) or {}
