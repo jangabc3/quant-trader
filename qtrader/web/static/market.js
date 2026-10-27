@@ -158,7 +158,7 @@ async function loadRankings() {
   if (mkt.kind === "watch") return loadWatchTable();
   try {
     const r = await api(`/api/market/rankings?kind=${mkt.kind}&market=${mkt.market}&duration=${mkt.duration}&count=30&safe=${mkt.safe ? 1 : 0}`);
-    $("#rank-time").textContent = (r.demo ? "체험용 · " : "") + (r.rankedAt ? r.rankedAt.slice(11, 16) + " 기준" : "");
+    $("#rank-time").textContent = r.demo ? "체험용 데이터" : `토스 실시간 · ${new Date().toLocaleTimeString("ko-KR", { hour12: false })} 갱신`;
     const watch = new Set((state.config?.watchlist) || []);
     $("#rank-body").innerHTML = r.items.map((x) => `<tr>
       <td class="rk">${x.rank}</td>
@@ -176,8 +176,8 @@ async function loadRankings() {
 }
 
 async function loadMarket() {
+  loadRankings(); loadWatch();  // 순위는 시장 요약을 기다리지 않고 바로
   try { renderOverview(await api("/api/market/overview")); } catch (e) { $("#mkt-session").textContent = e.message; }
-  loadRankings(); loadWatch();
 }
 
 function seg(id, key) {
@@ -208,7 +208,7 @@ document.addEventListener("click", async (e) => {
       toast(list.has(s) ? "관심 종목에 담았어요. 실시간 차트의 '♥ 관심' 탭에서 모아 볼 수 있어요" : "관심 종목에서 뺐어요", list.has(s) ? "heart" : "heart-off");
       if (mkt.kind === "watch") loadWatchTable();
     }
-    catch (err) { alert(err.message); }
+    catch (err) { toast(err.message); }
   }
 });
 
@@ -220,6 +220,8 @@ document.addEventListener("tab", (e) => { if (e.detail === "mkt") loadMarket(); 
   loadMarket();
 })();
 setInterval(() => { if (state.tab === "mkt" && !document.hidden) loadMarket(); }, 15000);
+// 순위(순서·등락률·거래대금)는 4초마다, 가격 칸은 실시간 스트림이 2초마다 바꾼다
+setInterval(() => { if (state.tab === "mkt" && !document.hidden && !$("#trend-rank")?.classList.contains("hidden")) loadRankings(); }, 4000);
 
 
 // 창 안 종목을 누르면 창을 닫는다

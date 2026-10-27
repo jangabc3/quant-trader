@@ -240,7 +240,7 @@ $("#st-watch").onclick = async () => {
   const list = new Set(c.watchlist || []);
   list.has(st.symbol) ? list.delete(st.symbol) : list.add(st.symbol);
   c.watchlist = [...list];
-  try { state.config = await api("/api/config", { method: "PUT", body: c }); $("#st-watch").classList.toggle("on"); } catch (e) { alert(e.message); }
+  try { state.config = await api("/api/config", { method: "PUT", body: c }); $("#st-watch").classList.toggle("on"); } catch (e) { toast(e.message); }
 };
 document.addEventListener("tab", (e) => { if (e.detail === "stock" && st.symbol) { loadSummary(); loadCandles(true); } });
 

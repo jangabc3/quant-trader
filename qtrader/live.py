@@ -73,6 +73,9 @@ def next_candidates(ctx, market: Market, n: int = 8) -> list[dict]:
                 sig = principles.market_signals(ctx.data.bars(market, s, 300))
             except Exception:
                 continue
+            import math
+            if any(not isinstance(sig.get(k), (int, float)) or math.isnan(sig[k]) for k in ("last", "sma200", "mom12_1", "rsi", "vol")):
+                continue  # 상장한 지 얼마 안 돼 자료가 모자란 종목 (RSI·200일선을 계산할 수 없음)
             miss = []
             if R["require_trend"] and sig["last"] <= sig["sma200"]:
                 miss.append(f"200일선 아래 ({sig['last'] / sig['sma200'] - 1:+.0%})")

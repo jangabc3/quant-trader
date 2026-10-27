@@ -1178,6 +1178,19 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         except ValueError as e:
             raise HTTPException(400, str(e))
 
+    @app.post("/api/assistant/stream", dependencies=[Depends(need_token)])
+    def chat_stream(body: ChatIn):
+        """큐비 답을 쓰는 대로 보낸다 (줄마다 'data: {json}')."""
+        import json as _json
+        from fastapi.responses import StreamingResponse
+        if not body.text.strip():
+            raise HTTPException(400, "메시지를 입력하세요")
+
+        def gen():
+            for ev in assistant.chat_stream(body.thread_id, body.text.strip()[:4000], body.page[:300]):
+                yield f"data: {_json.dumps(ev, ensure_ascii=False)}\n\n"
+        return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
     @app.post("/api/assistant", dependencies=[Depends(need_token)])
     def chat(body: ChatIn):
         if not body.text.strip():

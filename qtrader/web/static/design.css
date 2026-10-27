@@ -227,3 +227,14 @@ button.kchip { cursor: pointer; }
 .fx-toggle b, .fx-toggle span { padding: 2px 8px; border-radius: 99px; }
 .fx-toggle b { background: var(--blue); color: #fff; }
 .fx-toggle span { color: var(--muted); }
+/* 화면 안 확인 창 (브라우저 기본 창 대신) */
+.ask-back { position: fixed; inset: 0; z-index: 120; background: rgba(0,0,0,.55); display: grid; place-items: center; padding: 16px; }
+.ask-back.hidden { display: none; }
+.ask-box { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 20px 22px; width: min(520px, 100%); box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  animation: ask-in .16s ease-out; }
+.ask-box h3 { margin: 0 0 8px; }
+.ask-box p { margin: 0 0 14px; line-height: 1.65; white-space: normal; }
+.ask-in { display: block; margin-bottom: 14px; } .ask-in input { width: 100%; margin-top: 6px; }
+.ask-acts { display: flex; gap: 8px; justify-content: flex-end; }
+.ask-acts button { min-width: 84px; }
+@keyframes ask-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }

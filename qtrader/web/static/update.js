@@ -35,7 +35,7 @@ function updBanner(u) {
   icons();
 }
 async function updApply() {
-  if (!confirm("업데이트하면 프로그램이 잠깐 꺼졌다가 다시 켜져요. 키·기록·설정은 그대로 남아요.\n자동매매 중이라면 장이 열리지 않은 시간에 하는 게 좋아요. 지금 할까요?")) return;
+  if (!(await ask("업데이트하면 프로그램이 잠깐 꺼졌다가 다시 켜져요. 키·기록·설정은 그대로 남아요.\n자동매매 중이라면 장이 열리지 않은 시간에 하는 게 좋아요. 지금 할까요?"))) return;
   const b = $("#upd-go");
   b.disabled = true;
   b.textContent = "내려받는 중...";

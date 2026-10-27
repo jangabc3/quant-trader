@@ -166,9 +166,9 @@ async function loadConds() {
 $("#cond-list")?.addEventListener("click", async (e) => {
   const ed = e.target.closest("[data-cond-e]");
   if (ed) {
-    const t = prompt("새 감시 가격", ed.dataset.trig);
+    const t = await ask("새 감시 가격", { input: "", value: ed.dataset.trig });
     if (!t) return;
-    const q = prompt("수량 (그대로면 확인)", ed.dataset.qty);
+    const q = await ask("수량 (그대로면 확인)", { input: "", value: ed.dataset.qty });
     if (!q) return;
     await api(`/api/conditional/${ed.dataset.condE}/modify`, { method: "POST", body: { trigger: Number(t.replace(/,/g, "")), qty: Number(q) } })
       .then(() => toast("조건 주문을 바꿨어요", "crosshair")).catch((err) => toast(err.message));
@@ -176,7 +176,7 @@ $("#cond-list")?.addEventListener("click", async (e) => {
     return;
   }
   const b = e.target.closest("[data-cond-x]");
-  if (b && confirm("이 조건 주문을 취소할까요?")) { await api("/api/conditional/" + b.dataset.condX, { method: "DELETE" }).catch((err) => toast(err.message)); loadConds(); }
+  if (b && await ask("이 조건 주문을 취소할까요?")) { await api("/api/conditional/" + b.dataset.condX, { method: "DELETE" }).catch((err) => toast(err.message)); loadConds(); }
 });
 const _loadDashExtras4 = window.loadDashExtras;
 window.loadDashExtras = async () => { await Promise.all([_loadDashExtras4(), loadConds()]); };

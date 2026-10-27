@@ -87,7 +87,7 @@ _KNOWN = set("""if for while switch catch function return typeof fetch setTimeou
 Boolean Array Date parseInt parseFloat isNaN isFinite alert confirm prompt encodeURIComponent decodeURIComponent requestAnimationFrame
 cancelAnimationFrame structuredClone Promise Set Map Error anime getComputedStyle new await async super import RegExp Symbol Intl URL
 URLSearchParams EventSource Notification CustomEvent Event Audio Image FormData Blob AbortController queueMicrotask btoa atob matchMedia
-PointerEvent rgba rgb hsl var url translate translateX translateY scale rotate minmax repeat bezier not calc Claude""".split())
+PointerEvent TextDecoder TextEncoder rgba rgb hsl var url translate translateX translateY scale rotate minmax repeat bezier not calc Claude""".split())
 
 
 def test_called_functions_are_defined():
@@ -103,3 +103,9 @@ def test_called_functions_are_defined():
         defined |= set(re.findall(r"[A-Za-z_$][\w$]*", g))
     called = set(re.findall(r"(?<![\w.$])([A-Za-z_$][\w$]*)\s*\(", src))
     assert not (called - defined - _KNOWN), sorted(called - defined - _KNOWN)
+
+
+def test_no_native_dialogs():
+    """앱 안 브라우저에서는 confirm·prompt·alert 가 보이지 않고 바로 '취소'된다 (자동매매 시작 버튼이 안 눌리던 원인). 화면 안 창 ask() 를 쓴다."""
+    bad = [(f, m.group(0)) for f, s in SRC.items() for m in re.finditer(r"(?<![\w.])(confirm|prompt|alert)\(", s)]
+    assert not bad, bad

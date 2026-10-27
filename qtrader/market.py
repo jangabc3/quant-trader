@@ -152,7 +152,7 @@ def rankings(t: Toss | None, kind: str = "amount", market: str = "KR", duration:
                            "volume": num(x.get("tradingVolume")), "amount": num(x.get("tradingAmount")),
                            "currency": x.get("currency")} for x in items]}
 
-    return cached(f"rank:{kind}:{market}:{duration}:{count}:{int(exclude_caution)}", 15, build)
+    return cached(f"rank:{kind}:{market}:{duration}:{count}:{int(exclude_caution)}", 3, build)
 
 
 def watch_quotes(t: Toss | None, symbols: list[str]) -> list[dict]:

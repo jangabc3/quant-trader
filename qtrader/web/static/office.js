@@ -418,14 +418,14 @@ window.startMeeting = async (symbol) => {
   symbol = (symbol || $("#meet-symbol").value).trim();
   if (!symbol) { $("#meet-symbol").focus(); return; }
   $("#meet-symbol").value = symbol;
-  if (!confirm(`${symbol} AI 투자 회의를 시작합니다. 참석자 14명이 Claude 를 약 14번 호출합니다(몇 분 걸리고 API 비용이 듭니다). 계속할까요?`)) return;
+  if (!(await ask(`${symbol} AI 투자 회의를 시작합니다. 참석자 14명이 Claude 를 약 14번 호출합니다(몇 분 걸리고 API 비용이 듭니다). 계속할까요?`))) return;
   try {
     const r = await api("/api/ai/meeting", { method: "POST", body: { symbol } });
     office.selected = "chart";
     office.run = null;
     showRun(r.id);
     $("#office-wrap").scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (e) { alert(e.message); }
+  } catch (e) { toast(e.message); }
 };
 $("#meet-start").onclick = () => window.startMeeting();
 $("#meet-symbol").addEventListener("keydown", (e) => { if (e.key === "Enter") window.startMeeting(); });

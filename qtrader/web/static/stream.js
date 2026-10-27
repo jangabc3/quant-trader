@@ -20,6 +20,8 @@ function connect() {
     let d; try { d = JSON.parse(ev.data); } catch { return; }
     for (const [sym, px] of Object.entries(d.prices || {})) apply(sym, px);
     $("#rt-dot")?.classList.add("on");
+    const b = $("#rt-dot")?.parentElement;
+    if (b) b.title = `토스 실시간 시세 · 마지막 ${new Date().toLocaleTimeString("ko-KR", { hour12: false })} (2초마다)`;
   };
   rt.es.onerror = () => $("#rt-dot")?.classList.remove("on");
 }
