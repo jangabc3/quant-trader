@@ -62,6 +62,7 @@ class DecideIn(BaseModel):
 class ChatIn(BaseModel):
     text: str
     thread_id: str | None = None
+    page: str = ""
 
 
 def session_token() -> str:
@@ -88,6 +89,9 @@ def key_state() -> dict:
 def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=None) -> FastAPI:
     app = FastAPI(title="QTrader", version=__version__, docs_url=None, redoc_url=None)
     token = session_token()
+    # 정적 파일 주소에 붙여 브라우저가 예전 파일을 쓰지 않게 한다 (서버를 켤 때마다 바뀜)
+    import time as _time
+    build = str(int(_time.time()))
     sched = scheduler or Scheduler()
     app.state.token = token
 
@@ -117,7 +121,7 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
     @app.get("/", response_class=HTMLResponse)
     def index():
         html = (STATIC / "index.html").read_text(encoding="utf-8")
-        return html.replace("__TOKEN__", token).replace("__VERSION__", __version__)
+        return html.replace("__TOKEN__", token).replace("__VERSION__", __version__).replace("__BUILD__", build)
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
@@ -274,6 +278,97 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         except Exception as e:
             return {"items": [], "error": str(e)}
 
+    # 섹터
+    DEMO_SECTORS = [("100", "반도체", 0.0179), ("200", "2차전지", -0.0112), ("300", "바이오", 0.0064), ("400", "자동차", 0.0091),
+                    ("500", "인터넷·플랫폼", -0.0043), ("600", "조선", 0.0215), ("700", "방산", 0.0132), ("800", "은행", 0.0021),
+                    ("900", "게임", -0.0187), ("1000", "화장품", 0.0048), ("1100", "건설", -0.0066), ("1200", "AI 소프트웨어", 0.0251)]
+
+    @app.get("/api/market/sectors")
+    def market_sectors(kind: str = "TOP_GAINERS", market: str = "KR", duration: str = "1d"):
+        t = toss()
+        if t is None:
+            return {"demo": True, "items": [{"rank": i + 1, "sectorId": sid, "name": n, "changeRate": r,
+                                             "tradingAmount": None, "marketCap": None}
+                                            for i, (sid, n, r) in enumerate(sorted(DEMO_SECTORS, key=lambda x: -x[2]))]}
+        rows = guard(lambda: t.sector_rankings(kind, market, duration))
+        from ..toss import num
+        return {"demo": False, "items": [{"rank": x.get("rank"), "sectorId": x.get("sectorId"), "name": x.get("name"),
+                                          "changeRate": num(x.get("changeRate")), "tradingAmount": num(x.get("tradingAmount")) or None,
+                                          "marketCap": num(x.get("marketCapitalization")) or None} for x in rows]}
+
+    @app.get("/api/sector/{sector_id}/stocks")
+    def sector_stocks(sector_id: str, market: str = "KR"):
+        t = toss()
+        if t is None:
+            return {"demo": True, "items": [{"symbol": s_, "name": n, "tradingAmount": None, "marketCap": None}
+                                            for s_, n, _ in market_mod.DEMO_KR[:6]]}
+        rows = guard(lambda: t.sector_stocks(sector_id, market))
+        from ..toss import num
+        return {"demo": False, "items": [{"symbol": x["symbol"], "name": x.get("name"), "tradingAmount": num(x.get("tradingAmount")),
+                                          "marketCap": num(x.get("marketCapitalization"))} for x in rows[:30]]}
+
+    @app.get("/api/stock/{symbol}/extra")
+    def stock_extra(symbol: str):
+        """국내 종목의 프로그램매매·공매도·신용거래 최근 20일."""
+        t = toss()
+        if t is None or not symbol[:1].isdigit():
+            return {"program": [], "short": [], "credit": []}
+        out = {}
+        for k, fn in (("program", t.program_trades), ("short", t.short_selling), ("credit", t.credit_trades)):
+            try:
+                out[k] = fn(symbol.upper(), 20).get("records", [])
+            except Exception:
+                out[k] = []
+        return out
+
+    # 계좌 요약·미체결
+    @app.get("/api/account/overview")
+    def account_overview():
+        c = ctx()
+        out = {"broker": c.broker.name, "markets": {}}
+        for m in (Market.KR, Market.US):
+            if not c.cfg["markets"][m.value]["enabled"]:
+                continue
+            try:
+                a = c.broker.account(m)
+            except Exception as e:
+                out["markets"][m.value] = {"error": str(e)}
+                continue
+            cost = sum(p.qty * p.avg_price for p in a.positions.values())
+            value = sum(p.value for p in a.positions.values())
+            hist = c.store.equity_history(c.broker.name, m.value)
+            base = hist[0]["equity"] if hist else (c.cfg["paper"]["initial_cash"].get(m.value) if c.broker.name == "paper" else None)
+            prev = hist[-2]["equity"] if len(hist) >= 2 else base
+            eq = a.equity
+            out["markets"][m.value] = {
+                "equity": eq, "cash": a.cash, "invested": value, "cost": cost, "unrealized": value - cost,
+                "unrealized_rate": (value / cost - 1) if cost else 0, "total_return": (eq / base - 1) if base else None,
+                "daily_return": (eq / prev - 1) if prev else None, "positions": len(a.positions),
+                "history": [{"time": h["trade_date"], "value": h["equity"]} for h in hist],
+            }
+        if c.broker.name == "toss":
+            try:
+                out["commissions"] = c.broker.client.commissions()
+            except Exception:
+                out["commissions"] = []
+        return out
+
+    @app.get("/api/account/open-orders")
+    def open_orders():
+        c = ctx()
+        if c.broker.name != "toss":
+            return {"items": [], "note": "미체결 주문 조회는 토스증권 실전 모드에서 됩니다"}
+        return {"items": guard(lambda: c.broker.client.orders("OPEN"))}
+
+    @app.post("/api/account/orders/{order_id}/cancel", dependencies=[Depends(need_token)])
+    def cancel_order(order_id: str):
+        c = ctx()
+        if c.broker.name != "toss":
+            raise HTTPException(400, "토스증권 실전 모드에서만 취소할 수 있습니다")
+        r = guard(lambda: c.broker.client.cancel(order_id))
+        c.store.log("warn", "web", f"주문 취소 요청 {order_id}")
+        return r
+
     @app.get("/api/news")
     def news_feed():
         return news_mod.feeds(config_mod.load().get("news", {}).get("feeds"))
@@ -378,7 +473,7 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         if not body.text.strip():
             raise HTTPException(400, "메시지를 입력하세요")
         try:
-            return assistant.chat(body.thread_id, body.text.strip()[:4000])
+            return assistant.chat(body.thread_id, body.text.strip()[:4000], body.page[:300])
         except LLMError as e:
             raise HTTPException(400, str(e))
 

@@ -1,0 +1,41 @@
+/* 떠 있는 챗봇 큐비 */
+#qbi { position: fixed; right: 24px; bottom: 24px; z-index: 40; }
+.qbi-btn { width: 84px; height: 92px; padding: 0; border: 0; background: none; cursor: grab; touch-action: none; position: relative; }
+.qbi-btn:active { cursor: grabbing; }
+.qbi-btn:hover { filter: none; }
+.qbi-svg { width: 100%; height: 100%; overflow: visible; }
+.qbi-float { animation: qbi-float 3.2s ease-in-out infinite; transform-origin: 60px 70px; }
+.qbi-shadow { animation: qbi-shadow 3.2s ease-in-out infinite; transform-origin: 60px 124px; }
+@keyframes qbi-float { 50% { transform: translateY(-5px); } }
+@keyframes qbi-shadow { 50% { transform: scaleX(.85); opacity: .7; } }
+.qbi-eyes { animation: qbi-blink 4.6s infinite; transform-origin: 60px 58px; }
+@keyframes qbi-blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(.1); } }
+#qbi.thinking .qbi-coin { animation: qbi-spin .9s linear infinite; transform-origin: 60px 12px; transform-box: fill-box; }
+@keyframes qbi-spin { to { transform: rotateY(360deg); } }
+.qbi-btn:hover .qbi-float { animation-duration: 1.2s; }
+.qbi-dot { position: absolute; top: 10px; right: 10px; width: 12px; height: 12px; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 3px var(--bg); }
+.qbi-panel { position: absolute; right: 0; bottom: 100px; width: min(420px, calc(100vw - 32px)); height: min(600px, calc(100vh - 140px));
+  display: flex; flex-direction: column; background: rgba(19,25,33,.97); border: 1px solid #2c3a4d; border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.55); overflow: hidden; backdrop-filter: blur(10px); }
+#qbi.left-side .qbi-panel { right: auto; left: 0; }
+#qbi.top-side .qbi-panel { bottom: auto; top: 100px; }
+.qbi-head { display: flex; gap: 10px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line);
+  background: linear-gradient(135deg, rgba(76,141,255,.18), rgba(63,224,122,.06)); }
+.qbi-mini { width: 40px; height: 44px; flex: none; }
+.qbi-head b { display: block; font-size: 15px; }
+.qbi-head span { font-size: 11px; color: var(--muted); }
+.qbi-x { margin-left: auto; background: none; border: 0; color: var(--muted); padding: 4px; }
+.qbi-log { flex: 1; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.qbi-log .msg { max-width: 88%; }
+.qbi-log .msg.bot { background: #1e2733; border: 1px solid #2a3542; }
+.qbi-tools { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
+.qbi-tools span { font-size: 10px; padding: 1px 7px; border-radius: 99px; background: rgba(76,141,255,.16); color: #b7cfff; }
+.qbi-quick { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 12px 8px; }
+.qbi-quick button { font-size: 12px; padding: 4px 10px; border-radius: 99px; background: transparent; }
+.qbi-form { display: flex; gap: 6px; padding: 10px 12px 12px; border-top: 1px solid var(--line); }
+.qbi-form input { flex: 1; border-radius: 99px; padding: 9px 14px; }
+.qbi-form button { border-radius: 99px; width: 42px; padding: 0; display: grid; place-items: center; }
+.dots { display: inline-flex; gap: 3px; margin-right: 6px; }
+.dots i { width: 6px; height: 6px; border-radius: 50%; background: #8fb4ff; animation: dot 1s infinite; }
+.dots i:nth-child(2) { animation-delay: .15s; } .dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes dot { 50% { transform: translateY(-4px); opacity: .4; } }

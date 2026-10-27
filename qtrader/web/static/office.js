@@ -7,12 +7,12 @@ const office = { roles: [], stages: [], run: null, selected: null, poll: null, f
   ents: {}, papers: [], seenHandoffs: 0, chatBusy: false };
 
 const ROOMS = [
-  { id: "A", x: 8, y: 22, w: 300, h: 150, floor: "#7b5332", label: "분석팀" },
-  { id: "B", x: 320, y: 22, w: 116, h: 150, floor: "#58606b", label: "검증실" },
-  { id: "C", x: 448, y: 22, w: 184, h: 150, floor: "#5e3f35", label: "토론실" },
-  { id: "D", x: 8, y: 186, w: 180, h: 166, floor: "#6f4c2e", label: "트레이딩 데스크" },
-  { id: "E", x: 200, y: 186, w: 250, h: 166, floor: "#4f4a5c", label: "리스크 위원회" },
-  { id: "F", x: 462, y: 186, w: 170, h: 166, floor: "#6b4a26", label: "대표실" },
+  { id: "A", x: 8, y: 22, w: 300, h: 150, floor: "#1c2533", label: "분석팀", en: "RESEARCH" },
+  { id: "B", x: 320, y: 22, w: 116, h: 150, floor: "#1a2230", label: "검증실", en: "FACT CHECK" },
+  { id: "C", x: 448, y: 22, w: 184, h: 150, floor: "#1f2433", label: "토론실", en: "DEBATE" },
+  { id: "D", x: 8, y: 186, w: 180, h: 166, floor: "#1b2431", label: "트레이딩 데스크", en: "EXECUTION" },
+  { id: "E", x: 200, y: 186, w: 250, h: 166, floor: "#1d2232", label: "리스크 위원회", en: "RISK" },
+  { id: "F", x: 462, y: 186, w: 170, h: 166, floor: "#221f2c", label: "대표실", en: "PORTFOLIO" },
 ];
 // 자리(발 위치)와 일할 때 오가는 지점
 const SEATS = {
@@ -33,10 +33,10 @@ const SEATS = {
   assistant: { home: [500, 346], visits: [] },
 };
 const LOOKS = {
-  teal: ["#1f8a8a", "#2a2a35"], navy: ["#2f4a8a", "#4a3020"], amber: ["#d08a1f", "#222"], rose: ["#c0507a", "#6a3a20"],
-  green: ["#3a9a4a", "#3a2a1a"], green2: ["#2f7a5a", "#1a1a1a"], red: ["#c03a3a", "#1a1a1a"], purple: ["#7a4ab0", "#2a1a30"],
-  slate: ["#55606e", "#101418"], orange: ["#e0702a", "#5a2a10"], gray: ["#8a8f96", "#3a3a3a"], blue: ["#3a6ad0", "#1a2030"],
-  gold: ["#c9a227", "#e8e0d0"], pink: ["#e07ab0", "#3a2010"], white: ["#d8dde3", "#5a3a20"],
+  teal: ["#2b5d6b", "#1e1e26"], navy: ["#2c3e66", "#3a2a1e"], amber: ["#8a6a3a", "#1e1e22"], rose: ["#7a4a5e", "#4a2e1e"],
+  green: ["#2f6a4e", "#2a2018"], green2: ["#355e57", "#151515"], red: ["#7a3438", "#151515"], purple: ["#4e3f73", "#241a2a"],
+  slate: ["#3b4656", "#0e1116"], orange: ["#8a5232", "#3a2010"], gray: ["#5b636e", "#2a2a2a"], blue: ["#30508a", "#141a26"],
+  gold: ["#2a2f3b", "#d8d2c4"], pink: ["#6e5a8a", "#2a1a10"], white: ["#c9d1db", "#3a2a1e"],
 };
 const SKIN = "#f2c9a0";
 const RATING_COLOR = { Buy: "#f0534e", Overweight: "#f08a5e", Hold: "#8b98a5", Underweight: "#6aa0ff", Sell: "#4c8dff" };
@@ -49,125 +49,97 @@ const px = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(Math.round(x), Math.
 
 // 배경
 function drawRooms() {
-  px(0, 0, W, H, "#24180f");
+  px(0, 0, W, H, "#0d1118");
   for (const r of ROOMS) {
-    for (let y = r.y; y < r.y + r.h; y += 8) {
-      for (let x = r.x + ((y / 8) % 2) * 8; x < r.x + r.w; x += 16) {
-        px(x, y, Math.min(16, r.x + r.w - x), Math.min(8, r.y + r.h - y), r.floor);
-        px(x, y, 1, Math.min(8, r.y + r.h - y), "rgba(0,0,0,.16)");
-      }
-      px(r.x, y + 7, r.w, 1, "rgba(0,0,0,.13)");
-    }
-    px(r.x, r.y, r.w, 12, "#3c2a1e"); px(r.x, r.y + 12, r.w, 2, "#2a1c12");
-    px(r.x - 3, r.y - 3, r.w + 6, 3, "#150e09"); px(r.x - 3, r.y + r.h, r.w + 6, 3, "#150e09");
-    px(r.x - 3, r.y, 3, r.h, "#150e09"); px(r.x + r.w, r.y, 3, r.h, "#150e09");
+    px(r.x, r.y, r.w, r.h, r.floor);
+    for (let y = r.y + 14; y < r.y + r.h; y += 16) px(r.x, y, r.w, 1, "rgba(255,255,255,.025)");
+    for (let x = r.x; x < r.x + r.w; x += 16) px(x, r.y + 14, 1, r.h - 14, "rgba(255,255,255,.02)");
+    // 위쪽 벽 + 간접 조명
+    px(r.x, r.y, r.w, 13, "#121822"); px(r.x, r.y + 13, r.w, 1, "rgba(201,162,39,.55)");
+    g.fillStyle = "rgba(120,170,255,.05)"; g.fillRect(r.x, r.y + 14, r.w, 10);
+    // 유리벽
+    px(r.x - 2, r.y - 2, r.w + 4, 2, "#3a4a60"); px(r.x - 2, r.y + r.h, r.w + 4, 2, "#3a4a60");
+    px(r.x - 2, r.y, 2, r.h, "#3a4a60"); px(r.x + r.w, r.y, 2, r.h, "#3a4a60");
+    px(r.x, r.y + r.h - 1, r.w, 1, "rgba(255,255,255,.06)");
   }
 }
 
 function plant(x, y) {
-  px(x, y + 8, 8, 6, "#8a4a2a"); px(x - 1, y + 7, 10, 2, "#6a3a1a");
-  px(x + 2, y, 4, 8, "#2f8a3a"); px(x - 1, y + 2, 4, 4, "#3aa04a"); px(x + 5, y + 1, 4, 4, "#3aa04a");
+  px(x, y + 8, 8, 6, "#3a3f48"); px(x - 1, y + 7, 10, 2, "#2a2e36");
+  px(x + 2, y, 4, 8, "#2f6a46"); px(x - 1, y + 2, 4, 4, "#3a7d52"); px(x + 5, y + 1, 4, 4, "#3a7d52");
 }
 
-function shelf(x, y, w) {
-  px(x, y, w, 22, "#5b3a1e"); px(x, y + 10, w, 2, "#3a2410");
-  const cs = ["#c03a3a", "#3a6ad0", "#e0b02a", "#3a9a4a", "#7a4ab0", "#e8e0d0"];
-  for (let i = 2; i < w - 3; i += 4) { px(x + i, y + 2, 3, 8, cs[(i + x) % cs.length]); px(x + i, y + 13, 3, 8, cs[(i * 3 + x) % cs.length]); }
+function shelf(x, y, w) { // 정돈된 자료 캐비닛
+  px(x, y, w, 20, "#2a3240"); px(x, y + 9, w, 1, "#1a202a");
+  for (let i = 3; i < w - 6; i += 12) { px(x + i, y + 2, 9, 6, "#384356"); px(x + i, y + 11, 9, 6, "#384356"); px(x + i + 3, y + 4, 3, 1, "#6b7890"); px(x + i + 3, y + 13, 3, 1, "#6b7890"); }
 }
 
-function cabinet(x, y) { px(x, y, 14, 26, "#8a8f96"); for (let i = 0; i < 3; i++) { px(x + 1, y + 2 + i * 8, 12, 6, "#a4aab2"); px(x + 5, y + 4 + i * 8, 4, 1, "#555"); } }
+function cabinet(x, y) { px(x, y, 14, 26, "#3a4456"); for (let i = 0; i < 3; i++) { px(x + 1, y + 2 + i * 8, 12, 6, "#46526a"); px(x + 5, y + 4 + i * 8, 4, 1, "#9aa6ba"); } }
 
 function monitor(x, y, on, t, kind = 0) {
-  px(x, y, 16, 11, "#1b1f24"); px(x + 1, y + 1, 14, 8, on ? "#0f2a1a" : "#20262c");
+  px(x, y, 16, 11, "#0b0f15"); px(x + 1, y + 1, 14, 8, on ? "#0c2038" : "#141a22");
   if (on) {
     for (let i = 0; i < 12; i++) {
       const h = kind ? ((i * 7 + t) % 6) : ((i * 3 + t) % 6);
-      px(x + 2 + i, y + 7 - h, 1, kind ? h : 1, i % 3 ? "#3fe07a" : "#f0534e");
+      px(x + 2 + i, y + 7 - h, 1, kind ? h : 1, i % 3 ? "#5fb4ff" : "#ffd34d");
     }
+    g.fillStyle = "rgba(95,180,255,.08)"; g.fillRect(x - 3, y + 11, 22, 6);
   }
-  px(x + 7, y + 11, 2, 2, "#444");
+  px(x + 7, y + 11, 2, 2, "#2a313c");
 }
 
 function desk(x, y, w, on, t, mon = []) {
-  px(x, y, w, 9, "#a0703f"); px(x, y + 9, w, 4, "#5b3a1e"); px(x + 1, y + 1, w - 2, 1, "#b8864f");
+  px(x, y, w, 9, "#3a4352"); px(x, y + 9, w, 4, "#232a35"); px(x + 1, y + 1, w - 2, 1, "#56627a");
   mon.forEach((dx, i) => monitor(x + dx, y - 10, on, t + i, i % 2));
 }
 
 function bigScreen(x, y, w, h, t, live) {
-  px(x, y, w, h, "#111"); px(x + 2, y + 2, w - 4, h - 4, live ? "#0d1b2a" : "#1a2026");
+  px(x - 1, y - 1, w + 2, h + 2, "#3a4a60"); px(x, y, w, h, "#070a10");
   if (!live) return;
+  const r = office.run;
+  const up = (r?.final && ["Buy", "Overweight"].includes(r.final.rating));
   let prev = h / 2;
   for (let i = 0; i < w - 8; i += 2) {
-    const v = h / 2 + Math.sin((i + t * 2) / 9) * (h / 4) + Math.sin((i + t) / 3) * 2;
-    px(x + 4 + i, y + Math.min(prev, v), 2, Math.abs(prev - v) + 1, i > w - 30 ? "#ffd34d" : "#3fe07a");
+    const v = h / 2 + 4 + Math.sin((i + t * 2) / 11) * (h / 5) - (up ? i / w * 6 : 0);
+    px(x + 4 + i, y + Math.min(prev, v), 2, Math.abs(prev - v) + 1, i > w - 26 ? "#ffd34d" : "#5fb4ff");
     prev = v;
   }
+  g.fillStyle = "#c9d1db"; g.font = "bold 7px sans-serif"; g.fillText((r?.symbol || "QTRADER"), x + 4, y + 8);
 }
 
-function table(x, y, w, h, c = "#7a4a2a") { px(x, y, w, h, c); px(x, y + h, w, 4, "#3a2418"); px(x + 1, y + 1, w - 2, 1, "rgba(255,255,255,.18)"); }
+function table(x, y, w, h, c = "#3a4352") { px(x, y, w, h, c); px(x, y + h, w, 4, "#1d232d"); px(x + 1, y + 1, w - 2, 1, "rgba(255,255,255,.12)"); }
 
-// 사람: 2등신 귀여운 픽셀 캐릭터 (큰 머리, 반짝이는 눈, 볼터치, 역할별 머리 모양과 소품)
-const STYLE = {
-  chart: ["spiky", "glasses"], fund: ["bob", "glasses"], earn: ["pony", ""], news: ["bun", ""], flow: ["spiky", "cap"],
-  checker: ["bob", "glasses"], bull: ["spiky", ""], bear: ["bob", ""], lead: ["bun", "glasses"], trader: ["spiky", "tie"],
-  aggr: ["spiky", "band"], neut: ["bob", ""], cons: ["pony", "glasses"], pm: ["bob", "tie"], assistant: ["pony", "headset"],
-};
-const OUT = "#1d1410";
-
+// 사람
+const TIE = { chart: "#5fb4ff", fund: "#5fb4ff", earn: "#5fb4ff", news: "#5fb4ff", flow: "#5fb4ff", checker: "#e8e0d0",
+  bull: "#f0534e", bear: "#4c8dff", lead: "#c9a227", trader: "#3fe07a", aggr: "#f08a5e", neut: "#c7d0d9", cons: "#6aa0ff",
+  pm: "#c9a227", assistant: "#ff9fb8" };
 function person(e, t) {
   const [shirt, hair] = LOOKS[e.look] || LOOKS.gray;
-  const [hs, acc] = STYLE[e.id] || ["bob", ""];
   const x = e.x, y = e.y;
-  const working = e.status === "working";
   const walk = e.moving ? t % 2 : 0;
-  const bob = (working && !e.moving) ? (t % 2) : (e.moving ? walk : 0);
-  const top = y - 22 * S - bob;
+  const working = e.status === "working";
+  const bob = working && !e.moving ? (t % 2) : 0;
+  const top = y - 22 * S + bob;
   const p = (dx, dy, w, h, c) => px(x + dx * S, top + dy * S, w * S, h * S, c);
-  px(x - 6 * S, y - 2, 12 * S, 3, "rgba(0,0,0,.28)");
-  // 다리·신발
-  const l1 = e.moving && walk ? 1 : 0, l2 = e.moving && !walk ? 1 : 0;
-  p(-3, 19, 3, 3 - l1, OUT); p(1, 19, 3, 3 - l2, OUT);
-  p(-3, 19, 2, 2 - l1, "#3a3a4a"); p(1, 19, 2, 2 - l2, "#3a3a4a");
-  // 몸 (테두리 -> 옷)
-  p(-5, 12, 10, 8, OUT); p(-4, 12, 8, 7, shirt); p(-4, 12, 8, 1, "rgba(255,255,255,.18)");
-  p(-1, 12, 2, 1, "#fff");
-  if (acc === "tie") { p(-1, 13, 2, 4, "#c0392b"); }
-  // 팔 (일할 때 타자 치듯, 걸을 때 흔들기)
-  const aL = e.moving ? walk : (working ? t % 2 : 0), aR = e.moving ? 1 - walk : (working ? (t + 1) % 2 : 0);
-  p(-7, 13 + aL, 2, 5, OUT); p(-6, 13 + aL, 1, 4, shirt); p(-7, 17 + aL, 2, 1, SKIN);
-  p(5, 13 + aR, 2, 5, OUT); p(5, 13 + aR, 1, 4, shirt); p(5, 17 + aR, 2, 1, SKIN);
-  if (e.carry) { p(4, 13, 5, 6, OUT); p(5, 14, 3, 4, "#f4efe2"); p(5, 15, 3, 1, "#9aa"); }
-  // 머리 (테두리 -> 피부)
-  p(-6, 1, 12, 11, OUT); p(-5, 2, 10, 9, SKIN);
-  // 머리카락
-  p(-6, 0, 12, 4, hair); p(-5, -1, 10, 1, hair);
-  if (hs === "bob") { p(-6, 4, 2, 6, hair); p(4, 4, 2, 6, hair); }
-  if (hs === "spiky") { p(-5, -2, 2, 1, hair); p(-1, -2, 2, 1, hair); p(3, -2, 2, 1, hair); p(-6, 4, 1, 3, hair); p(5, 4, 1, 3, hair); }
-  if (hs === "pony") { p(-6, 4, 1, 4, hair); p(5, 4, 1, 3, hair); p(6, 3, 2, 6, hair); }
-  if (hs === "bun") { p(-2, -3, 4, 3, hair); p(-6, 4, 1, 4, hair); p(5, 4, 1, 4, hair); }
-  p(-3, 4, 6, 1, hair); // 앞머리
-  if (acc === "cap") { p(-6, -1, 12, 3, "#2f6fd0"); p(-7, 2, 6, 1, "#2f6fd0"); }
-  if (acc === "band") { p(-6, 3, 12, 1, "#e0302a"); }
-  // 눈 (깜빡임) + 하이라이트
-  const blink = (t + e.id.length * 7) % 31 === 0;
-  if (blink) { p(-4, 8, 3, 1, OUT); p(1, 8, 3, 1, OUT); }
-  else {
-    p(-4, 6, 2, 3, OUT); p(2, 6, 2, 3, OUT);
-    p(-4, 6, 1, 1, "#fff"); p(2, 6, 1, 1, "#fff");
-  }
-  if (acc === "glasses") { p(-5, 5, 4, 1, "#333"); p(1, 5, 4, 1, "#333"); p(-1, 6, 2, 1, "#333"); p(-5, 9, 4, 1, "rgba(51,51,51,.6)"); p(1, 9, 4, 1, "rgba(51,51,51,.6)"); }
-  p(-5, 9, 2, 1, "#f59ab0"); p(3, 9, 2, 1, "#f59ab0"); // 볼터치
-  if (working && t % 4 < 2) p(-1, 10, 2, 1, "#a0402a"); else p(-1, 10, 2, 1, "#c0785a"); // 입
-  if (acc === "headset") { p(-6, -1, 12, 1, "#222"); p(-7, 5, 2, 4, "#222"); p(5, 5, 2, 4, "#222"); p(-7, 9, 4, 1, "#222"); }
-  // 상태 표시
+  px(x - 6 * S, y - 2, 12 * S, 3, "rgba(0,0,0,.35)");
+  p(-4, 18, 3, walk ? 2 : 3, "#161a22"); p(1, 18, 3, walk ? 3 : 2, "#161a22");
+  p(-5, 9, 10, 9, shirt); p(-5, 9, 10, 1, "rgba(255,255,255,.12)");
+  p(-1, 9, 2, 1, "#e8ecf2"); p(-1, 10, 2, 4, TIE[e.id] || "#c7d0d9");
+  const armL = e.moving ? walk : (working ? t % 2 : 0);
+  const armR = e.moving ? 1 - walk : (working ? (t + 1) % 2 : 0);
+  p(-7, 10 + armL, 2, 6, shirt); p(5, 10 + armR, 2, 6, shirt);
+  p(-7, 16, 2, 1, SKIN); p(5, 16, 2, 1, SKIN);
+  if (e.carry) { p(5, 12, 4, 5, "#f4efe2"); p(6, 13, 2, 1, "#888"); }
+  p(-4, 2, 8, 7, SKIN);
+  p(-5, 0, 10, 3, hair); p(-5, 3, 1, 3, hair); p(4, 3, 1, 3, hair);
+  const f = e.face < 0 ? -1 : 0;
+  if (t % 23 !== 0) { p(-2 + f, 5, 1, 1, "#222"); p(1 + f, 5, 1, 1, "#222"); }
+  p(-3, 6, 1, 1, "#f0a0a0"); p(2, 6, 1, 1, "#f0a0a0"); p(-1, 7, 2, 1, "#c0785a");
   if (working && !e.moving && (e.id === "bull" || e.id === "bear") && t % 6 < 3) {
-    px(x + 14, top - 8, 3, 9, "#ffd34d"); px(x + 14, top + 3, 3, 3, "#ffd34d");
+    px(x + 10, top - 6, 3, 8, "#ffd34d"); px(x + 10, top + 4, 3, 3, "#ffd34d"); // 느낌표
   }
-  if (working && !e.moving && e.id !== "bull" && e.id !== "bear" && t % 8 < 4) { // 생각 중 점점점
-    for (let i = 0; i < 3; i++) px(x + 10 + i * 4, top - 4 - ((t + i) % 3), 2, 2, "#fff");
-  }
-  if (e.status === "done") { px(x + 12, top + 2, 7, 7, OUT); px(x + 13, top + 3, 5, 5, "#3fe07a"); }
-  if (e.status === "error") { px(x + 12, top + 2, 7, 7, OUT); px(x + 13, top + 3, 5, 5, "#f0534e"); }
+  if (e.status === "done") px(x + 12, top + 2, 6, 6, "#3fe07a");
+  if (e.status === "error") px(x + 12, top + 2, 6, 6, "#f0534e");
 }
 
 function deskFor(id, t, on) {
@@ -192,7 +164,7 @@ function entities() {
 
 function think(e, t) {
   const seat = SEATS[e.id];
-  e.status = e.id === "assistant" ? (office.chatBusy ? "working" : "idle") : (office.run?.agents?.[e.id]?.status || "idle");
+  e.status = e.id === "assistant" ? (window.chatBusy ? "working" : "idle") : (office.run?.agents?.[e.id]?.status || "idle");
   const atHome = Math.abs(e.x - seat.home[0]) < 1 && Math.abs(e.y - seat.home[1]) < 1;
   if (e.status === "working" && seat.visits.length && t >= e.next && !e.moving) {
     // 일하는 중: 자료실·동료 책상과 내 자리를 번갈아 오간다
@@ -239,13 +211,14 @@ function draw() {
   drawRooms();
   shelf(20, 40, 120); shelf(176, 40, 120); cabinet(330, 40); cabinet(346, 40); cabinet(410, 40);
   bigScreen(490, 34, 100, 34, t, !!office.run);
-  plant(292, 150); plant(424, 150); plant(616, 40); plant(16, 330); plant(176, 330); plant(434, 196); plant(616, 196);
-  px(24, 196, 140, 18, "#111"); // 시세판
-  for (let i = 0; i < 9; i++) px(28 + i * 15, 200, 10, 4, (i + t) % 3 ? "#3fe07a" : "#f0534e");
-  px(600, 200, 26, 28, "#8fb4d8"); px(600, 213, 26, 2, "#5a3a20"); px(612, 200, 2, 28, "#5a3a20"); // 창문
-  table(486, 112, 108, 20); px(500, 116, 14, 9, "#e8e0d0"); px(564, 118, 14, 9, "#e8e0d0"); px(534, 114, 12, 12, "#c9a227");
-  table(262, 282, 128, 22, "#6a4a3a");
-  px(474, 324, 52, 9, "#c9a06a"); px(474, 333, 52, 4, "#7a5a3a"); // 비서 안내 데스크
+  plant(292, 150); plant(616, 330);
+  px(24, 198, 140, 14, "#070a10"); px(23, 197, 142, 1, "#3a4a60"); // 시세판
+  for (let i = 0; i < 9; i++) px(28 + i * 15, 203, 10, 3, (i + t) % 3 ? "#5fb4ff" : "#ffd34d");
+  px(596, 200, 30, 26, "#26405e"); px(596, 212, 30, 1, "#3a4a60"); px(610, 200, 1, 26, "#3a4a60"); // 창문 (야경)
+  for (let i = 0; i < 6; i++) px(598 + (i * 7) % 26, 203 + (i * 5) % 20, 2, 2, (t + i) % 5 ? "#ffd34d" : "#26405e");
+  table(486, 112, 108, 20); px(500, 116, 14, 9, "#d8dde3"); px(564, 118, 14, 9, "#d8dde3"); px(534, 114, 12, 12, "#c9a227");
+  table(262, 282, 128, 22);
+  px(474, 324, 52, 9, "#3a4352"); px(474, 333, 52, 4, "#232a35"); // 비서 안내 데스크
 
   const ents = entities();
   Object.values(ents).forEach((e) => think(e, t));
@@ -258,14 +231,14 @@ function draw() {
     if (SEATS[e.id].desk && isHome(e)) deskFor(e.id, t, e.status === "working");
   });
   drawPapers();
-  if (!running && office.run?.status !== "done") { g.fillStyle = "rgba(0,0,0,.12)"; g.fillRect(0, 0, W, H); }
+  if (!running && office.run?.status !== "done") { g.fillStyle = "rgba(0,0,0,.18)"; g.fillRect(0, 0, W, H); }
 }
 
 // 말풍선·이름표 (HTML)
 function buildOverlay() {
   const ov = $("#office-overlay");
   const all = [...office.roles, { id: "assistant", name: "비서", title: "내 AI 비서" }].filter((r) => SEATS[r.id]);
-  ov.innerHTML = ROOMS.map((r) => `<div class="room-label" style="left:${(r.x + 6) / W * 100}%;top:${(r.y + 1) / H * 100}%">◆ ${r.label} ◆</div>`).join("") +
+  ov.innerHTML = ROOMS.map((r) => `<div class="room-label" style="left:${(r.x + 6) / W * 100}%;top:${(r.y + 1) / H * 100}%"><b>${r.label}</b><span>${r.en}</span></div>`).join("") +
     all.map((r) => {
       const hx = SEATS[r.id].home[0];
       const edge = hx < 70 ? "edge-l" : hx > 590 ? "edge-r" : "";
@@ -291,10 +264,10 @@ function updateOverlay() {
     const a = office.run?.agents?.[id];
     const b = el.querySelector(".bubble");
     let text = a?.bubble || "";
-    if (id === "assistant") text = office.chatBusy ? "확인하는 중..." : (office.run?.status === "running" ? "회의 진행 중입니다" : "무엇이든 물어보세요");
+    if (id === "assistant") text = window.chatBusy ? "확인하는 중..." : (office.run?.status === "running" ? "회의 진행 중입니다" : "무엇이든 물어보세요");
     b.textContent = text;
     b.classList.toggle("hidden", !text);
-    b.classList.toggle("working", a?.status === "working" || (id === "assistant" && office.chatBusy));
+    b.classList.toggle("working", a?.status === "working" || (id === "assistant" && window.chatBusy));
     el.classList.toggle("sel", office.selected === id);
   });
 }
@@ -463,40 +436,13 @@ $("#office-overlay").addEventListener("click", (e) => {
   if (!a) return;
   office.selected = a.dataset.agent;
   renderReport(); updateOverlay();
-  if (office.selected === "assistant") $("#chat-input").focus();
+  if (office.selected === "assistant") $("#qbi-btn").dispatchEvent(new PointerEvent("pointerup"));
   else $("#report").scrollIntoView({ behavior: "smooth", block: "nearest" });
-});
-
-// 비서 대화
-function chatLine(who, html) {
-  const log = $("#chat-log");
-  log.insertAdjacentHTML("beforeend", `<div class="msg ${who}">${html}</div>`);
-  log.scrollTop = log.scrollHeight;
-}
-$("#chat-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const text = $("#chat-input").value.trim();
-  if (!text || office.chatBusy) return;
-  $("#chat-input").value = "";
-  chatLine("me", esc(text));
-  office.chatBusy = true; updateOverlay();
-  try {
-    const r = await api("/api/assistant", { method: "POST", body: { text, thread_id: office.thread } });
-    office.thread = r.thread_id;
-    const names = { market_overview: "시장 현황", rankings: "순위", quotes: "시세", chart_brief: "차트", portfolio: "내 계좌",
-      recent_orders: "주문 내역", ai_decision: "회의 결론", start_meeting: "회의 시작", web_search: "웹 검색" };
-    const tools = r.tools.length ? `<div class="note">확인한 것: ${[...new Set(r.tools)].map((t) => names[t] || t).join(", ")}</div>` : "";
-    const src = r.sources.length ? `<div class="sources">${r.sources.map((s) => `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.title)}</a>`).join("")}</div>` : "";
-    chatLine("bot", `<div class="report-text">${mdLite(r.answer)}</div>${tools}${src}`);
-    if (r.tools.includes("start_meeting")) { office.run = null; loadRuns(); }
-  } catch (err) { chatLine("bot", `<span class="down">${esc(err.message)}</span>`); }
-  office.chatBusy = false; updateOverlay();
 });
 
 (async () => {
   const meta = await api("/api/ai/roles");
   office.roles = meta.roles; office.stages = meta.stages;
   buildOverlay(); updateOverlay(); renderStages(); requestAnimationFrame(loop);
-  chatLine("bot", "안녕하세요, 비서입니다. 시장 상황, 내 계좌, 종목 차트를 물어보시거나 \"삼성전자 회의 열어줘\"라고 해 보세요.");
 })();
 document.addEventListener("tab", (e) => { if (e.detail === "office") { loadRuns(); loadTrack(); loadRefs(); } });

@@ -4,23 +4,30 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>QTrader</title>
-<link rel="stylesheet" href="/static/style.css">
-<link rel="stylesheet" href="/static/result.css">
-<link rel="stylesheet" href="/static/stock.css">
+<link rel="stylesheet" href="/static/style.css?v=__BUILD__">
+<link rel="stylesheet" href="/static/result.css?v=__BUILD__">
+<link rel="stylesheet" href="/static/stock.css?v=__BUILD__">
+<link rel="stylesheet" href="/static/chat.css?v=__BUILD__">
 <script>window.QT_TOKEN = "__TOKEN__";</script>
-<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="/static/design.css?v=__BUILD__">
+<link rel="stylesheet" href="/static/screens.css?v=__BUILD__">
+<script src="/static/vendor/lightweight-charts.js?v=__BUILD__"></script>
+<script src="/static/vendor/anime.min.js?v=__BUILD__"></script>
+<script src="/static/vendor/countUp.umd.js?v=__BUILD__"></script>
+<script src="/static/vendor/lucide.min.js?v=__BUILD__"></script>
 </head>
 <body>
 <header class="top">
-  <div class="brand">QTrader <span class="ver">v__VERSION__</span></div>
+  <div class="brand"><span class="brand-mark"><i data-lucide="trending-up"></i></span>QTrader <span class="ver">v__VERSION__</span></div>
   <nav>
-    <button data-tab="mkt" class="on">시장</button>
-    <button data-tab="stock">종목</button>
-    <button data-tab="news">뉴스</button>
-    <button data-tab="office">AI 사무실</button>
-    <button data-tab="dash">내 계좌</button>
-    <button data-tab="calc">계산기</button>
-    <button data-tab="cfg">설정</button>
+    <button data-tab="mkt" class="on"><i data-lucide="layout-dashboard"></i>시장</button>
+    <button data-tab="stock"><i data-lucide="candlestick-chart"></i>종목</button>
+    <button data-tab="news"><i data-lucide="newspaper"></i>뉴스</button>
+    <button data-tab="office"><i data-lucide="building-2"></i>AI 사무실</button>
+    <button data-tab="dash"><i data-lucide="wallet"></i>내 계좌</button>
+    <button data-tab="calc"><i data-lucide="calculator"></i>계산기</button>
+    <button data-tab="cfg"><i data-lucide="settings"></i>설정</button>
   </nav>
   <div class="gsearch">
     <input id="gsearch" placeholder="종목 검색 (삼성전자, 005930, AAPL)" autocomplete="off">
@@ -52,6 +59,15 @@
       </div>
     </div>
     <div class="watch" id="watch"></div>
+    <div class="panel">
+      <div class="rank-bar">
+        <h3 style="margin:0 8px 0 0"><i data-lucide="layout-grid"></i> 섹터</h3>
+        <div class="seg" id="sec-market"><button data-v="KR" class="on">국내</button><button data-v="US">미국</button></div>
+        <div class="seg" id="sec-dur"><button data-v="1d" class="on">1일</button><button data-v="1w">1주</button><button data-v="1mo">1개월</button><button data-v="3mo">3개월</button><button data-v="1y">1년</button></div>
+        <span class="note" id="sec-note">칸을 누르면 그 섹터 종목이 보입니다</span>
+      </div>
+      <div id="sector-grid" class="sector-grid"></div>
+    </div>
     <div class="panel">
       <div class="rank-bar">
         <h3 style="margin:0 8px 0 0">실시간 차트</h3>
@@ -110,6 +126,11 @@
         <div class="panel"><h3>재무 <small id="fin-src"></small></h3><div id="st-fin"></div></div>
         <div class="panel"><h3>투자자별 매매 <small>국내 종목 · 최근 20일 순매수(주)</small></h3><div id="st-flows"></div></div>
       </div>
+      <div class="panel" id="st-extra-panel">
+        <div class="rank-bar"><h3 style="margin:0"><i data-lucide="activity"></i> 수급 상세 <small>국내 종목 · 최근 20일</small></h3>
+          <div class="seg" id="st-extra-tab"><button data-v="program" class="on">프로그램매매</button><button data-v="short">공매도</button><button data-v="credit">신용거래</button></div></div>
+        <div id="st-extra"></div>
+      </div>
       <div class="st-grid2">
         <div class="panel"><h3>종목 뉴스 <small>구글 뉴스 · 제목을 누르면 원문</small></h3><div id="st-news" class="news-list"></div></div>
         <div class="panel"><h3>AI 회의 기록</h3><div id="st-ai-hist"></div></div>
@@ -119,17 +140,16 @@
 
   <!-- 뉴스 -->
   <section id="tab-news" class="tab hidden">
-    <div class="panel">
-      <div class="rank-bar">
-        <h3 style="margin:0">주식 뉴스</h3>
-        <div class="seg" id="news-src"></div>
-        <input id="news-q" placeholder="제목 검색" style="width:220px">
-        <button id="news-refresh">새로고침</button>
-        <span class="note" id="news-time"></span>
-      </div>
-      <div id="news-list" class="news-list big"></div>
-      <p class="note">제목과 링크만 보여주고 본문은 원문 사이트에서 봅니다 (인베스팅닷컴 RSS 등, 저작권은 각 제공자에게 있습니다). 피드는 설정에서 바꿀 수 있습니다.</p>
+    <div class="news-bar">
+      <div class="seg" id="news-cat"><button data-v="all" class="on">전체</button><button data-v="kr">국내 증권</button><button data-v="global">해외 증시</button></div>
+      <div class="news-src-chips" id="news-src"></div>
+      <input id="news-q" placeholder="제목 검색 (예: 반도체, 금리)" style="width:220px">
+      <button id="news-refresh"><i data-lucide="refresh-cw"></i> 새로고침</button>
+      <span class="note" id="news-time"></span>
     </div>
+    <div id="news-hero" class="news-hero"></div>
+    <div id="news-list" class="news-grid"></div>
+    <p class="note">제목과 링크만 보여주고 본문은 원문 사이트에서 봅니다. 저작권은 각 언론사·제공자에게 있습니다.</p>
   </section>
 
   <!-- AI 사무실 -->
@@ -153,191 +173,199 @@
       <div class="panel track" id="track"><h3>AI 판단 기록</h3><p class="note">불러오는 중...</p></div>
     </div>
     <div class="panel" id="refs"><h3>QTrader 가 따르는 투자 원칙 <small>퀀트 운용사·학계가 인용하는 연구</small></h3><div id="refs-body" class="note">불러오는 중...</div></div>
-    <div class="panel chat">
-      <h3>비서와 대화 <small>시세·계좌·차트를 직접 확인해서 답합니다. 주문은 내지 않습니다.</small></h3>
-      <div id="chat-log" class="chat-log"></div>
-      <form id="chat-form" class="chat-form">
-        <input id="chat-input" placeholder="예: 오늘 외국인이 많이 산 종목 알려줘 / 삼성전자 지금 어때?" autocomplete="off">
-        <button class="primary">보내기</button>
-      </form>
-    </div>
   </section>
 
   <!-- 내 계좌 -->
   <section id="tab-dash" class="tab hidden">
-    <div class="controls">
-      <button id="auto-btn" class="primary">자동매매 시작</button>
-      <button id="kill-btn" class="danger">킬 스위치 켜기</button>
-      <span class="sep"></span>
-      <select id="run-market"><option value="KR">국내</option><option value="US">미국</option></select>
-      <button id="dry-btn">지금 계산만 (주문 안 함)</button>
-      <button id="run-btn">지금 실행</button>
+    <div class="acct-top">
+      <div class="seg" id="acct-market"><button data-v="KR" class="on">국내 계좌</button><button data-v="US">미국 계좌</button></div>
+      <div class="auto-card" id="auto-card">
+        <div><span class="dot"></span><b id="auto-title">자동매매 꺼짐</b><span class="note" id="auto-sub"></span></div>
+        <div class="auto-btns">
+          <button id="auto-btn" class="primary"><i data-lucide="play"></i> 자동매매 시작</button>
+          <button id="kill-btn" class="danger"><i data-lucide="octagon-x"></i> 킬 스위치</button>
+          <button id="dry-btn" title="주문 없이 오늘 무엇을 살지 계산"><i data-lucide="flask-conical"></i> 미리보기</button>
+          <button id="run-btn" title="지금 바로 한 번 실행"><i data-lucide="zap"></i> 지금 실행</button>
+        </div>
+      </div>
     </div>
-    <div class="cards" id="market-cards"></div>
+    <div class="kpis" id="kpis"></div>
     <div class="panel" id="approvals-panel">
-      <h3>승인 대기 주문 <small>AI 회의로 정한 주문은 여기서 근거를 확인하고 승인해야 나갑니다. 승인할 때 리스크 한도를 다시 확인합니다</small></h3>
+      <h3><i data-lucide="hand"></i> 승인 대기 주문 <small>근거를 확인하고 승인해야 주문이 나갑니다</small></h3>
       <div id="appr-list"></div>
     </div>
-    <div class="grid2">
-      <div class="panel">
-        <h3>보유 종목 <small>AI 로 산 종목은 손절가·익절가가 함께 보입니다</small></h3>
-        <table id="pos-table"><thead><tr><th>시장</th><th>종목</th><th class="r">수량</th><th class="r">평균가</th><th class="r">현재가</th><th class="r">수익률</th><th class="r">손절가</th><th class="r">익절가</th></tr></thead><tbody></tbody></table>
-      </div>
-      <div class="panel">
-        <h3>최근 실행 결과</h3>
-        <pre id="run-out" class="out">아직 실행하지 않았습니다.</pre>
-      </div>
+    <div class="acct-grid">
+      <div class="panel"><h3><i data-lucide="line-chart"></i> 자산 추이</h3><div id="equity-chart" class="eq-chart"></div><p class="note" id="eq-note"></p></div>
+      <div class="panel"><h3><i data-lucide="pie-chart"></i> 자산 구성</h3><div id="alloc"></div></div>
     </div>
-    <div class="grid2">
-      <div class="panel">
-        <h3>주문 내역 <small>줄을 누르면 근거가 보입니다</small></h3>
-        <table id="ord-table"><thead><tr><th>날짜</th><th>종목</th><th>구분</th><th class="r">수량</th><th class="r">가격</th><th>상태</th></tr></thead><tbody></tbody></table>
-      </div>
-      <div class="panel">
-        <h3>로그</h3>
-        <ul id="events" class="events"></ul>
-      </div>
+    <div class="panel">
+      <h3><i data-lucide="briefcase"></i> 보유 종목 <small>막대는 손절가 ~ 익절가 사이에서 지금 가격의 위치입니다</small></h3>
+      <div id="holdings" class="holdings"></div>
     </div>
+    <div class="panel">
+      <div class="rank-bar">
+        <div class="seg" id="acct-tab"><button data-v="orders" class="on">주문 내역</button><button data-v="open">미체결</button><button data-v="run">최근 실행</button><button data-v="log">기록</button></div>
+      </div>
+      <div id="acct-orders"><table id="ord-table"><thead><tr><th>날짜</th><th>종목</th><th>구분</th><th class="r">수량</th><th class="r">가격</th><th class="r">금액</th><th>상태</th><th>근거</th></tr></thead><tbody></tbody></table></div>
+      <div id="acct-open" class="hidden"></div>
+      <div id="acct-run" class="hidden"><pre id="run-out" class="out">아직 실행하지 않았습니다. '미리보기'를 누르면 오늘 무엇을 살지 계산합니다.</pre></div>
+      <div id="acct-log" class="hidden"><ul id="events" class="events"></ul></div>
+    </div>
+    <select id="run-market" class="hidden"><option value="KR">국내</option><option value="US">미국</option></select>
   </section>
 
   <!-- 계산기 -->
   <section id="tab-calc" class="tab hidden">
-    <div class="grid2">
-      <div class="panel">
-        <h3>목표 자산 복리 계산기 <small>은퇴 목표까지 매달 얼마를 넣어야 하나</small></h3>
-        <div class="form-row">
-          <label>현재 나이 <input id="cp-age" type="number" value="35"></label>
-          <label>목표 나이 <input id="cp-goalage" type="number" value="60"></label>
-          <label>목표 금액(오늘 가치, 만원) <input id="cp-goal" type="number" value="100000"></label>
-          <label>현재 자산(만원) <input id="cp-now" type="number" value="3000"></label>
-        </div>
-        <div class="form-row">
-          <label>기대 연수익률 % <input id="cp-ret" type="range" min="0" max="20" step="0.5" value="8"><b id="cp-ret-v"></b></label>
-          <label>물가상승률 % <input id="cp-inf" type="range" min="0" max="6" step="0.1" value="2.5"><b id="cp-inf-v"></b></label>
-        </div>
-        <div class="calc-out" id="cp-out"></div>
-        <div id="cp-chart" class="chart small"></div>
-      </div>
-      <div class="panel">
-        <h3>포지션 크기 계산기 <small>한 번 틀렸을 때 잃을 금액을 먼저 정한다</small></h3>
-        <div class="form-row">
+    <div class="seg big" id="calc-tab"><button data-v="pos" class="on"><i data-lucide="target"></i> 몇 주 살까 (포지션 크기)</button><button data-v="cp"><i data-lucide="sprout"></i> 목표 자산 (복리)</button><button data-v="tax"><i data-lucide="receipt"></i> 미국 주식 세금</button></div>
+    <div class="calc-pane" id="calc-pos">
+      <div class="calc-card panel">
+        <div class="calc-in">
+          <h3>입력</h3>
           <label>계좌 금액 <input id="ps-acct" type="number" value="10000000"></label>
-          <label>1회 최대 손실 % <input id="ps-risk" type="number" step="0.1" value="1"></label>
-          <label>진입가 <input id="ps-entry" type="number" value="70000"></label>
-          <label>손절가 <input id="ps-stop" type="number" value="65000"></label>
+          <label>한 번에 잃어도 되는 비율 % <input id="ps-risk" type="number" step="0.1" value="1"></label>
+          <label>사는 가격 <input id="ps-entry" type="number" value="70000"></label>
+          <label>손절 가격 <input id="ps-stop" type="number" value="65000"></label>
+          <p class="note">AI 회의 결과의 손절가를 그대로 넣어 보세요.</p>
         </div>
-        <div class="calc-out" id="ps-out"></div>
-        <p class="note">AI 회의 결과의 손절가를 넣으면, 틀려도 계좌의 몇 %만 잃는 수량이 나옵니다.</p>
+        <div class="calc-res"><div class="calc-out" id="ps-out"></div></div>
       </div>
     </div>
-    <div class="panel">
-      <h3>미국 주식 양도소득세 계산기 <small>한국 거주자 · 연간 손익 통산 · 기본공제 250만원 · 세율 22%(지방세 포함)</small></h3>
-      <table id="tx-table"><thead><tr><th>종목</th><th class="r">수량</th><th class="r">매수가($)</th><th class="r">매수일 환율</th><th class="r">매도가($)</th><th class="r">매도일 환율</th><th class="r">수수료(원)</th><th class="r">손익(원)</th><th></th></tr></thead><tbody></tbody></table>
-      <div class="controls"><button id="tx-add">거래 추가</button></div>
-      <div class="calc-out" id="tx-out"></div>
-      <p class="note">취득가액·양도가액은 각각 결제일 기준환율로 원화 환산합니다. 같은 해 해외주식 손익끼리 통산됩니다. 신고는 다음 해 5월. 참고용이며 정확한 신고는 세무 전문가와 확인하세요.</p>
+    <div class="calc-pane hidden" id="calc-cp">
+      <div class="calc-card panel">
+        <div class="calc-in">
+          <h3>입력</h3>
+          <div class="form-row"><label>현재 나이 <input id="cp-age" type="number" value="35"></label><label>목표 나이 <input id="cp-goalage" type="number" value="60"></label></div>
+          <div class="form-row"><label>목표 금액 (오늘 가치, 만원) <input id="cp-goal" type="number" value="100000"></label><label>지금 자산 (만원) <input id="cp-now" type="number" value="3000"></label></div>
+          <label>기대 연수익률 <b id="cp-ret-v"></b><input id="cp-ret" type="range" min="0" max="20" step="0.5" value="8"></label>
+          <label>물가상승률 <b id="cp-inf-v"></b><input id="cp-inf" type="range" min="0" max="6" step="0.1" value="2.5"></label>
+        </div>
+        <div class="calc-res"><div class="calc-out" id="cp-out"></div><div id="cp-chart" class="chart small"></div></div>
+      </div>
+    </div>
+    <div class="calc-pane hidden" id="calc-tax">
+      <div class="panel">
+        <h3>거래 입력 <small>한국 거주자 · 같은 해 해외주식 손익 통산 · 기본공제 250만원 · 세율 22%(지방세 포함)</small></h3>
+        <table id="tx-table"><thead><tr><th>종목</th><th class="r">수량</th><th class="r">매수가($)</th><th class="r">매수일 환율</th><th class="r">매도가($)</th><th class="r">매도일 환율</th><th class="r">수수료(원)</th><th class="r">손익(원)</th><th></th></tr></thead><tbody></tbody></table>
+        <div class="controls"><button id="tx-add"><i data-lucide="plus"></i> 거래 추가</button></div>
+        <div class="calc-out" id="tx-out"></div>
+        <p class="note">취득·양도가액은 각 결제일 기준환율로 원화 환산. 신고는 다음 해 5월. 참고용이며 정확한 신고는 세무 전문가와 확인하세요.</p>
+      </div>
     </div>
   </section>
 
   <!-- 설정 -->
   <section id="tab-cfg" class="tab hidden">
-    <div class="grid2">
+    <div class="cfg-wrap">
       <div class="panel">
-        <h3>운용 모드</h3>
-        <label class="radio"><input type="radio" name="mode" value="paper"> 가상매매: 실제 시세로 내 PC 안에서만 체결 (처음엔 이걸로)</label>
-        <label class="radio"><input type="radio" name="mode" value="toss_real"> 토스증권 실전: 실제 돈으로 주문</label>
-        <label class="radio"><input type="radio" name="mode" value="kis_demo"> 한국투자증권 모의투자</label>
-        <label class="radio"><input type="radio" name="mode" value="kis_real"> 한국투자증권 실전: 실제 돈으로 주문</label>
-        <label class="check"><input type="checkbox" id="live-confirmed"> 실전 주문을 허용합니다. 손실 책임이 저에게 있음을 이해했습니다.</label>
-        <div class="form-row">
-          <label>시세 출처 <select id="data-source"><option value="auto">자동 (토스 → KIS → CSV)</option><option value="toss">토스증권</option><option value="kis">한국투자증권</option><option value="csv">CSV 파일</option></select></label>
-          <label>KIS 계좌번호 <input id="kis-account" placeholder="12345678-01"></label>
-          <label class="check"><input type="checkbox" id="toss-loc"> 토스 미국 주문은 LOC(장 마감 지정가)</label>
+        <h3><i data-lucide="shield-check"></i> 1. 운용 모드</h3>
+        <div class="mode-cards">
+          <label class="mode-card"><input type="radio" name="mode" value="paper"><b>가상매매</b><span>실제 시세로 내 PC 안에서만 체결. 처음엔 이걸로</span></label>
+          <label class="mode-card live"><input type="radio" name="mode" value="toss_real"><b>토스증권 실전</b><span>실제 돈으로 주문</span></label>
+          <label class="mode-card"><input type="radio" name="mode" value="kis_demo"><b>한국투자증권 모의</b><span>KIS 모의투자 계좌</span></label>
+          <label class="mode-card live"><input type="radio" name="mode" value="kis_real"><b>한국투자증권 실전</b><span>실제 돈으로 주문</span></label>
         </div>
+        <label class="check"><input type="checkbox" id="live-confirmed"> 실전 주문을 허용합니다. 손실 책임이 저에게 있음을 이해했습니다.</label>
       </div>
+
       <div class="panel">
-        <h3>API 키 <small>이 PC의 윈도우 자격 증명 관리자에만 저장됩니다</small></h3>
+        <h3><i data-lucide="key-round"></i> 2. 연결 (API 키) <small>이 PC의 윈도우 자격 증명 관리자에만 저장됩니다</small></h3>
+        <div class="key-status" id="key-status"></div>
         <div class="form-row">
           <label>종류 <select id="key-kind">
             <option value="toss">토스증권 (Client ID / Secret)</option>
-            <option value="anthropic">Claude API 키 (AI 회의·비서)</option>
-            <option value="dart">DART 오픈API 인증키 (국내 재무제표, 무료)</option>
+            <option value="anthropic">Claude API 키 (AI 회의·큐비)</option>
+            <option value="dart">DART 인증키 (국내 재무제표, 무료)</option>
             <option value="kis_demo">한국투자증권 모의 (앱키 / 시크릿)</option>
             <option value="kis_real">한국투자증권 실전 (앱키 / 시크릿)</option>
           </select></label>
           <span id="key-state" class="note"></span>
         </div>
-        <label><span id="key-label1">Client ID</span> <input id="key-app" autocomplete="off"></label>
-        <label id="key-secret-wrap"><span id="key-label2">Client Secret</span> <input id="key-secret" type="password" autocomplete="off"></label>
-        <div class="form-row"><button id="key-save" class="primary">키 저장</button><button id="key-del">이 키 삭제</button></div>
-        <label>SEC 연락처 이메일 <small class="note">미국 재무제표(SEC EDGAR)는 요청에 연락처를 넣어야 받을 수 있습니다</small><input id="sec-contact" placeholder="you@example.com"></label>
-        <p class="note">토스증권은 WTS 설정 → Open API → 허용 IP 에 이 PC의 공인 IP를 등록해야 주문이 됩니다. 토스증권에는 모의투자가 없으니 연습은 가상매매 모드로 하세요.</p>
+        <div class="form-row">
+          <label class="wide"><span id="key-label1">Client ID</span> <input id="key-app" autocomplete="off"></label>
+          <label class="wide" id="key-secret-wrap"><span id="key-label2">Client Secret</span> <input id="key-secret" type="password" autocomplete="off"></label>
+        </div>
+        <div class="form-row"><button id="key-save" class="primary"><i data-lucide="save"></i> 키 저장</button><button id="key-del"><i data-lucide="trash-2"></i> 이 키 삭제</button></div>
+        <p class="note">토스증권은 WTS 설정 → Open API → 허용 IP 에 이 PC의 공인 IP를 등록해야 주문이 됩니다.</p>
       </div>
-    </div>
-    <div class="grid2" id="market-cfg"></div>
-    <div class="grid2">
+
       <div class="panel">
-        <h3>AI 투자 회의</h3>
-        <div class="form-row">
-          <label>회의 방식 <select id="ai-mode"><option value="fast">빠른 회의 (Claude 7회, 기본)</option><option value="precise">정밀 회의 (14회)</option></select></label>
-          <label>빠른 모델 (분석가·토론) <input id="ai-quick"></label>
-          <label>깊은 모델 (검증관·대표) <input id="ai-deep"></label>
-          <label>추론 강도 <select id="ai-effort"><option>low</option><option>medium</option><option>high</option><option>xhigh</option><option>max</option></select></label>
-        </div>
-        <div class="form-row">
-          <label>강세/약세 토론 라운드 <input id="ai-debate" type="number" min="0" max="3"></label>
-          <label>실행 몇 분 전 회의 <input id="ai-before" type="number" min="10" max="180"></label>
-          <label>하루 회의 종목 상한 <input id="ai-max" type="number" min="1" max="50"></label>
-          <label>최소 확신도 <input id="ai-conf" type="number" step="0.05" min="0" max="1"></label>
-        </div>
-        <div class="form-row">
-          <label class="check"><input type="checkbox" id="ai-web"> 웹 검색으로 뉴스·재무·여론 조사</label>
-          <label class="check"><input type="checkbox" id="ai-approve"> AI 주문은 내가 승인한 뒤에만 실행</label>
-          <label class="check"><input type="checkbox" id="ai-exit"> 손절가·익절가에 닿으면 자동 매도</label>
-        </div>
-        <label>투자자 프로필 <small class="note">모든 참석자가 이 내용을 기준으로 판단합니다. 비우면 기본 프로필</small>
-          <textarea id="ai-profile" rows="5" placeholder="예: 3년 안에 1천만원을 3천만원으로 키우고 싶다. 빚투·공매도·옵션은 안 한다. 한 종목 손실은 -10% 이내로 끊는다."></textarea></label>
-      </div>
-      <div class="panel">
-        <h3>매수 체크리스트 기준 <small>하나라도 어기면 AI 가 매수라고 해도 사지 않습니다 (뇌동매매 방지)</small></h3>
-        <div class="form-row">
-          <label>최소 확신도 <input id="rl-conf" type="number" step="0.05"></label>
-          <label>최소 손익비 <input id="rl-rr" type="number" step="0.1"></label>
-          <label>RSI 상한 <input id="rl-rsi" type="number"></label>
-          <label>연 변동성 상한 <input id="rl-vol" type="number" step="0.05"></label>
-        </div>
-        <div class="form-row">
-          <label>팩트체크 확인 비율 <input id="rl-fact" type="number" step="0.05"></label>
-          <label>하루 신규 매수 한도 <input id="rl-buys" type="number"></label>
-          <label>손절 후 재매수 대기(거래일) <input id="rl-cool" type="number"></label>
-          <label class="check"><input type="checkbox" id="rl-trend"> 200일선 위에서만</label>
-          <label class="check"><input type="checkbox" id="rl-mom"> 모멘텀 양수일 때만</label>
-        </div>
-        <h3 style="margin-top:14px">리스크 관리</h3>
+        <h3><i data-lucide="sliders-horizontal"></i> 3. 무엇을 얼마나 <small>시장별로 전략과 쓸 돈만 정하면 됩니다</small></h3>
+        <div class="grid2" id="market-cfg"></div>
         <div class="form-row">
           <label>종목당 최대 비중 <input id="r-maxw" type="number" step="0.01" min="0.01" max="1"></label>
-          <label>총 투자 비중 상한 <input id="r-maxe" type="number" step="0.01" min="0.01" max="1"></label>
-          <label>일일 손실 한도 <input id="r-loss" type="number" step="0.005" min="0.005" max="0.5"></label>
-          <label>1회 주문 한도(원) <input id="r-ordkr" type="number" step="100000"></label>
-          <label>1회 주문 한도($) <input id="r-ordus" type="number" step="100"></label>
+          <label>하루 손실 한도 (넘으면 매수 중단) <input id="r-loss" type="number" step="0.005" min="0.005" max="0.5"></label>
+          <label class="check"><input type="checkbox" id="ai-approve"> AI 주문은 내가 승인한 뒤에만</label>
+          <label class="check"><input type="checkbox" id="ai-exit"> 손절·익절가에 닿으면 자동 매도</label>
         </div>
-        <label>관심 종목 (쉼표로 구분) <input id="watchlist"></label>
-        <label>뉴스 피드 (한 줄에 하나: 이름|주소) <textarea id="news-feeds" rows="3"></textarea></label>
       </div>
+
+      <details class="panel adv">
+        <summary><i data-lucide="settings-2"></i> 고급 설정 <small>대부분은 그대로 두셔도 됩니다</small></summary>
+        <div class="grid2">
+          <div>
+            <h4>시세·계좌</h4>
+            <div class="form-row">
+              <label>시세 출처 <select id="data-source"><option value="auto">자동 (토스 → KIS → CSV)</option><option value="toss">토스증권</option><option value="kis">한국투자증권</option><option value="csv">CSV 파일</option></select></label>
+              <label>KIS 계좌번호 <input id="kis-account" placeholder="12345678-01"></label>
+            </div>
+            <label class="check"><input type="checkbox" id="toss-loc"> 토스 미국 주문은 LOC(장 마감 지정가)</label>
+            <label>SEC 연락처 이메일 (미국 재무제표) <input id="sec-contact" placeholder="you@example.com"></label>
+            <h4>주문 한도</h4>
+            <div class="form-row">
+              <label>총 투자 비중 상한 <input id="r-maxe" type="number" step="0.01" min="0.01" max="1"></label>
+              <label>1회 주문 한도(원) <input id="r-ordkr" type="number" step="100000"></label>
+              <label>1회 주문 한도($) <input id="r-ordus" type="number" step="100"></label>
+            </div>
+            <label>관심 종목 (쉼표로 구분) <input id="watchlist"></label>
+            <label>뉴스 피드 (한 줄에 하나: 이름|주소) <textarea id="news-feeds" rows="4"></textarea></label>
+          </div>
+          <div>
+            <h4>AI 투자 회의</h4>
+            <div class="form-row">
+              <label>회의 방식 <select id="ai-mode"><option value="fast">빠른 회의 (Claude 7회)</option><option value="precise">정밀 회의 (14회)</option></select></label>
+              <label>추론 강도 <select id="ai-effort"><option>low</option><option>medium</option><option>high</option><option>xhigh</option><option>max</option></select></label>
+              <label>빠른 모델 <input id="ai-quick"></label>
+              <label>깊은 모델 <input id="ai-deep"></label>
+            </div>
+            <div class="form-row">
+              <label>토론 라운드 <input id="ai-debate" type="number" min="0" max="3"></label>
+              <label>실행 몇 분 전 회의 <input id="ai-before" type="number" min="10" max="180"></label>
+              <label>하루 회의 종목 상한 <input id="ai-max" type="number" min="1" max="50"></label>
+              <label>최소 확신도 <input id="ai-conf" type="number" step="0.05" min="0" max="1"></label>
+            </div>
+            <label class="check"><input type="checkbox" id="ai-web"> 웹 검색으로 뉴스·재무·여론 조사</label>
+            <label>투자자 프로필 <textarea id="ai-profile" rows="4" placeholder="예: 3년 안에 1천만원을 3천만원으로. 빚투·공매도·옵션 안 함. 한 종목 손실은 -10% 이내."></textarea></label>
+            <h4>매수 체크리스트 기준 <small class="note">하나라도 어기면 사지 않습니다</small></h4>
+            <div class="form-row">
+              <label>최소 확신도 <input id="rl-conf" type="number" step="0.05"></label>
+              <label>최소 손익비 <input id="rl-rr" type="number" step="0.1"></label>
+              <label>RSI 상한 <input id="rl-rsi" type="number"></label>
+              <label>연 변동성 상한 <input id="rl-vol" type="number" step="0.05"></label>
+              <label>팩트체크 확인 비율 <input id="rl-fact" type="number" step="0.05"></label>
+              <label>하루 신규 매수 한도 <input id="rl-buys" type="number"></label>
+              <label>손절 후 재매수 대기일 <input id="rl-cool" type="number"></label>
+            </div>
+            <label class="check"><input type="checkbox" id="rl-trend"> 200일선 위에서만 매수</label>
+            <label class="check"><input type="checkbox" id="rl-mom"> 모멘텀이 양수일 때만 매수</label>
+          </div>
+        </div>
+      </details>
+      <div class="save-bar"><button id="cfg-save" class="primary"><i data-lucide="check"></i> 설정 저장</button><span id="cfg-msg" class="note"></span></div>
     </div>
-    <div class="controls"><button id="cfg-save" class="primary">설정 저장</button><span id="cfg-msg" class="note"></span></div>
   </section>
 </main>
 
 <div id="modal" class="modal hidden"><div class="modal-box"><button class="modal-x" id="modal-x">×</button><div id="modal-body"></div></div></div>
 
 <footer>이 프로그램은 투자 권유가 아니며 수익을 보장하지 않습니다. 모든 매매 판단과 손익은 사용자 본인의 책임입니다. AI 회의 구조는 TradingAgents(Apache-2.0)를 참고했습니다.</footer>
-<script src="/static/app.js"></script>
-<script src="/static/market.js"></script>
-<script src="/static/stock.js"></script>
-<script src="/static/news.js"></script>
-<script src="/static/office.js"></script>
-<script src="/static/result.js"></script>
-<script src="/static/tools.js"></script>
+<script src="/static/app.js?v=__BUILD__"></script>
+<script src="/static/market.js?v=__BUILD__"></script>
+<script src="/static/stock.js?v=__BUILD__"></script>
+<script src="/static/news.js?v=__BUILD__"></script>
+<script src="/static/dash.js?v=__BUILD__"></script>
+<script src="/static/office.js?v=__BUILD__"></script>
+<script src="/static/result.js?v=__BUILD__"></script>
+<script src="/static/tools.js?v=__BUILD__"></script>
+<script src="/static/chat.js?v=__BUILD__"></script>
 </body>
 </html>

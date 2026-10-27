@@ -15,7 +15,11 @@ from .llm import BETAS, WEB_SEARCH, LLMError, make_client
 from .roles import PROFILE_DEFAULT
 
 SYSTEM = (
-    "너는 QTrader 사용자의 개인 투자 비서 '비서'다. 한국어로 짧고 분명하게 답한다. "
+    "너는 QTrader 의 AI 애널리스트 '큐비'다. 한국어로 답한다. 증권사 리서치 애널리스트처럼 숫자와 근거로 말한다. "
+    "종목 질문을 받으면 먼저 ai_decision 으로 그 종목의 최근 AI 투자 회의 결론(등급·확신도·진입/손절/익절 가격·체크리스트)을 확인하고, "
+    "회의가 있으면 그 결론을 중심으로, 없으면 chart_brief·quotes 로 확인한 숫자로 답하며 회의를 열지 제안한다. "
+    "답변 형식: 첫 줄에 **결론** 한 문장 → **근거** 2~4개(숫자 포함) → **리스크** 1~3개 → 해당되면 **실행 계획**(가격·손절·익절). "
+    "사용자가 지금 보고 있는 화면 정보가 주어지면 '이 종목' 같은 말은 그 종목으로 이해한다. "
     "시세·계좌·차트 숫자는 반드시 도구로 확인한 값만 말하고, 확인 못 한 것은 모른다고 말한다. "
     "투자 판단을 요청받으면 근거와 위험을 함께 말하고, 최종 판단은 사용자 몫이라고 알린다. "
     "너는 주문을 낼 수 없다. 매매는 QTrader 엔진이 설정한 전략과 리스크 한도 안에서만 한다. "
@@ -107,7 +111,11 @@ class Assistant:
             if not rows:
                 return "이 종목의 AI 회의 기록이 없습니다."
             r = rows[0]
-            return json.dumps({"date": r["trade_date"], "status": r["status"], "final": r["final"],
+            cl = r.get("checklist") or {}
+            return json.dumps({"date": r["trade_date"], "status": r["status"], "final": r["final"], "plan": r.get("plan"),
+                               "checklist_passed": cl.get("passed"),
+                               "checklist_failed": [x["name"] for x in cl.get("rules", []) if not x["ok"]],
+                               "fact_check_summary": (r.get("check") or {}).get("summary"),
                                "error": r.get("error")}, ensure_ascii=False)
         if name == "start_meeting":
             ctx = self.get_ctx()
@@ -115,13 +123,14 @@ class Assistant:
             return f"AI 투자 회의를 시작했습니다 (회의 번호 {run['id']}). 'AI 사무실' 화면에서 진행 상황을 볼 수 있습니다."
         raise ValueError(f"알 수 없는 도구 {name}")
 
-    def chat(self, thread_id: str | None, text: str) -> dict:
+    def chat(self, thread_id: str | None, text: str, page: str = "") -> dict:
         cfg = self.cfg_loader()
         ai = cfg["ai"]
         tid = thread_id or uuid.uuid4().hex[:10]
         with self.lock:
             msgs = self.threads.setdefault(tid, [])
-            msgs.append({"role": "user", "content": f"[{datetime.now():%Y-%m-%d %H:%M}] {text}"})
+            ctx_line = f" ({page})" if page else ""
+            msgs.append({"role": "user", "content": f"[{datetime.now():%Y-%m-%d %H:%M}{ctx_line}] {text}"})
         used: list[str] = []
         sources: list[dict] = []
         tools = TOOLS + ([WEB_SEARCH] if ai.get("web_research", True) else [])
