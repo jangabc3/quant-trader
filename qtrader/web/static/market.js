@@ -37,7 +37,7 @@ function flowCell(label, v) {
 
 function idxCard(id, name, tag, price, change, rate, flows, sym) {
   const up = change >= 0;
-  return `<div class="idx-card" data-open="${esc(sym)}">
+  return `<div class="idx-card" ${sym ? `data-open="${esc(sym)}"` : ""}>
     <div class="idx-top"><span class="idx-name">${esc(name)} <small class="note">${esc(tag)}</small></span>
       <span class="idx-tag ${up ? "up-bg" : "down-bg"}">${up ? "▲ 상승" : "▼ 하락"}</span></div>
     <div class="idx-val">${Number(price).toLocaleString("ko-KR", { maximumFractionDigits: 2 })}</div>
@@ -57,6 +57,15 @@ async function renderIndices() {
       i.flows?.unit ? flowCell("개인", i.flows.individual) + flowCell("외국인", i.flows.foreigner) + flowCell("기관", i.flows.institution) : "", i.symbol)).join("");
     ov.indices.forEach((i) => sparkChart($("#spark-" + i.symbol), i.spark || [], i.change >= 0));
   } else {
+    if ((ov.us_index || []).length) { // 실제 지수 (야후 파이낸스 공개 차트)
+      const stat = (k, v) => `<div class="flow"><span>${k}</span><b>${v}</b></div>`;
+      const f2 = (v) => Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
+      box.innerHTML = ov.us_index.map((u) => idxCard(u.symbol.replace("^", ""), u.name, "지수", u.price, u.change, u.change_rate,
+        stat("전일 종가", f2(u.prev)) + stat("고가", `<span class="up">${f2(u.high)}</span>`) + stat("저가", `<span class="down">${f2(u.low)}</span>`), "")).join("");
+      ov.us_index.forEach((u) => sparkChart($("#spark-" + u.symbol.replace("^", "")), u.spark || [], u.change >= 0));
+      $$("#idx-group button").forEach((b) => b.classList.toggle("on", b.dataset.v === mkt.group));
+      return;
+    }
     const us = Object.fromEntries((ov.us || []).map((u) => [u.symbol, u]));
     const stat = (k, v) => `<div class="flow"><span>${k}</span><b>${v}</b></div>`;
     const usd = (v) => v ? "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 }) : "-";
@@ -79,9 +88,9 @@ async function renderIndices() {
 function renderOverview(ov) {
   mkt.ov = ov;
   if (!mkt.group) mkt.group = liveGroup();
-  $("#mkt-session").textContent = mkt.group === "KR" ? (ov.session || "국내 시장") : "미국 정규장 · 한국 시각 22:30~05:00 (겨울 23:30~06:00) · 지수 대신 대표 ETF";
+  $("#mkt-session").textContent = mkt.group === "KR" ? (ov.session || "국내 시장") : "미국 정규장 · 한국 시각 22:30~05:00 (겨울 23:30~06:00)" + ((ov.us_index || []).length ? " · 실제 지수 (야후 파이낸스, 지연될 수 있음)" : " · 대표 ETF 기준");
   $("#mkt-asof").textContent = ov.asof ? ov.asof.slice(11, 19) + " 기준" : "";
-  $("#mkt-demo").classList.toggle("hidden", !ov.demo);
+  $("#mkt-demo").classList.toggle("hidden", !ov.demo || (mkt.group === "US" && (ov.us_index || []).length));
   renderIndices();
   const fx = ov.fx || {};
   $("#fx-card").innerHTML = `<div class="k">달러 환율</div><div class="v">${fx.rate ? fx.rate.toLocaleString("ko-KR", { maximumFractionDigits: 1 }) : "-"}<small>원</small></div>
@@ -216,6 +225,7 @@ setInterval(() => { if (state.tab === "mkt" && !document.hidden) loadMarket(); }
 const sec = { market: "KR", dur: "1d" };
 async function loadSectors() {
   const el = $("#sector-grid");
+  if (!el) return; // '지금 뜨는 산업' 으로 바뀜 (market2.js)
   if (!el) return;
   try {
     const r = await api(`/api/market/sectors?kind=TOP_GAINERS&market=${sec.market}&duration=${sec.dur}`);
@@ -234,8 +244,8 @@ function segSimple(id, fn) {
     fn(b.dataset.v);
   }));
 }
-segSimple("sec-market", (v) => { sec.market = v; loadSectors(); });
-segSimple("sec-dur", (v) => { sec.dur = v; loadSectors(); });
+if ($("#sec-market")) segSimple("sec-market", (v) => { sec.market = v; loadSectors(); });
+if ($("#sec-dur")) segSimple("sec-dur", (v) => { sec.dur = v; loadSectors(); });
 document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-sector]");
   if (!b) return;

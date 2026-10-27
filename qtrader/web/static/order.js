@@ -1,7 +1,7 @@
 "use strict";
 // 종목 화면의 주문창: 구매·판매, 지정가·시장가, 호가 단위 ±, 수량 비율 버튼, 확인 시트. 실전 계좌면 PIN 을 묻는다.
 
-const tk = { side: "buy", type: "limit", info: null, price: 0, qty: 0, sym: null };
+const tk = { side: "buy", type: "limit", how: "now", info: null, price: 0, qty: 0, sym: null };
 
 // 국내 호가 단위 (2023 개편 기준)
 function tickKR(p) {
@@ -16,7 +16,12 @@ function ticketShell() {
   const box = $("#ticket");
   box.innerHTML = `
     <div class="tk-side seg"><button data-side="buy" class="buy on">구매</button><button data-side="sell" class="sell">판매</button></div>
+    <div class="tk-row"><span>주문 방법</span><div class="seg tk-how"><button data-how="now" class="on">바로</button><button data-how="cond" title="정한 가격에 닿으면 주문">조건</button><button data-how="split" title="여러 번에 나눠서">나눠서</button></div></div>
     <div class="tk-row"><span>주문 유형</span><div class="seg tk-type"><button data-type="limit" class="on">지정가</button><button data-type="market">시장가</button></div></div>
+    <div class="tk-extra hidden" id="tk-cond-box"><label>이 가격에 닿으면 <div class="tk-pct"><input id="tk-trig" inputmode="decimal"></div></label>
+      <p class="note" id="tk-cond-note"></p></div>
+    <div class="tk-extra hidden" id="tk-split-box"><div class="tk-guard-row"><label>몇 번에 <select id="tk-parts"><option>2</option><option selected>3</option><option>4</option></select></label>
+      <label>간격 <div class="tk-pct"><input id="tk-step" inputmode="decimal" value="3">%</div></label></div><p class="note" id="tk-split-note"></p></div>
     <label class="tk-field"><span>가격</span><div class="tk-input"><button type="button" data-step="price:-1">−</button>
       <input id="tk-price" inputmode="decimal" autocomplete="off"><button type="button" data-step="price:1">＋</button></div></label>
     <label class="tk-field"><span>수량</span><div class="tk-input"><button type="button" data-step="qty:-1">−</button>
@@ -35,6 +40,8 @@ function ticketShell() {
     <button class="tk-go buy" id="tk-go">구매하기</button>
     <p class="note tk-note" id="tk-note"></p>`;
   box.querySelector(".tk-side").onclick = (e) => { const b = e.target.closest("[data-side]"); if (b) { tk.side = b.dataset.side; ticketDraw(); } };
+  box.querySelector(".tk-how").onclick = (e) => { const b = e.target.closest("[data-how]"); if (b) { tk.how = b.dataset.how; ticketDraw(); } };
+  ["#tk-trig", "#tk-parts", "#tk-step"].forEach((s) => box.querySelector(s).addEventListener("input", () => ticketDraw(false)));
   box.querySelector(".tk-type").onclick = (e) => {
     const b = e.target.closest("[data-type]");
     if (!b || (b.dataset.type === "market" && !tk.info?.market_order)) return toast("미국 주식은 지정가로만 주문할 수 있어요", "info");
@@ -85,8 +92,21 @@ function ticketDraw(syncInputs = true) {
   $("#tk-total").textContent = tkMoney(buy ? gross + fee : gross - fee);
   const go = $("#tk-go");
   go.className = "tk-go " + (buy ? "buy" : "sell");
-  go.textContent = buy ? "구매하기" : "판매하기";
-  $("#tk-guard").classList.toggle("hidden", !buy);
+  go.textContent = tk.how === "cond" ? (buy ? "조건 구매 걸기" : "조건 판매 걸기") : tk.how === "split" ? (buy ? "나눠서 사기" : "나눠서 팔기") : buy ? "구매하기" : "판매하기";
+  $("#tk-guard").classList.toggle("hidden", !buy || tk.how !== "now");
+  $$("#ticket .tk-how button").forEach((b) => b.classList.toggle("on", b.dataset.how === tk.how));
+  $("#tk-cond-box").classList.toggle("hidden", tk.how !== "cond");
+  $("#tk-split-box").classList.toggle("hidden", tk.how !== "split");
+  if (tk.how === "cond") {
+    if (!$("#tk-trig").value && i.price) $("#tk-trig").value = tkRound(i.price * (buy ? 0.97 : 1.03));
+    const tg = Number($("#tk-trig").value.replace(/,/g, "")) || 0;
+    $("#tk-cond-note").textContent = tg ? `지금 ${tkMoney(i.price)} → ${tkMoney(tg)}에 ${buy ? "내려오면 사요" : "오르면 팔아요"} (${pct(tg / i.price - 1)}). 30일 동안 지켜 봐요.` : "";
+  }
+  if (tk.how === "split") {
+    const n = Number($("#tk-parts").value), step = Number($("#tk-step").value) || 0;
+    const ps = Array.from({ length: n }, (_, k) => tkRound((p || i.price) * (1 + (buy ? -1 : 1) * step / 100 * k)));
+    $("#tk-split-note").textContent = tk.qty >= n ? `${ps.map((x, k) => `${k + 1}번 ${tkMoney(x)}`).join(" → ")} · 첫 번째는 바로, 나머지는 가격에 닿으면 나가요` : `${n}번에 나누려면 ${n}주 이상이어야 해요`;
+  }
   const gOn = buy && $("#tk-guard-on").checked;
   $("#tk-guard .tk-guard-row").classList.toggle("off", !gOn);
   tk.stop = gOn && p ? tkRound(p * (1 - Number($("#tk-stop").value || 0) / 100)) : 0;
@@ -115,7 +135,27 @@ window.ticketLoad = ticketLoad;
 // 호가를 누르면 그 가격으로
 window.ticketSetPrice = (p) => { if (!tk.info) return; tk.type = "limit"; tk.price = tkRound(p); ticketDraw(); $("#tk-qty").focus(); };
 
+async function sendSpecial() {
+  const i = tk.info, buy = tk.side === "buy", p = unitPrice();
+  try {
+    if (tk.how === "cond") {
+      const trig = Number($("#tk-trig").value.replace(/,/g, ""));
+      await api("/api/conditional", { method: "POST", body: { symbol: i.symbol, side: tk.side, qty: tk.qty, trigger: trig, price: tk.type === "market" ? 0 : trig } });
+      toast(`조건 주문을 걸었어요. ${tkMoney(trig)}에 닿으면 ${buy ? "사요" : "팔아요"}`, "crosshair");
+    } else {
+      const r = await api("/api/order/split", { method: "POST", body: { symbol: i.symbol, side: tk.side, qty: tk.qty, parts: Number($("#tk-parts").value), step_pct: Number($("#tk-step").value) || 3, price: tk.type === "market" ? 0 : p } });
+      toast(`첫 ${r.first.status === "filled" ? "주문 체결" : "주문 접수"} · 나머지 ${r.conditions.length}번은 조건 주문으로 걸었어요`, "layers");
+    }
+    tk.qty = 0; ticketLoad(i.symbol);
+  } catch (err) { toast(err.message, "alert-triangle"); }
+}
+
 function confirmOrder() {
+  if (tk.how !== "now") {
+    const msg = tk.how === "cond" ? `${tk.qty}주 조건 ${tk.side === "buy" ? "구매" : "판매"}를 걸까요?\n${$("#tk-cond-note").textContent}` : `${tk.qty}주를 나눠서 ${tk.side === "buy" ? "살까요" : "팔까요"}?\n${$("#tk-split-note").textContent}`;
+    if (confirm(msg)) sendSpecial();
+    return;
+  }
   const i = tk.info, buy = tk.side === "buy", p = unitPrice(), gross = p * tk.qty;
   const name = st.sum?.name || i.symbol;
   modal(`<div class="tk-confirm ${buy ? "buy" : "sell"}">

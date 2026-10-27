@@ -128,3 +128,22 @@ def test_plan_endpoint_and_manual_buy_with_stop(client, isolated_home):
 def test_key_test_without_keys(client):
     r = client.post("/api/secrets/test", json={"kind": "anthropic"}, headers=client.h).json()
     assert not r["ok"] and "저장돼 있지 않아요" in r["steps"][0]["detail"]
+
+
+def test_conditional_and_split_paper(client, isolated_home):
+    from qtrader import conditional, config
+    from qtrader.data import write_demo_csv
+    from qtrader.engine import build_context
+    write_demo_csv(isolated_home / "data", config.load())
+    px = client.get("/api/order/info/005930").json()["price"]
+    r = client.post("/api/conditional", json={"symbol": "005930", "side": "buy", "qty": 2, "trigger": px * 1.5}, headers=client.h).json()
+    assert r["status"] == "watching"
+    fired = conditional.check(build_context())  # 현재가 <= 감시가 -> 바로 실행
+    assert fired and fired[0]["status"] == "done"
+    s = client.post("/api/order/split", json={"symbol": "005930", "side": "buy", "qty": 5, "parts": 3, "step_pct": 3}, headers=client.h).json()
+    assert s["first"]["status"] == "filled" and len(s["conditions"]) == 2 and s["conditions"][0]["qty"] == 2
+    rows = client.get("/api/conditional").json()
+    assert sum(1 for x in rows if x["status"] == "watching") == 2
+    assert client.delete(f"/api/conditional/{s['conditions'][0]['id']}", headers=client.h).json()["ok"]
+    csv = client.get("/api/export/trades.csv?market=KR")
+    assert csv.status_code == 200 and "종목명" in csv.text and "삼성전자" in csv.text

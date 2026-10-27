@@ -139,3 +139,34 @@ $("#perf-period")?.addEventListener("click", (e) => {
 });
 const _loadDashExtras3 = window.loadDashExtras;
 window.loadDashExtras = async () => { await Promise.all([_loadDashExtras3(), loadPerf()]); };
+
+// 전략 비교 (가상 계좌들)
+const cmp = { chart: null };
+async function loadCompare() {
+  const r = await api("/api/compare?market=" + dash.market).catch(() => null);
+  if (!r) return;
+  $("#cmp-on").checked = r.enabled;
+  const m = dash.market;
+  const COL = { auto: "#3182f6", long: "#2fbf71", swing: "#e9a23b", short: "#f04452" };
+  const best = r.rows.reduce((a, b) => (b.return ?? -9) > (a?.return ?? -9) ? b : a, null);
+  $("#cmp-body").innerHTML = !r.enabled ? `<p class="note">켜면 다음 정기 실행부터 'AI에게 맡기기·장기·스윙·단기' 가상 계좌 4개가 같은 회의 결과로 각자 사고팔아요. 몇 주 뒤 어떤 방식이 내 투자에 맞는지 숫자로 비교할 수 있어요.</p>`
+    : `<table class="cmp"><thead><tr><th>방식</th><th class="r">자산</th><th class="r">수익률</th><th class="r">거래</th><th class="r">승률</th><th class="r">최대 낙폭</th><th class="r">보유</th></tr></thead><tbody>
+      ${r.rows.map((x) => `<tr class="${best && x.mode === best.mode && x.trades ? "cur" : ""}"><td><i class="cmp-dot" style="background:${COL[x.mode]}"></i><b>${esc(x.name)}</b></td>
+        <td class="r">${money(x.equity, m)}</td><td class="r ${cls(x.return)}"><b>${pct(x.return)}</b></td><td class="r">${x.trades}</td>
+        <td class="r">${x.win_rate == null ? "-" : Math.round(x.win_rate * 100) + "%"}</td><td class="r down">${money(x.mdd, m)}</td><td class="r">${x.positions}종목</td></tr>`).join("")}</tbody></table>
+      <div id="cmp-chart" class="pf-chart"></div><p class="note">장 마감마다 기록한 자산으로 그린 수익률이에요. 기록이 이틀 이상 쌓이면 선이 보여요.</p>`;
+  if (r.enabled && window.LightweightCharts) {
+    const ch = LightweightCharts.createChart($("#cmp-chart"), { layout: { background: { color: "transparent" }, textColor: "#8a97a6" }, autoSize: true,
+      grid: { vertLines: { visible: false }, horzLines: { color: "#1b222b" } }, rightPriceScale: { borderVisible: false }, timeScale: { borderVisible: false } });
+    r.rows.forEach((x) => ch.addLineSeries({ color: COL[x.mode], lineWidth: 2, priceFormat: { type: "custom", formatter: (v) => (v * 100).toFixed(1) + "%" } }).setData(x.history));
+    ch.timeScale().fitContent();
+  }
+}
+$("#cmp-on")?.addEventListener("change", async (e) => {
+  await api("/api/compare", { method: "POST", body: { on: e.target.checked } }).catch((err) => toast(err.message));
+  toast(e.target.checked ? "전략 비교 계좌를 켰어요. 다음 정기 실행부터 함께 굴려요" : "전략 비교를 껐어요", "git-compare-arrows");
+  loadCompare();
+});
+const _loadDashExtras5 = window.loadDashExtras;
+window.loadDashExtras = async () => { await Promise.all([_loadDashExtras5(), document.querySelector('.acct-pane[data-pane="profit"]:not(.hidden)') ? loadCompare() : null]); };
+document.addEventListener("click", (e) => { if (e.target.closest('#acct-sub button[data-v="profit"]')) setTimeout(loadCompare, 100); });

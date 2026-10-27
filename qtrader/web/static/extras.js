@@ -205,19 +205,35 @@ window.loadDashExtras = async () => { await Promise.all([_loadDashExtras2(), ren
 
 // 오늘 AI 가 고른 회의 후보 (AI 사무실 위)
 const pk = { market: "KR" };
-async function loadPicks() {
+// 후보를 어떻게 고르는지 (한눈에)
+const PICK_STEPS = [
+  ["filter", "1. 넓게 모으기", "보유·관심 + 성장·기술주 + 1·3개월 급상승 + 토스 인기 + 거래대금·거래량 상위 + 강세 섹터 주도주 (최대 120종목)"],
+  ["shield-check", "2. 숫자로 거르기", "200일선 위 · 12개월 모멘텀 양수 · 과열(RSI)·변동성 상한 안쪽만"],
+  ["bar-chart-3", "3. 점수 매기기", "모멘텀 35 · 52주 고가 근접 25 · 저변동 20 · 거래량 증가 10 · 단기 급등 감점 10"],
+  ["file-search", "4. 공시·재무 점검", "유상증자·전환사채·감자·횡령 공시가 있으면 제외, 적자+매출 감소면 감점"],
+];
+const FACT = [["mom", "모멘텀", (v) => Math.max(0, Math.min(1, (v + 0.2) / 0.8))], ["near_high", "52주 고가", (v) => Math.max(0, Math.min(1, (v - 0.6) / 0.4))],
+  ["vol", "안정성", (v) => Math.max(0, Math.min(1, 1 - v / 0.8))], ["vol_ratio", "거래량", (v) => Math.max(0, Math.min(1, (v - 0.5) / 1.5))]];
+async function loadPicks(refresh = false) {
   const box = $("#picks");
   if (!box) return;
   box.innerHTML = `<div class="skeleton" style="height:58px"></div>`;
-  const rows = await api("/api/picks?market=" + pk.market).catch((e) => ({ error: e.message }));
+  const rows = await api(`/api/picks?market=${pk.market}${refresh ? "&refresh=true" : ""}`).catch((e) => ({ error: e.message }));
   if (rows.error) { box.innerHTML = `<p class="note">${esc(rows.error)}</p>`; return; }
-  box.innerHTML = rows.length ? rows.map((p, i) => `<button class="pick" data-open="${esc(p.symbol)}" title="${esc(p.reason)}">
-      <span class="pk-n">${i + 1}</span>${logo(p.symbol, p.name, 28)}
-      <span class="pk-t"><b>${esc(p.name)}</b><em>${esc(p.reason)}</em></span>
-      <span class="pk-s ${p.met ? "done" : ""}">${p.held ? "보유 점검" : ""}${p.met ? ` · ${esc(RATING_KO[p.rating] || "회의 완료")}` : p.held ? "" : "회의 대기"}</span></button>`).join("")
+  const how = `<details class="pick-how"><summary><i data-lucide="help-circle"></i> AI가 후보를 고르는 기준 <small>숫자로 먼저 거르고, 통과한 종목만 AI 회의를 엽니다 (비용 절약)</small></summary>
+    <div class="ph-steps">${PICK_STEPS.map(([ic, t, d]) => `<div><i data-lucide="${ic}"></i><b>${t}</b><span>${d}</span></div>`).join("")}</div></details>`;
+  box.innerHTML = how + (rows.length ? `<div class="pick-grid">${rows.map((p, i) => `<div class="pick" data-open="${esc(p.symbol)}">
+      <div class="pk-top"><span class="pk-n">${i + 1}</span>${logo(p.symbol, p.name, 30)}<span class="pk-t"><b>${esc(p.name)}</b><em>${esc(p.reason)}</em></span>
+        <span class="pk-s ${p.met ? "done" : ""}">${p.held ? "보유 점검" : p.met ? esc(RATING_KO[p.rating] || "회의 완료") : "회의 대기"}</span></div>
+      ${p.factors ? `<div class="pk-f">${FACT.map(([k, n, f]) => `<div><span>${n}</span><i><b style="width:${(f(p.factors[k] ?? 0) * 100).toFixed(0)}%"></b></i></div>`).join("")}
+        <div class="pk-score"><span>점수</span><b>${Math.round((p.score || 0) * 100)}</b></div></div>` : ""}
+    </div>`).join("")}</div>`
     : `<div class="empty"><i data-lucide="filter-x"></i><p>오늘은 숫자 규칙을 통과한 후보가 없어요</p>
-       <span class="note">하락 추세이거나 과열된 종목뿐이라 회의를 열지 않습니다. 이렇게 쉬는 날이 있어야 손실을 줄일 수 있어요.</span></div>`;
-  animateIn("#picks .pick", { step: 30 });
+       <span class="note">하락 추세이거나 과열된 종목뿐이라 회의를 열지 않습니다. 이렇게 쉬는 날이 있어야 손실을 줄일 수 있어요.</span></div>`)
+    + `<button class="nmore" id="picks-refresh"><i data-lucide="refresh-cw"></i> 지금 다시 고르기</button>`;
+  $("#picks-refresh").onclick = () => loadPicks(true);
+  animateIn("#picks .pick", { step: 40 });
+  if (!REDUCED && window.anime) anime({ targets: "#picks .pk-f b", scaleX: [0, 1], duration: 700, delay: anime.stagger(25), easing: "easeOutCubic" });
   icons();
 }
 $("#picks-mkt")?.addEventListener("click", (e) => {
