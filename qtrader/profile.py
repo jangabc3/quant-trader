@@ -99,7 +99,7 @@ def criteria(cfg: dict) -> list[dict]:
          "why": "지수가 200일선 아래면 모멘텀이 잘 안 통함 (Cooper 외 2004)"},
         {"icon": "thermometer", "k": "과열", "v": f"RSI {r['max_rsi']:.0f} 미만", "why": "너무 급하게 오른 종목 추격 금지"},
         {"icon": "activity", "k": "변동성", "v": f"연 {r['max_vol']:.0%} 이하", "why": "지나치게 출렁이는 종목 제외"},
-        {"icon": "badge-check", "k": "팩트체크", "v": f"확인 {r['min_fact_ok']:.0%} 이상, 틀린 주장 0", "why": "AI 근거가 사실인지 원자료로 확인"},
+        {"icon": "badge-check", "k": "팩트체크", "v": f"점수 {r['min_fact_ok']:.0%} 이상, 틀린 주장 0", "why": "AI 근거가 사실인지 원자료로 확인 (확인 불가는 반만 셈)"},
         {"icon": "repeat", "k": "하루 신규 매수", "v": f"{r['max_new_buys_per_day']}종목까지", "why": "과잉 매매 방지 (Barber & Odean 2000)"},
         {"icon": "timer", "k": "손절 후 재매수", "v": f"{r['cooldown_days']}거래일 대기", "why": "손실 직후 감정적인 복수 매매 방지"},
         {"icon": "calendar-clock", "k": "매매 기간", "v": HOLDING.get(cfg["ai"].get("holding", "long"), {}).get("name", "장기"), "why": "단기일수록 손절·익절이 좁고, 기한이 지나면 팝니다"},

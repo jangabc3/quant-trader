@@ -496,3 +496,20 @@ def test_track_compares_with_price_at_meeting_time():
     rows = track.evaluate(runs, lambda s: df)["rows"]
     assert rows[0]["price"] == 105 and rows[0]["return"] == round(110 / 105 - 1, 4) and rows[0]["days"] == 0
     assert rows[1]["return"] == 0 and rows[1]["correct"] is None and rows[1]["headline"] == "실적 발표 앞둠"
+
+
+def test_fact_check_unverifiable_counts_half_wrong_still_fails():
+    """'확인 불가'는 틀린 게 아니다: 확인 5·확인 불가 4 는 통과 (예전엔 56% 로 걸림). 틀림이 하나라도 있으면 실패."""
+    from qtrader import principles
+    import pandas as pd
+    import numpy as np
+    bars = pd.DataFrame({"close": np.linspace(100, 150, 300)}, index=pd.bdate_range(end="2026-10-28", periods=300))
+    bars["high"], bars["low"], bars["volume"] = bars["close"], bars["close"], 1e6
+    fin = {"rating": "Overweight", "confidence": 0.7, "stop_loss_pct": 5, "take_profit_pct": 12}
+
+    def facts(ok, unsure, wrong):
+        fc = [{"status": "확인됨"}] * ok + [{"status": "확인 불가"}] * unsure + [{"status": "틀림"}] * wrong
+        cl = principles.checklist(fin, {"fact_checks": fc}, bars, [], principles.DEFAULT_RULES)
+        return next(r for r in cl["rules"] if r["key"] == "facts")
+    assert facts(5, 4, 0)["ok"] and "확인 불가 4" in facts(5, 4, 0)["value"]
+    assert not facts(8, 0, 1)["ok"] and not facts(1, 8, 0)["ok"]
