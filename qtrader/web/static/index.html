@@ -420,12 +420,12 @@
       <div class="panel" id="cfg-how">
         <h3><i data-lucide="sliders-horizontal"></i> 3. 투자 방식</h3>
         <p class="note how-intro">두 가지만 정하면 돼요. <b>① 어느 시장에서 얼마로</b> 할지, <b>② 산 주식을 얼마 동안</b> 들고 있을지.
-          장이 열려 있는 동안 AI가 계속 후보를 살피고 회의해서 사고팔아요. 주문은 아래 '4. 안전장치' 안에서만 나가요.</p>
+          장이 열려 있는 동안 2분마다 후보의 사는 신호를 보고, 신호가 뜬 종목만 AI 가 위험 신호를 확인한 뒤 사요. 주문은 아래 '4. 안전장치' 안에서만 나가요.</p>
         <h4 class="step"><span>1</span> 어느 시장에서, 얼마로</h4>
         <div class="grid2" id="market-cfg"></div>
         <h4 class="step"><span>2</span> 산 주식을 얼마 동안 들고 있을까 <small class="note">국내·미국 모두 같은 방식이 적용돼요</small></h4>
         <div class="hold-cards" id="hold-cards">
-          <label class="mode-card rec"><input type="radio" name="holding" value="auto"><b>AI에게 맡기기 <small>추천</small></b><span>종목마다 회의가 기간을 정해요. 실적·이벤트 종목은 짧게, 추세가 긴 종목은 길게</span></label>
+          <label class="mode-card rec"><input type="radio" name="holding" value="auto"><b>AI에게 맡기기 <small>추천</small></b><span>손절은 종목마다 가격 변동폭으로, 이익이 나면 절반 익절 뒤 손절을 따라 올려 추세가 끝날 때 팔아요</span></label>
           <label class="mode-card"><input type="radio" name="holding" value="long"><b>장기</b><span>몇 주~몇 달. AI가 정한 손절·익절 그대로. 매매가 적어 수수료가 적어요</span></label>
           <label class="mode-card"><input type="radio" name="holding" value="swing"><b>스윙</b><span>며칠~2주. 손절 -5% · 익절 +10%, 10거래일이 지나면 팔아요</span></label>
           <label class="mode-card"><input type="radio" name="holding" value="short"><b>단기</b><span>1~3일. 손절 -2.5% · 익절 +5%, 3거래일이 지나면 팔아요. 하루에 2종목 더 살 수 있어요</span></label>
