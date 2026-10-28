@@ -56,7 +56,9 @@ def watch_list(ctx, market: Market) -> list[dict]:
         if p:
             row |= {"stop": p["stop"], "take": p["take"], "to_stop": px / p["stop"] - 1 if p["stop"] else None,
                     "to_take": p["take"] / px - 1 if px else None,
-                    "pos": max(0.0, min(1.0, (px - p["stop"]) / (p["take"] - p["stop"]))) if p["take"] > p["stop"] else None}
+                    "pos": max(0.0, min(1.0, (px - p["stop"]) / (p["take"] - p["stop"]))) if p["take"] > p["stop"] else None,
+                    "trail": p.get("style") == "trail", "half": bool(p.get("half")),
+                    "half_at": (p["entry"] + p["risk"]) if p.get("style") == "trail" and p.get("risk") else None}
         out.append(row)
     return out
 

@@ -95,10 +95,12 @@ function renderBoard(d) {
   box.dataset.ready = "1";
   box.innerHTML = `${flowBoard(d)}
     <section class="lb-guard"><h4><i data-lucide="shield-check"></i> 손절·익절 지키는 중 <small>${d.watch.length}종목</small>
-        <span class="lb-help" title="산 종목마다 정해 둔 손절가(이 아래로 내리면 판다)와 익절가(이 위로 오르면 판다)를 장중 2분마다 확인해서, 닿으면 사람 손 없이 자동으로 팝니다.">?</span></h4>
+        <span class="lb-help" title="산 종목마다 정해 둔 손절가(이 아래로 내리면 판다)와 익절가를 장중 2분마다 확인해서 자동으로 팝니다. AI 로 산 종목은 처음 위험 폭(R)만큼 오르면 절반을 팔고, 남은 절반은 손절을 본전으로 올린 뒤 최고가를 따라 올려요. 10거래일 동안 그만큼 못 오르면 정리해요.">?</span></h4>
       <p class="lb-desc">산 주식이 정해 둔 가격에 닿으면 자동으로 팔아요. 흰 점이 지금 가격이에요.</p>
       ${d.watch.map((w) => `<div class="lb-watch" data-open="${esc(w.symbol)}"><div class="lb-top">${logo(w.symbol, nm(w), 24)}<b>${esc(nm(w))}</b><span class="${cls(w.pnl)}">${pct(w.pnl)}</span></div>
-        ${w.stop ? guardGauge(w, d.market) : `<div class="lb-nobar">손절·익절이 없어 자동으로 팔지 않아요 · 내 계좌에서 정할 수 있어요</div>`}</div>`).join("")
+        ${w.stop ? guardGauge(w, d.market) : `<div class="lb-nobar">손절·익절이 없어 자동으로 팔지 않아요 · 내 계좌에서 정할 수 있어요</div>`}
+        ${w.trail ? `<div class="lb-trail note">${w.half ? `절반 익절했어요 · 남은 절반은 손절을 따라 올리는 중 (지금 ${money(w.stop, d.market)})`
+          : `${money(w.half_at, d.market)} 에 닿으면 절반 익절하고 손절을 본전으로 올려요`}</div>` : ""}</div>`).join("")
         || `<div class="lb-emptyg"><i data-lucide="shield"></i><span>가진 주식이 없어요. 사면 여기서 손절~익절 사이 지금 위치를 실시간으로 보여 줘요.</span></div>`}</section>
     <section><h4><i data-lucide="sparkles"></i> 다음 후보 <small>15분마다 다시 계산</small></h4>
       ${d.candidates.slice(0, 6).map((c) => `<div class="lb-cand" data-open="${esc(c.symbol)}">${logo(c.symbol, nm(c), 22)}<div class="lb-ct"><b>${esc(nm(c))}</b>

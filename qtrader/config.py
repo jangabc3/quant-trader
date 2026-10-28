@@ -105,7 +105,9 @@ DEFAULT = {
         # 장중 계속 사기: 2분마다 후보의 사는 신호(눌림목 반등·거래량 돌파)를 보고, 신호가 뜬 종목만 AI 거부권 한 번 →
         # 통과하고 숫자 안전 점검을 넘으면 그 종목만 산다 (signals.py). 확인 수는 시장별 meetings_per_day·monthly_cost_cap_krw
         "intraday": True,
-        "auto_meetings": False,  # 정기 실행 전 7명 회의를 자동으로 열지 (기본 꺼짐: 회의는 직접 누를 때만)
+        "auto_meetings": False,
+        # 팔기: trail = +1R 에서 절반 익절 → 손절 본전 → 최고가 따라 올라가는 손절 · 10거래일 안 움직이면 정리, fixed = 정한 손절·익절에서 전부
+        "exit_style": "trail",  # 정기 실행 전 7명 회의를 자동으로 열지 (기본 꺼짐: 회의는 직접 누를 때만)
         # 가상매매 연습 기준: 가상매매일 때만 확신도·손익비·추가 기준 허용 수·하루 매수 수를 조금 낮춰 흐름을 시험해 본다 (실전에는 안 씀)
         "practice": True,
         "intraday_every_min": 15,
@@ -243,6 +245,8 @@ def validate(cfg: dict) -> list[str]:
         errs.append("ai.effort 는 low/medium/high/xhigh/max 중 하나여야 합니다")
     if not 0 <= int(ai.get("debate_rounds", 1)) <= 3:
         errs.append("토론 라운드는 0~3 이어야 합니다")
+    if ai.get("exit_style", "trail") not in ("trail", "fixed"):
+        errs.append("ai.exit_style 는 trail 또는 fixed")
     if not isinstance(ai.get("intraday", True), bool):
         errs.append("ai.intraday 는 true 또는 false")
 
