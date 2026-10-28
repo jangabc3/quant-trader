@@ -59,8 +59,29 @@ def session_fraction(market: Market, now: datetime | None = None) -> float:
     return max(0.05, (t - s).total_seconds() / (e - s).total_seconds())
 
 
+def rule(price: float, sma20: float, sma60: float, sma200: float, atr: float, rsi: float, low3: float, yhigh: float,
+         high20: float, vol_today: float, avg20: float, frac: float = 1.0) -> dict | None:
+    """신호 규칙 하나 (실시간 확인 check 와 지난 시세 검증 signal_test 가 똑같이 쓴다). 숫자는 모두 '어제까지' 기준, rsi 는 지금 가격 포함."""
+    if not price or price <= 0 or rsi >= 80 or atr <= 0:  # 눌림목은 75, 돌파는 80 미만 (돌파는 원래 RSI 가 높다. 대신 20일선에서 12% 넘게 멀면 안 산다)
+        return None
+    pace = vol_today / frac / avg20 if avg20 and vol_today else 0.0
+    sig = None
+    # 둘 다 맞으면 거래량이 받쳐 주는 돌파를 먼저
+    if price > sma200 and price > high20 and pace >= 1.5 and price <= sma20 * 1.12:
+        sig = ("breakout", f"20일 최고가({high20:,.0f})를 넘었고 거래량이 평소의 {pace:.1f}배 속도예요")
+    up = price > sma200 and sma20 > sma60
+    if not sig and up and low3 <= sma20 * 1.01 and rsi < 75 and price > yhigh and sma20 < price <= sma20 * 1.06:
+        sig = ("pullback", f"오르는 추세에서 20일선({sma20:,.0f})까지 눌렸다가 어제 고가({yhigh:,.0f})를 넘어 다시 올라요")
+    if not sig:
+        return None
+    stop_pct = min(10.0, max(3.0, 2 * atr / price * 100))
+    return {"kind": sig[0], "name": KINDS[sig[0]], "why": sig[1], "price": price, "atr": round(atr, 4), "rsi": round(rsi, 1),
+            "stop_pct": round(stop_pct, 2), "take_pct": round(stop_pct * 2, 2), "pace": round(pace, 2),
+            "sma20": round(sma20, 4), "sma200": round(sma200, 4)}
+
+
 def check(bars: pd.DataFrame, price: float, today: str, frac: float = 1.0) -> dict | None:
-    """신호가 뜨면 {kind, name, why, atr, stop, take, stop_pct, take_pct}, 아니면 None. bars 는 오늘 봉이 있어도 된다."""
+    """신호가 뜨면 {kind, name, why, atr, stop_pct, take_pct, ...}, 아니면 None. bars 는 오늘 봉이 있어도 된다."""
     hist, now_bar = split_today(bars, today)
     if len(hist) < 200 or not price or price <= 0:
         return None
@@ -68,26 +89,9 @@ def check(bars: pd.DataFrame, price: float, today: str, frac: float = 1.0) -> di
     sma20, sma60, sma200 = (float(ind.sma(c, n).iloc[-1]) for n in (20, 60, 200))
     atr = float(ind.atr(h, lo, c).iloc[-1])
     rsi = float(ind.rsi(pd.concat([c, pd.Series([price])], ignore_index=True)).iloc[-1])
-    if rsi >= 80 or atr <= 0:  # 눌림목은 75, 돌파는 80 미만 (돌파는 원래 RSI 가 높다. 대신 20일선에서 12% 넘게 멀면 안 산다)
-        return None
-    sig = None
-    high20 = float(h.tail(20).max())
     vol_today = float(now_bar["volume"]) if now_bar is not None and "volume" in now_bar else 0.0
-    avg20 = float(v.tail(20).mean()) or 0.0
-    pace = vol_today / frac / avg20 if avg20 and vol_today else 0.0
-    # 둘 다 맞으면 거래량이 받쳐 주는 돌파를 먼저
-    if price > sma200 and price > high20 and pace >= 1.5 and price <= sma20 * 1.12:
-        sig = ("breakout", f"20일 최고가({high20:,.0f})를 넘었고 거래량이 평소의 {pace:.1f}배 속도예요")
-    up = price > sma200 and sma20 > sma60
-    touched = float(lo.tail(3).min()) <= sma20 * 1.01
-    if not sig and up and touched and rsi < 75 and price > float(h.iloc[-1]) and sma20 < price <= sma20 * 1.06:
-        sig = ("pullback", f"오르는 추세에서 20일선({sma20:,.0f})까지 눌렸다가 어제 고가({float(h.iloc[-1]):,.0f})를 넘어 다시 올라요")
-    if not sig:
-        return None
-    stop_pct = min(10.0, max(3.0, 2 * atr / price * 100))
-    return {"kind": sig[0], "name": KINDS[sig[0]], "why": sig[1], "price": price, "atr": round(atr, 4), "rsi": round(rsi, 1),
-            "stop_pct": round(stop_pct, 2), "take_pct": round(stop_pct * 2, 2), "pace": round(pace, 2),
-            "sma20": round(sma20, 4), "sma200": round(sma200, 4)}
+    return rule(price, sma20, sma60, sma200, atr, rsi, float(lo.tail(3).min()), float(h.iloc[-1]), float(h.tail(20).max()),
+                vol_today, float(v.tail(20).mean()) or 0.0, frac)
 
 
 def daily_bars(ctx, market: Market, symbol: str, today: str) -> pd.DataFrame:

@@ -28,6 +28,13 @@ ALLOWED_HOSTS = {"127.0.0.1", "localhost"}
 SECRET_KINDS = ("kis_demo", "kis_real", "toss", "anthropic", "dart", "telegram")
 
 
+class SignalTestIn(BaseModel):
+    market: str = "KR"
+    symbols: list[str] | None = None
+    days: int = 750
+    refresh: bool = False
+
+
 class BacktestIn(BaseModel):
     market: str = "KR"
     strategy: str = "momentum"
@@ -1291,6 +1298,32 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             return assistant.chat(body.thread_id, body.text.strip()[:4000], body.page[:300])
         except LLMError as e:
             raise HTTPException(400, str(e))
+
+    @app.post("/api/signal-test", dependencies=[Depends(need_token)])
+    def signal_test_run(body: SignalTestIn):
+        """사는 신호 + 팔기 규칙을 지난 일봉으로 (AI 거부권 없이). 오늘 후보·관심·운용 종목 최대 40개, 하루 한 번 담아 둔다."""
+        import json as _json
+        from .. import signal_test
+        from ..engine import trade_date
+        c = ctx()
+        m = Market(body.market)
+        today = trade_date(m)
+        key = f"signal_test_{m.value}_{today}"
+        if not body.symbols and not body.refresh and c.store.get(key):
+            return _json.loads(c.store.get(key)) | {"cached": True}
+        syms = body.symbols or []
+        if not syms:
+            picks = _json.loads(c.store.get(f"picks_{m.value}_{today}") or "[]")
+            mine = [s for s in (c.cfg.get("watchlist") or []) if (s[:1].isdigit()) == (m == Market.KR)]
+            syms = [p["symbol"] for p in picks] + mine + list(c.cfg["markets"][m.value].get("universe") or [])
+        syms = list(dict.fromkeys(s.strip().upper() for s in syms if s.strip()))[:40]
+        if not syms:
+            raise HTTPException(400, "검증할 종목이 없어요. 오늘 후보가 생기거나 관심 종목을 담으면 돌려 볼 수 있어요")
+        out = signal_test.run(c.data, m, syms, max(300, min(int(body.days), 1500)), float(c.cfg["risk"]["max_weight"]))
+        out |= {"market": m.value, "date": today, "names": {s: name_of(s) for s in syms}}
+        if not body.symbols:
+            c.store.set(key, _json.dumps(out, ensure_ascii=False))
+        return out
 
     @app.post("/api/backtest", dependencies=[Depends(need_token)])
     def run_backtest(body: BacktestIn):
