@@ -142,6 +142,26 @@ DEFAULT_RULES = {
     "market_filter": "half",  # 지수가 200일선 아래면: half=비중 절반, block=신규 매수 중단, off=보지 않음
     "soft_miss_allowed": 1,  # 추가 기준(SOFT_RULES)을 이만큼까지 못 넘어도 산다. 하나마다 비중을 절반으로
 }
+# 가상매매 연습 기준: 실제 돈이 아닐 때만, 매수·매도·손절·익절 흐름을 시험해 볼 수 있게 몇 가지를 조금 낮춘다.
+# 손절가·장기 추세·변동성·투자유의·재매수 대기 같은 손실을 막는 기준과 'AI 의견이 매수'는 그대로다. 실전에는 절대 쓰지 않는다.
+PRACTICE = {"min_confidence": ("min", 0.5), "min_reward_risk": ("min", 1.5), "soft_miss_allowed": ("max", 2),
+            "max_new_buys_per_day": ("max", 5)}
+
+
+def practice_on(cfg: dict) -> bool:
+    return cfg.get("mode") == "paper" and bool((cfg.get("ai") or {}).get("practice", True))
+
+
+def rules_for(cfg: dict) -> dict:
+    """매수 체크리스트에 실제로 쓰는 규칙 (설정 + 가상매매면 연습 기준)."""
+    r = dict(cfg["ai"].get("rules") or {})
+    if practice_on(cfg):
+        full = DEFAULT_RULES | r
+        for k, (how, v) in PRACTICE.items():
+            r[k] = min(full[k], v) if how == "min" else max(full[k], v)
+    return r
+
+
 # 매매 기간. 단기일수록 손절·익절을 좁히고 오래 들고 있지 않는다 (기한이 지나면 판다)
 HOLDING = {
     "auto": {"name": "AI에게 맡기기 (종목마다 알맞게)", "stop": None, "take": None, "days": None, "buys": 1},

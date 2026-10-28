@@ -92,7 +92,7 @@ def max_new_buys(cfg: dict) -> int:
     """하루 신규 매수 종목 수 상한 (체크리스트 규칙). 단기일수록 하루에 조금 더 여러 종목을 작게 산다."""
     from . import principles
     ai = cfg["ai"]
-    base = int((ai.get("rules") or {}).get("max_new_buys_per_day", principles.DEFAULT_RULES["max_new_buys_per_day"]))
+    base = int(principles.rules_for(cfg).get("max_new_buys_per_day", principles.DEFAULT_RULES["max_new_buys_per_day"]))
     return base + principles.HOLDING.get(ai.get("holding", "long"), principles.HOLDING["long"])["buys"]
 
 
@@ -104,7 +104,7 @@ def buy_blocked(ctx: "Context", market: Market) -> str | None:
     n, cap = ctx.store.new_buys_today(ctx.broker.name, market.value, today), max_new_buys(ctx.cfg)
     if n >= cap:
         return f"오늘 새로 산 종목이 하루 한도({cap}종목)에 닿음"
-    rules = principles.DEFAULT_RULES | (ctx.cfg["ai"].get("rules") or {})
+    rules = principles.DEFAULT_RULES | principles.rules_for(ctx.cfg)
     if rules.get("market_filter") == "block":
         b = principles.index_bars(ctx.data, market)
         if b is not None and float(b["close"].iloc[-1]) < float(ind.sma(b["close"], 200).iloc[-1]):
@@ -121,7 +121,7 @@ def ai_targets(store: Store, cfg: dict, panel_: dict, today: str, account: str =
     from . import principles
     ai = cfg["ai"]
     mult = ai["rating_weights"]
-    rules = dict(ai.get("rules") or {})
+    rules = principles.rules_for(cfg)
     rules["max_new_buys_per_day"] = max_new_buys(cfg)
     cooldown = int(rules.get("cooldown_days", principles.DEFAULT_RULES["cooldown_days"]))
     universe = list(panel_)
@@ -135,7 +135,7 @@ def ai_targets(store: Store, cfg: dict, panel_: dict, today: str, account: str =
         m = mult.get(rating) if rating else None
         note = {"symbol": s, "rating": rating, "confidence": conf, "run_id": (d or {}).get("id"),
                 "headline": f.get("headline", ""), "checklist": None}
-        if not d or m is None or conf < ai.get("min_confidence", 0.5):
+        if not d or m is None or conf < min(ai.get("min_confidence", 0.5), rules.get("min_confidence", 1)):
             keep.add(s)
             note["action"] = "회의 결과 없음" if not d else ("보류: 사지 않음 (가진 종목은 그대로)" if m is None else f"확신 부족 {conf:.0%}")
         elif rating in ("Buy", "Overweight"):
