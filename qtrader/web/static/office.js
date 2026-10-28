@@ -41,7 +41,7 @@ const SHORT = { chart: "기술", fund: "재무", earn: "실적", news: "뉴스",
   lead: "리서치 팀장", trader: "주문 설계", aggr: "공격형", neut: "중립형", cons: "보수형", pm: "최종 결정" };
 const SKIN = "#f2c9a0";
 const RATING_COLOR = { Buy: "#f04452", Overweight: "#f08a5e", Hold: "#8b98a5", Underweight: "#5a9bff", Sell: "#3182f6" };
-const RATING_KO = { Buy: "매수", Overweight: "비중확대", Hold: "보유", Underweight: "비중축소", Sell: "매도" };
+const RATING_KO = { Buy: "매수", Overweight: "비중확대", Hold: "보류", Underweight: "비중축소", Sell: "매도" };
 
 const cv = $("#office");
 const g = cv.getContext("2d");
@@ -405,9 +405,9 @@ async function loadTrack() {
       ${t.rows.slice(0, 8).map((x) => `<tr><td>${esc(x.date)}</td><td>${esc(x.name)}</td>
         <td style="color:${RATING_COLOR[x.rating]}">${RATING_KO[x.rating]}</td><td class="r">${money(x.price, x.market)}</td>
         <td class="r">${money(x.last, x.market)}</td><td class="r ${cls(x.return)}">${pct(x.return)}</td>
-        <td>${x.correct == null ? "<span class='note'>보유 의견</span>" : x.days === 0 ? "<span class='note'>대기</span>" : x.correct ? "<b class='up'>적중</b>" : "<b class='down'>빗나감</b>"}${x.hit_take ? " · 익절가 도달" : ""}${x.hit_stop ? " · 손절가 도달" : ""}</td></tr>`).join("")
+        <td>${x.correct == null ? "<span class='note'>보류 의견</span>" : x.days === 0 ? "<span class='note'>대기</span>" : x.correct ? "<b class='up'>적중</b>" : "<b class='down'>빗나감</b>"}${x.hit_take ? " · 익절가 도달" : ""}${x.hit_stop ? " · 손절가 도달" : ""}</td></tr>`).join("")
         || `<tr><td colspan="7"><div class="empty"><i data-lucide="clipboard-list"></i><p>아직 회의 기록이 없어요</p>
-          <span class="note">AI 회의를 하면 결론(매수·보유·매도)과 그때 가격이 여기 남고, 며칠 뒤 실제 가격과 비교해 <b>맞았는지 틀렸는지</b>를 자동으로 채점합니다.
+          <span class="note">AI 회의를 하면 결론(매수·보류·매도)과 그때 가격이 여기 남고, 며칠 뒤 실제 가격과 비교해 <b>맞았는지 틀렸는지</b>를 자동으로 채점합니다.
           기록이 쌓이면 '방향 적중률'로 AI 판단을 얼마나 믿어도 되는지 알 수 있어요.</span></div></td></tr>`}</tbody></table>
       <p class="note">시연 회의는 기록에 남지 않습니다. 어떤 분석도 승률 100%를 보장할 수 없습니다. 결정을 숨김없이 쌓아 어떤 경우에 AI 판단이 믿을 만한지 직접 확인하세요.</p>`;
     icons();

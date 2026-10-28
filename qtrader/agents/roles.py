@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 RATINGS = ["Buy", "Overweight", "Hold", "Underweight", "Sell"]
-RATING_KO = {"Buy": "매수", "Overweight": "비중확대", "Hold": "보유", "Underweight": "비중축소", "Sell": "매도"}
+RATING_KO = {"Buy": "매수", "Overweight": "비중확대", "Hold": "보류", "Underweight": "비중축소", "Sell": "매도"}
 
 STAGES = [
     ("analysts", "분석팀 보고서"), ("check", "팩트체크·핵심 질문"), ("debate", "강세·약세 토론"),
@@ -36,7 +36,7 @@ class Role:
 
 # 모든 참석자 공통 규칙 (클로드 가이드의 근거 기반 답변 규칙 + 출력 형식을 회의용으로 옮김)
 RULES = """# 근거 규칙
-- 결론을 먼저 정하고 근거를 끼워 맞추지 않는다. 근거가 부족하면 '보유(Hold)' 또는 '관망'이 정답이다.
+- 결론을 먼저 정하고 근거를 끼워 맞추지 않는다. 근거가 부족하면 '보류(Hold: 새로 사지 않고 지켜봄)'가 정답이다.
 - 제공된 [회의 자료]의 숫자와, 웹 검색으로 직접 확인한 자료만 근거로 쓴다.
 - 확인할 수 없는 것은 "확인할 수 없습니다"라고 쓴다. 추측으로 빈칸을 채우지 않는다.
 - 웹에서 가져온 수치·발언·가이던스에는 [출처명, 날짜] 를 붙인다. 공시(DART·SEC 10-K/10-Q/8-K)와 회사 IR 자료를 우선한다.

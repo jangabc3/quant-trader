@@ -5,7 +5,7 @@
 
 const RES = { chartFor: null, chart: null, series: {} };
 const R_COLOR = { Buy: "#f04452", Overweight: "#f08a5e", Hold: "#8b98a5", Underweight: "#5a9bff", Sell: "#3182f6" };
-const R_KO = { Buy: "매수", Overweight: "비중확대", Hold: "보유", Underweight: "비중축소", Sell: "매도" };
+const R_KO = { Buy: "매수", Overweight: "비중확대", Hold: "보류", Underweight: "비중축소", Sell: "매도" };
 const SCORE_KO = { technical: "기술", fundamental: "재무", valuation: "밸류", earnings: "실적", news: "뉴스", flow: "수급" };
 const VOTE_COLOR = { 확대: "#f04452", 유지: "#8b98a5", 축소: "#5a9bff", 관망: "#c9a227" };
 

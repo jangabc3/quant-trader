@@ -87,7 +87,7 @@ DEFAULT = {
         "web_research": True,  # 뉴스·재무·여론 분석가가 웹 검색을 쓴다
         "run_before_minutes": 40,  # 실행 시각보다 이만큼 먼저 회의를 돌린다
         "max_symbols_per_day": 8,  # 비용 상한: 하루 회의 종목 수
-        # 최종 등급 -> 목표 비중 배수 (종목당 1/N 기준). Hold 는 보유 유지
+        # 최종 등급 -> 목표 비중 배수 (종목당 1/N 기준). Hold(보류)는 새로 사지 않고 가진 종목은 그대로
         "rating_weights": {"Buy": 1.0, "Overweight": 0.7, "Hold": None, "Underweight": 0.3, "Sell": 0.0},
         "min_confidence": 0.5,  # 이보다 확신이 낮으면 Hold 로 본다
         "monthly_cost_cap_krw": 30000,  # 이번 달 AI 회의 비용이 이만큼 넘으면 새 회의를 열지 않는다 (0 = 제한 없음)

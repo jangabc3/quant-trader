@@ -91,8 +91,8 @@ def build_context(cfg: dict | None = None, store: Store | None = None) -> Contex
 def ai_targets(store: Store, cfg: dict, panel_: dict, today: str, account: str = "", market: str = "KR",
                warnings_for=None, market_bars=None) -> tuple[dict, set, list]:
     """오늘 AI 회의 결정으로 목표 비중을 만든다.
-    - 결정이 없거나 Hold·확신 부족: 보유 유지(keep)
-    - 매수 계열인데 체크리스트(뇌동매매 방지 규칙)를 하나라도 못 넘으면: 신규 매수 없이 보유 유지
+    - 결정이 없거나 Hold(보류)·확신 부족: 새로 사지 않고, 가진 종목은 그대로(keep)
+    - 매수 계열인데 체크리스트(뇌동매매 방지 규칙)를 하나라도 못 넘으면: 신규 매수 없이 그대로
     - 매도 계열: 위험을 줄이는 쪽이라 그대로 반영"""
     from . import principles
     ai = cfg["ai"]
@@ -115,7 +115,7 @@ def ai_targets(store: Store, cfg: dict, panel_: dict, today: str, account: str =
                 "headline": f.get("headline", ""), "checklist": None}
         if not d or m is None or conf < ai.get("min_confidence", 0.5):
             keep.add(s)
-            note["action"] = "회의 결과 없음" if not d else ("보유 유지" if m is None else f"확신 부족 {conf:.0%}")
+            note["action"] = "회의 결과 없음" if not d else ("보류: 사지 않음 (가진 종목은 그대로)" if m is None else f"확신 부족 {conf:.0%}")
         elif rating in ("Buy", "Overweight"):
             check = d.get("check") if isinstance(d.get("check"), dict) else None
             warns = warnings_for(s) if warnings_for else []
