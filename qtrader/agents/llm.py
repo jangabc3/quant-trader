@@ -26,12 +26,17 @@ class Reply:
     cache_read: int = 0
     cache_write: int = 0
     model: str = ""
+    web_searches: int = 0
 
     def cost_usd(self) -> float:
-        return cost_usd(self.model, self.input_tokens, self.output_tokens, self.cache_read, self.cache_write)
+        return cost_usd(self.model, self.input_tokens, self.output_tokens, self.cache_read, self.cache_write) \
+            + self.web_searches * WEB_SEARCH_USD
 
 
-# 100만 토큰당 달러 (입력, 출력, 캐시 읽기, 캐시 쓰기). 웹 검색은 별도 과금
+# 웹 검색은 토큰과 별도로 1,000번에 10달러 (검색 결과로 들어온 글은 입력 토큰으로 따로 센다)
+WEB_SEARCH_USD = 10.0 / 1000
+
+# 100만 토큰당 달러 (입력, 출력, 캐시 읽기, 캐시 쓰기)
 PRICES = {"claude-opus-5-5": (4.0, 20.0, 0.20, 5.0), "claude-sonnet-5-5": (2.0, 10.0, 0.20, 2.5),
           "claude-haiku-5-5": (0.10, 0.50, 0.01, 0.125), "claude-fable-5-1": (10.0, 50.0, 0.25, 12.5)}
 
@@ -39,6 +44,16 @@ PRICES = {"claude-opus-5-5": (4.0, 20.0, 0.20, 5.0), "claude-sonnet-5-5": (2.0, 
 def cost_usd(model: str, inp: int, out: int, cr: int = 0, cw: int = 0) -> float:
     a, b, c, d = PRICES.get(model, PRICES["claude-opus-5-5"])
     return (inp * a + out * b + cr * c + cw * d) / 1e6
+
+
+def usage_cost(model: str, usage) -> float:
+    """응답 하나의 usage 로 비용 (토큰 + 웹 검색 횟수). usage 가 없으면 0."""
+    if usage is None:
+        return 0.0
+    n = lambda k: int(getattr(usage, k, 0) or 0)
+    web = int(getattr(getattr(usage, "server_tool_use", None), "web_search_requests", 0) or 0)
+    return cost_usd(model, n("input_tokens"), n("output_tokens"), n("cache_read_input_tokens"),
+                    n("cache_creation_input_tokens")) + web * WEB_SEARCH_USD
 
 
 def make_client() -> anthropic.Anthropic:
@@ -81,7 +96,7 @@ class LLM:
         sys_blocks = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
         messages: list[dict] = [{"role": "user", "content": content}]
         model = model or self.model
-        tokens_in = tokens_out = cr = cw = 0
+        tokens_in = tokens_out = cr = cw = searches = 0
         sources: list[dict] = []
         extra = {"tools": [WEB_SEARCH]} if web else {}
         for _ in range(5):  # 웹 검색이 길어지면 pause_turn 으로 끊겨 온다 -> 이어서 요청
@@ -101,6 +116,7 @@ class LLM:
             tokens_out += resp.usage.output_tokens
             cr += getattr(resp.usage, "cache_read_input_tokens", 0) or 0
             cw += getattr(resp.usage, "cache_creation_input_tokens", 0) or 0
+            searches += int(getattr(getattr(resp.usage, "server_tool_use", None), "web_search_requests", 0) or 0)
             sources += _sources(resp.content)
             if resp.stop_reason == "pause_turn":
                 messages.append({"role": "assistant", "content": resp.content})
@@ -114,5 +130,5 @@ class LLM:
                     data = json.loads(text)
                 except json.JSONDecodeError:
                     raise LLMError("구조화된 결과를 읽지 못했습니다")
-            return Reply(text, sources, data, tokens_in, tokens_out, cr, cw, model)
+            return Reply(text, sources, data, tokens_in, tokens_out, cr, cw, model, searches)
         raise LLMError("웹 검색이 너무 길어져 중단했습니다")

@@ -445,3 +445,22 @@ def test_compare_accounts_follow_same_meeting(isolated_home):
     assert short["stop"] == pytest.approx(short["entry"] * 0.975) and short["horizon"] == 3  # 단기 규칙으로 다시 잡힘
     rows = compare.summary(ctx, Market.KR)
     assert {r["mode"] for r in rows} == {"long", "short"} and all(r["positions"] == 1 for r in rows)
+
+
+def test_cost_counts_web_search_fee():
+    """웹 검색은 토큰과 별도로 1번에 0.01달러. 빠지면 월 비용 상한이 실제보다 적게 센다."""
+    from types import SimpleNamespace as NS
+    from qtrader.agents.llm import LLM, cost_usd, usage_cost
+
+    class Client:
+        def __init__(self):
+            self.beta = NS(messages=NS(create=lambda **kw: NS(
+                content=[NS(type="text", text="보고서")], stop_reason="end_turn",
+                usage=NS(input_tokens=1000, output_tokens=100, cache_read_input_tokens=0, cache_creation_input_tokens=0,
+                         server_tool_use=NS(web_search_requests=4)))))
+    r = LLM("claude-sonnet-5-5", client=Client()).run("s", "u", web=True)
+    tokens = cost_usd("claude-sonnet-5-5", 1000, 100)
+    assert r.web_searches == 4 and r.cost_usd() == pytest.approx(tokens + 0.04)
+    assert usage_cost("claude-sonnet-5-5", NS(input_tokens=1000, output_tokens=100, server_tool_use=NS(web_search_requests=2))) \
+        == pytest.approx(tokens + 0.02)
+    assert usage_cost("claude-sonnet-5-5", None) == 0
