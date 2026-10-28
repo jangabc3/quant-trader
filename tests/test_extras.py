@@ -90,7 +90,8 @@ def test_screener_picks_held_first_and_filters(isolated_home):
     write_demo_csv(isolated_home / "data", config.load())
     ctx = build_context()
     picks = screener.candidates(ctx, Market.KR, 3)
-    assert len(picks) <= 3 and all(not p["fails"] for p in picks if not p["held"])
+    # 후보는 필수 기준(200일선·변동성·거래대금)을 모두, 추가 기준(모멘텀·과열)은 허용 개수까지만 못 넘는다
+    assert len(picks) <= 3 and all(screener.passes(p["fails"], 2) for p in picks if not p["held"])
     first = screener.todays(ctx, Market.KR, "2026-10-27", 3)
     assert screener.todays(ctx, Market.KR, "2026-10-27", 3) == first  # 하루 한 번만 고른다
 

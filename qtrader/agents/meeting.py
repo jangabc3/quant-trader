@@ -305,7 +305,7 @@ class Meeting:
         # 숫자 규칙 체크리스트와 실행 계획
         mc = self.cfg["markets"][self.market.value]
         self.run["final"] = principles.adjust_for_holding(self.run["final"], self.cfg["ai"].get("holding", "long"))
-        cl = principles.checklist(self.run["final"], self.run["check"], bars, warnings, self.cfg["ai"].get("rules"),
+        cl = principles.checklist(self.run["final"], self.run["check"], bars, warnings, principles.rules_for(self.cfg),
                                   market_bars=principles.index_bars(self.data, self.market))
         self.run["checklist"] = cl
         self.run["plan"] = principles.trade_plan(self.run["final"], float(bars["close"].iloc[-1]), float(mc["budget"]),

@@ -40,6 +40,16 @@ CANDIDATES_SHOWN = 8
 # 하루 거래대금(최근 20일 평균)이 이보다 적으면 원하는 값에 사고팔기 어려워 뺀다 (국내 원, 미국 달러)
 MIN_TRADING_VALUE = {"KR": 3e8, "US": 2e6}
 
+# 후보 거르기도 매수 체크리스트처럼 필수 + 추가: 장기 추세(200일선)·변동성·거래대금은 필수,
+# 모멘텀·과열은 '추가'라 soft_miss_allowed 개까지 못 넘어도 후보로 둔다 (점수가 낮아 뒤에 선다).
+SOFT_FAILS = ("모멘텀", "과열")
+
+
+def passes(fails: list[str], allowed: int) -> bool:
+    soft = sum(f.startswith(SOFT_FAILS) for f in fails)
+    return soft == len(fails) and soft <= allowed
+
+
 # 후보를 어디서 데려왔는지 (화면의 '이유'에 붙는다)
 ORIGIN: dict[str, str] = {}
 
@@ -206,7 +216,8 @@ def candidates(ctx, market: Market, n: int, stats: dict | None = None) -> list[d
     """[{symbol, score, reason, held, fails, factors}] 좋은 순. 가진 종목이 먼저.
     stats 를 주면 규칙별로 몇 종목이 빠졌는지 채운다 (화면의 '왜 후보가 적나요?')."""
     from . import config as config_mod
-    R = principles.DEFAULT_RULES | (ctx.cfg["ai"].get("rules") or {})
+    R = principles.DEFAULT_RULES | principles.rules_for(ctx.cfg)
+    allowed = int(R.get("soft_miss_allowed", 1))
     st = new_stats()
     if stats is not None:
         stats.clear()
@@ -253,9 +264,10 @@ def candidates(ctx, market: Market, n: int, stats: dict | None = None) -> list[d
             fails.append("거래가 너무 적음")
         for k, hit in (("trend", "200일선"), ("momentum", "모멘텀"), ("rsi", "과열"), ("vol", "변동성"), ("illiquid", "거래가")):
             st[k] += any(x.startswith(hit) for x in fails)
-        if fails and s not in held:
+        ok = passes(fails, allowed)
+        if fails and s not in held and not ok:
             st["rules_out"] += 1
-        if s in held or not fails:
+        if s in held or ok:
             rows.append({"symbol": s, "held": s in held, "fails": fails, "f": f})
     rows = _basic_filter(ctx, market, rows, st)
     st["passed"] = sum(not r["held"] for r in rows)
@@ -287,7 +299,8 @@ def candidates(ctx, market: Market, n: int, stats: dict | None = None) -> list[d
             st["weak_finance"] += 1
         elif q.get("growth") is not None:
             notes.append(f"매출 {q['growth']:+.0%}")
-        reason = " · ".join([x for x in (ORIGIN.get(s, ""),) if x] + [f"모멘텀 {f['mom12_1']:+.0%}", f"52주 고가의 {f['near_high']:.0%}"] + notes)
+        soft = [x.split(" ")[0] + (" 약함" if x.startswith("모멘텀") else " 주의") for x in r["fails"] if x.startswith(SOFT_FAILS)]
+        reason = " · ".join([x for x in (ORIGIN.get(s, ""),) if x] + [f"모멘텀 {f['mom12_1']:+.0%}", f"52주 고가의 {f['near_high']:.0%}"] + notes + soft)
         out.append({"symbol": s, "score": round(r["score"], 3), "reason": reason, "held": r["held"], "fails": r["fails"],
                     "factors": {"mom": f["mom12_1"], "near_high": f["near_high"], "vol": f["vol"], "vol_ratio": f["vol_ratio"]}})
     out.sort(key=lambda x: (not x["held"], -x["score"]))
