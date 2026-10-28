@@ -299,3 +299,5 @@ table.refs td { white-space: normal; font-size: 13px; vertical-align: top; }
 .cl-kind.soft { color: #c9b6ff; background: rgba(170,120,255,.14); }
 .chipst.warn { color: #f3c47a; background: rgba(233,162,59,.14); }
 .cl-how { margin: -4px 0 8px; }
+.track-top em { display: block; font-size: 10.5px; font-style: normal; margin-top: 2px; }
+#track tr.tr-hold td { opacity: .7; }

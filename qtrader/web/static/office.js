@@ -406,24 +406,24 @@ async function loadTrack() {
     const t = await api("/api/ai/track");
     const s = t.summary;
     const hr = s.hit_rate == null ? "-" : Math.round(s.hit_rate * 100) + "%";
-    el.innerHTML = `<h3>AI 판단 기록 <small>모든 결정과 그 뒤 실제 가격을 그대로 보여줍니다</small></h3>
+    el.innerHTML = `<h3>AI 판단 채점표 <small>AI 말이 맞았는지 나중에 확인하려고, 회의한 날 가격과 지금 가격을 비교해요</small></h3>
       <div class="track-top">
-        <div><span class="k">회의 결정</span><b>${s.decisions}건</b></div>
-        <div><span class="k">판정 가능</span><b>${s.judged}건</b></div>
-        <div><span class="k">방향 적중률</span><b>${hr}</b></div>
-        <div><span class="k">매수 의견 평균 수익</span><b class="${cls(s.avg_return_bullish)}">${pct(s.avg_return_bullish)}</b></div>
+        <div><span class="k">지금까지 회의</span><b>${s.decisions}번</b></div>
+        <div><span class="k">채점한 회의</span><b>${s.judged}번</b><em class="note">매수·매도 의견만, 하루 지난 뒤</em></div>
+        <div><span class="k">맞힌 비율</span><b>${hr}</b></div>
+        <div><span class="k">'사라' 했던 종목 평균</span><b class="${cls(s.avg_return_bullish)}">${pct(s.avg_return_bullish)}</b></div>
       </div>
-      <table><thead><tr><th>날짜</th><th>종목</th><th>의견</th><th class="r">당시가</th><th class="r">현재가</th><th class="r">수익률</th><th>결과</th></tr></thead><tbody>
-      ${t.rows.slice(0, 8).map((x) => `<tr><td>${esc(x.date)}</td><td>${esc(x.name)}</td>
+      <table><thead><tr><th>회의한 날</th><th>종목</th><th>AI 의견</th><th class="r">그날 가격</th><th class="r">지금 가격</th><th class="r">그 뒤 변화</th><th>채점</th></tr></thead><tbody>
+      ${t.rows.slice(0, 8).map((x) => `<tr class="${x.correct == null ? "tr-hold" : ""}"><td>${esc(x.date)}</td><td>${esc(x.name)}</td>
         <td style="color:${RATING_COLOR[x.rating]}">${RATING_KO[x.rating]}</td><td class="r">${money(x.price, x.market)}</td>
-        <td class="r">${money(x.last, x.market)}</td><td class="r ${cls(x.return)}">${pct(x.return)}</td>
-        <td>${x.correct == null ? "<span class='note'>보류 의견</span>" : x.days === 0 ? "<span class='note'>대기</span>" : x.correct ? "<b class='up'>적중</b>" : "<b class='down'>빗나감</b>"}${x.hit_take ? " · 익절가 도달" : ""}${x.hit_stop ? " · 손절가 도달" : ""}</td></tr>`).join("")
+        <td class="r">${money(x.last, x.market)}</td><td class="r ${x.correct == null ? "note" : cls(x.return)}">${pct(x.return)}</td>
+        <td>${x.correct == null ? "<span class='note'>보류라 채점 안 함</span>" : x.days === 0 ? "<span class='note'>내일부터 채점</span>" : x.correct ? "<b class='up'>맞힘</b>" : "<b class='down'>빗나감</b>"}${x.hit_take ? " · 익절가 도달" : ""}${x.hit_stop ? " · 손절가 도달" : ""}</td></tr>`).join("")
         || `<tr><td colspan="7"><div class="empty"><i data-lucide="clipboard-list"></i><p>아직 회의 기록이 없어요</p>
           <span class="note">AI 회의를 하면 결론(매수·보류·매도)과 그때 가격이 여기 남고, 며칠 뒤 실제 가격과 비교해 <b>맞았는지 틀렸는지</b>를 자동으로 채점합니다.
-          기록이 쌓이면 '방향 적중률'로 AI 판단을 얼마나 믿어도 되는지 알 수 있어요.</span></div></td></tr>`}</tbody></table>
+          기록이 쌓이면 '맞힌 비율'로 AI 판단을 얼마나 믿어도 되는지 알 수 있어요. 보류(사지 않음)는 채점하지 않아요.</span></div></td></tr>`}</tbody></table>
       <p class="note">시연 회의는 기록에 남지 않습니다. 어떤 분석도 승률 100%를 보장할 수 없습니다. 결정을 숨김없이 쌓아 어떤 경우에 AI 판단이 믿을 만한지 직접 확인하세요.</p>`;
     icons();
-  } catch (e) { el.innerHTML = `<h3>AI 판단 기록</h3><p class="note">${esc(e.message)}</p>`; }
+  } catch (e) { el.innerHTML = `<h3>AI 판단 채점표</h3><p class="note">${esc(e.message)}</p>`; }
 }
 
 window.startMeeting = async (symbol) => {
