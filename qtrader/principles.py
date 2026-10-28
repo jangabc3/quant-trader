@@ -241,9 +241,13 @@ def checklist(final: dict | None, check: dict | None, bars: pd.DataFrame, warnin
     fc = (check or {}).get("fact_checks") or []
     ok = sum(1 for x in fc if x.get("status") == "확인됨")
     wrong = sum(1 for x in fc if x.get("status") == "틀림")
-    ratio = ok / len(fc) if fc else 0
+    unsure = sum(1 for x in fc if x.get("status") == "확인 불가")
+    # '확인 불가'(전망·아직 공시 전 등)는 틀린 게 아니라 확인을 못 한 것: 반만 센다. 틀린 주장은 하나라도 있으면 통과 못 함.
+    # (예전엔 확인 불가를 실패로 세서 확인 5·확인 불가 4 = 56% 로 거의 다 걸렸다)
+    ratio = (ok + 0.5 * unsure) / len(fc) if fc else 0
     out.append(Rule("facts", "팩트체크 통과 (틀린 주장 없음)", bool(fc) and ratio >= R["min_fact_ok"] and wrong == 0,
-                    f"확인 {ok}/{len(fc)}, 틀림 {wrong}", f"확인 {R['min_fact_ok']:.0%} 이상, 틀림 0", "hlz"))
+                    f"확인 {ok} · 확인 불가 {unsure} · 틀림 {wrong} (점수 {ratio:.0%})",
+                    f"점수 {R['min_fact_ok']:.0%} 이상(확인 불가는 반만), 틀림 0", "hlz"))
     bad = [w.get("warningType") for w in (warnings or []) if not w.get("endDate")
            or str(w.get("endDate")) >= pd.Timestamp.today().strftime("%Y-%m-%d")]
     out.append(Rule("warnings", "투자 유의·과열 지정 없음", not bad, ", ".join(bad) or "없음", "없음", "odean"))
