@@ -54,7 +54,7 @@ async function renderIndices() {
   box.style.gridTemplateColumns = `repeat(${mkt.group === "KR" ? 2 : 3}, minmax(0, 1fr))`;
   if (mkt.group === "KR") {
     box.innerHTML = ov.indices.map((i) => idxCard(i.symbol, i.name, "", i.price, i.change, i.change_rate,
-      i.flows?.unit ? flowCell("개인", i.flows.individual) + flowCell("외국인", i.flows.foreigner) + flowCell("기관", i.flows.institution) : "", i.symbol)).join("");
+      i.flows?.unit ? flowCell("개인", i.flows.individual) + flowCell("외국인", i.flows.foreigner) + flowCell("기관", i.flows.institution) : "", "")).join("");  // 지수는 사고팔 수 없어 종목 화면을 열지 않는다
     ov.indices.forEach((i) => sparkChart($("#spark-" + i.symbol), i.spark || [], i.change >= 0));
   } else {
     if ((ov.us_index || []).length) { // 실제 지수 (야후 파이낸스 공개 차트)
