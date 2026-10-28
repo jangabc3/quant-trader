@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .. import __version__, backtest, extras, pinlock, config as config_mod, fundamentals, market as market_mod, news as news_mod, principles, profile as profile_mod, stockdata, strategies, vault
+from .. import __version__, backtest, extras, config as config_mod, fundamentals, market as market_mod, news as news_mod, principles, profile as profile_mod, stockdata, strategies, vault
 from ..agents import meeting
 from ..agents.assistant import Assistant
 from ..agents.llm import LLMError
@@ -118,11 +118,6 @@ class TestIn(BaseModel):
     kind: str
 
 
-class PinIn(BaseModel):
-    new: str
-    old: str = ""
-
-
 class AlertIn(BaseModel):
     symbol: str
     name: str = ""
@@ -177,15 +172,6 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
     def need_token(x_qtrader_token: str = Header("")):
         if not secrets.compare_digest(x_qtrader_token, token):
             raise HTTPException(403, "토큰이 올바르지 않습니다. 페이지를 새로고침하세요")
-
-    def live_pin(pin: str, force: bool = False) -> None:
-        """실전 주문 전에 PIN 확인. 428 이면 화면이 PIN 을 묻고 다시 보낸다. 설정에서 PIN 을 끄면 묻지 않는다."""
-        if not force and not (config_mod.load().get("security") or {}).get("pin", True):
-            return
-        try:
-            pinlock.verify(config_mod.home(), pin)
-        except pinlock.PinError as e:
-            raise HTTPException(428 if e.code in ("need_pin", "wrong") else 423, f"PIN:{e.code}:{e}")
 
     _names: dict = {"t": 0.0, "map": {}}
 
@@ -528,11 +514,10 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         return {"items": guard(lambda: c.broker.client.orders("OPEN"))}
 
     @app.post("/api/account/orders/{order_id}/cancel", dependencies=[Depends(need_token)])
-    def cancel_order(order_id: str, x_qtrader_pin: str = Header("")):
+    def cancel_order(order_id: str):
         c = ctx()
         if c.broker.name != "toss":
             raise HTTPException(400, "토스증권 실전 모드에서만 취소할 수 있습니다")
-        live_pin(x_qtrader_pin)
         r = guard(lambda: c.broker.client.cancel(order_id))
         c.store.log("warn", "web", f"주문 취소 요청 {order_id}")
         return r
@@ -668,7 +653,7 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
                 "kill_switch": c.kill}
 
     @app.post("/api/order", dependencies=[Depends(need_token)])
-    def place_order(body: OrderIn, x_qtrader_pin: str = Header("")):
+    def place_order(body: OrderIn):
         from ..engine import trade_date
         from ..models import OrderRequest, Side
         c = ctx()
@@ -687,8 +672,6 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             raise HTTPException(400, f"1회 주문 한도({limit:,.0f}{'원' if m == Market.KR else '$'})를 넘습니다. 설정 → 고급 → 주문 한도에서 바꿀 수 있어요")
         if body.side == "buy" and (body.stop or body.take) and not (0 < body.stop < ref < body.take):
             raise HTTPException(400, "손절가는 지금 가격보다 낮게, 익절가는 높게 정해 주세요")
-        if c.broker.live:
-            live_pin(x_qtrader_pin)
         if body.side == "sell":  # 토스 서버 손절·익절이 걸려 있으면 먼저 풀어서 두 번 팔리지 않게
             from ..guard import release
             release(c, m, sym)
@@ -787,11 +770,10 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
 
     # 주문 정정 (토스)
     @app.post("/api/account/orders/{order_id}/modify", dependencies=[Depends(need_token)])
-    def modify_order(order_id: str, body: ModifyIn, x_qtrader_pin: str = Header("")):
+    def modify_order(order_id: str, body: ModifyIn):
         c = ctx()
         if c.broker.name != "toss":
             raise HTTPException(400, "주문 정정은 토스증권 실전 모드에서 됩니다 (가상매매는 바로 체결돼요)")
-        live_pin(x_qtrader_pin)
         m = _market_of(body.symbol.upper()) if body.symbol else Market.KR
         if m == Market.KR and body.qty <= 0:
             raise HTTPException(400, "국내 주식은 정정할 수량을 넣어야 해요")
@@ -807,11 +789,9 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         return [r | {"name": name_of(r["symbol"])} for r in reversed(conditional.listing(c))]
 
     @app.post("/api/conditional", dependencies=[Depends(need_token)])
-    def cond_create(body: CondIn, x_qtrader_pin: str = Header("")):
+    def cond_create(body: CondIn):
         from .. import conditional
         c = ctx()
-        if c.broker.live:
-            live_pin(x_qtrader_pin)
         try:
             return guard(lambda: conditional.create(c, body.symbol, body.side, body.qty, body.trigger, body.price, body.days, body.note,
                                                     body.then_stop))
@@ -819,11 +799,9 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             raise HTTPException(400, str(e))
 
     @app.post("/api/conditional/{cid}/modify", dependencies=[Depends(need_token)])
-    def cond_modify(cid: str, body: CondEdit, x_qtrader_pin: str = Header("")):
+    def cond_modify(cid: str, body: CondEdit):
         from .. import conditional
         c = ctx()
-        if c.broker.live:
-            live_pin(x_qtrader_pin)
         try:
             return guard(lambda: conditional.modify(c, cid, body.trigger, body.price, body.qty))
         except ValueError as e:
@@ -836,7 +814,7 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         return {"ok": True}
 
     @app.post("/api/order/split", dependencies=[Depends(need_token)])
-    def order_split(body: SplitIn, x_qtrader_pin: str = Header("")):
+    def order_split(body: SplitIn):
         """첫 번째는 바로 주문, 나머지는 가격이 step% 씩 움직일 때 나가는 조건 주문으로."""
         from .. import conditional
         c = ctx()
@@ -847,9 +825,7 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             raise HTTPException(400, f"{n}번에 나누려면 최소 {n}주가 필요해요")
         ref = body.price or float(c.data.price(m, sym))
         each = [body.qty // n + (1 if i < body.qty % n else 0) for i in range(n)]
-        if c.broker.live:
-            live_pin(x_qtrader_pin)
-        first = place_order(OrderIn(symbol=sym, side=body.side, qty=each[0], price=body.price), x_qtrader_pin)
+        first = place_order(OrderIn(symbol=sym, side=body.side, qty=each[0], price=body.price))
         sign = -1 if body.side == "buy" else 1
         conds = []
         for i in range(1, n):
@@ -1054,25 +1030,6 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
                         "summary": (fin.get("summary") or fin.get("thesis") or "")[:200], "cost_usd": rep.get("cost_usd")})
         return out
 
-    # 실전 주문 PIN
-    @app.get("/api/pin")
-    def pin_state():
-        return {"set": pinlock.is_set(config_mod.home()), "enabled": (config_mod.load().get("security") or {}).get("pin", True)}
-
-    @app.post("/api/pin", dependencies=[Depends(need_token)])
-    def pin_set(body: PinIn):
-        try:
-            pinlock.set_pin(config_mod.home(), body.new.strip(), body.old.strip())
-        except pinlock.PinError as e:
-            raise HTTPException(400, str(e))
-        Store(config_mod.home() / "qtrader.db").log("info", "pin", "실전 주문 PIN 을 정했습니다")
-        return {"set": True}
-
-    @app.post("/api/pin/lock", dependencies=[Depends(need_token)])
-    def pin_lock():
-        pinlock.lock_now()
-        return {"ok": True}
-
     # 시스템: 윈도우 시작 시 실행
     @app.get("/api/system")
     def system_info():
@@ -1185,10 +1142,8 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         return ctx().store.approvals(status, 100)
 
     @app.post("/api/approvals/{aid}", dependencies=[Depends(need_token)])
-    def decide(aid: int, body: DecideIn, x_qtrader_pin: str = Header("")):
+    def decide(aid: int, body: DecideIn):
         c = ctx()
-        if body.approve and c.broker.live:
-            live_pin(x_qtrader_pin)
         if not body.approve:
             c.store.decide_approval(aid, "rejected", "사용자 거절")
             c.store.log("info", "approval", f"승인 #{aid} 거절")
@@ -1253,10 +1208,8 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         return out
 
     @app.post("/api/run-once", dependencies=[Depends(need_token)])
-    def run_once(body: RunIn, x_qtrader_pin: str = Header("")):
+    def run_once(body: RunIn):
         c = ctx()
-        if c.broker.live and not body.dry_run:
-            live_pin(x_qtrader_pin)
         if c.broker.live and not body.dry_run:
             c.store.log("warn", "web", "실전 계좌 즉시 실행 요청")
         return run_market(c, Market(body.market), dry_run=body.dry_run, force=True)
@@ -1273,10 +1226,8 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         return {"kill_switch": body.on}
 
     @app.post("/api/auto", dependencies=[Depends(need_token)])
-    def auto(body: ToggleIn, x_qtrader_pin: str = Header("")):
+    def auto(body: ToggleIn):
         c = ctx()
-        if body.on and c.broker.live:
-            live_pin(x_qtrader_pin)
         if body.on and not (c.cfg.get("investor") or {}).get("type"):
             raise HTTPException(400, "투자 성향 검사를 먼저 해 주세요. 결과에 맞춰 비중·손실 한도·매수 조건이 정해집니다")
         c.store.set("auto_trading", "1" if body.on else "0")
@@ -1288,16 +1239,8 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         return config_mod.load()
 
     @app.put("/api/config", dependencies=[Depends(need_token)])
-    def put_config(cfg: dict, x_qtrader_pin: str = Header("")):
+    def put_config(cfg: dict):
         merged = config_mod._merge(config_mod.DEFAULT, cfg)
-        before = config_mod.load()
-        # PIN 을 끄는 것도 PIN 이 있어야 한다 (남이 꺼 버리지 못하게)
-        if (before.get("security") or {}).get("pin", True) and not (merged.get("security") or {}).get("pin", True) \
-                and pinlock.is_set(config_mod.home()):
-            live_pin(x_qtrader_pin, force=True)
-        if merged["mode"] in config_mod.LIVE_MODES and merged.get("live_confirmed") and (
-                before["mode"] != merged["mode"] or not before.get("live_confirmed")):
-            live_pin(x_qtrader_pin)
         errs = config_mod.validate(merged)
         for m, mc in merged["markets"].items():
             if mc["strategy"] != "ai" and mc["strategy"] not in strategies.REGISTRY:

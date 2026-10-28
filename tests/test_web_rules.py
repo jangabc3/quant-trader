@@ -1,39 +1,11 @@
-"""실전 주문 PIN, 시장 국면 규칙, 투자 성향 검사 전 자동매매 막기."""
+"""실전 전환, 시장 국면 규칙, 투자 성향 검사 전 자동매매 막기, 직접·조건·분할 주문."""
 import numpy as np
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from qtrader import pinlock, principles
+from qtrader import principles
 from qtrader.web.app import create_app
-
-
-@pytest.fixture(autouse=True)
-def fresh():
-    pinlock.reset_state()
-    yield
-    pinlock.reset_state()
-
-
-def test_pin_format_and_lockout(tmp_path):
-    with pytest.raises(pinlock.PinError, match="4~8"):
-        pinlock.set_pin(tmp_path, "12")
-    with pytest.raises(pinlock.PinError, match="연속"):
-        pinlock.set_pin(tmp_path, "1234")
-    pinlock.set_pin(tmp_path, "482916")
-    assert "482916" not in (tmp_path / "pin.json").read_text()
-    pinlock.verify(tmp_path, "482916")
-    pinlock.verify(tmp_path, "")  # 5분 안에는 다시 묻지 않음
-    pinlock.lock_now()
-    for _ in range(4):
-        with pytest.raises(pinlock.PinError, match="틀렸"):
-            pinlock.verify(tmp_path, "000111")
-    with pytest.raises(pinlock.PinError, match="잠겼"):
-        pinlock.verify(tmp_path, "000111")
-    with pytest.raises(pinlock.PinError, match="잠겼"):
-        pinlock.verify(tmp_path, "482916")
-    with pytest.raises(pinlock.PinError):  # 바꿀 때는 지금 PIN 필요
-        pinlock.set_pin(tmp_path, "735102", "000000")
 
 
 @pytest.fixture
@@ -44,17 +16,14 @@ def client(isolated_home):
     return c
 
 
-def test_live_mode_needs_pin(client):
+def test_live_mode_switch_has_no_pin(client):
+    """PIN 은 없앴다. 실전 전환 확인은 화면의 '손실 책임' 체크 + '실전' 직접 입력으로 한다."""
     cfg = client.get("/api/config").json()
     cfg["mode"], cfg["live_confirmed"] = "toss_real", True
-    r = client.put("/api/config", json=cfg, headers=client.h)
-    assert r.status_code == 423 and "PIN 을 먼저" in r.json()["detail"]
-    assert client.post("/api/pin", json={"new": "482916"}, headers=client.h).json()["set"]
-    pinlock.lock_now()
-    assert client.put("/api/config", json=cfg, headers=client.h).status_code == 428
-    assert client.put("/api/config", json=cfg, headers=client.h | {"x-qtrader-pin": "999888"}).status_code == 428
-    ok = client.put("/api/config", json=cfg, headers=client.h | {"x-qtrader-pin": "482916"})
+    ok = client.put("/api/config", json=cfg, headers=client.h)
     assert ok.status_code == 200 and ok.json()["mode"] == "toss_real"
+    assert client.put("/api/config", json=cfg).status_code == 403  # 화면 토큰 없이는 못 바꾼다
+    assert all(not getattr(r, "path", "").startswith("/api/pin") for r in client.app.routes)
 
 
 def test_auto_needs_profile(client):
@@ -93,20 +62,6 @@ def test_manual_order_paper(client, isolated_home):
     big = client.post("/api/order", json={"symbol": "005930", "side": "buy", "qty": 10**6}, headers=client.h)
     assert big.status_code == 400 and "한도" in big.json()["detail"]
     assert client.get("/api/trades/why").json()[0]["summary"] == "직접 주문"
-
-
-def test_pin_switch_off_needs_pin_then_skips(client):
-    assert client.post("/api/pin", json={"new": "482916"}, headers=client.h).json()["set"]
-    pinlock.lock_now()
-    cfg = client.get("/api/config").json()
-    cfg["security"] = {"pin": False}
-    assert client.put("/api/config", json=cfg, headers=client.h).status_code == 428  # 끄려면 PIN 필요
-    assert client.put("/api/config", json=cfg, headers=client.h | {"x-qtrader-pin": "482916"}).status_code == 200
-    pinlock.lock_now()
-    cfg = client.get("/api/config").json()
-    cfg["mode"], cfg["live_confirmed"] = "toss_real", True
-    assert client.put("/api/config", json=cfg, headers=client.h).status_code == 200  # 꺼져 있으면 묻지 않는다
-    assert client.get("/api/pin").json()["enabled"] is False
 
 
 def test_plan_endpoint_and_manual_buy_with_stop(client, isolated_home):
