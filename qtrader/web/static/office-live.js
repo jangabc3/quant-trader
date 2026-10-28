@@ -143,7 +143,7 @@ async function liveFetch() {
     lv.data = d;
     // 정기 회의가 열리면 그 회의를 보여 준다
     const running = runs.find((r) => r.status === "running");
-    if (running) { liveOff(); window.showRunById(running.id); toast((d.intraday?.items || []).some((x) => x.run_id === running.id) ? "장중 AI 회의가 시작돼 회의 화면으로 바꿨어요" : "정기 AI 회의가 시작돼 회의 화면으로 바꿨어요", "users"); return; }
+    if (running) { liveOff(); office.backToLive = true; window.showRunById(running.id); toast((d.intraday?.items || []).some((x) => x.run_id === running.id) ? "장중 AI 회의가 시작돼 회의 화면으로 바꿨어요" : "정기 AI 회의가 시작돼 회의 화면으로 바꿨어요", "users"); return; }
     if (office.run && office.run.id !== "live") return liveOff();
     office.run = liveRun(d);
     liveHud(d); updateOverlay(); renderBoard(d);

@@ -374,8 +374,20 @@ async function showRun(id) {
     window.renderResult && window.renderResult(r);
     clearTimeout(office.poll);
     if (r.status === "running") office.poll = setTimeout(() => showRun(id), 1500);
-    else { loadRuns(); loadTrack(); }
-  } catch (e) { $("#meet-stage").textContent = e.message; }
+    else {
+      loadRuns(); loadTrack();
+      // 실시간 화면에서 넘어온 회의면, 결과를 잠깐 보여 준 뒤 실시간 화면으로 돌아간다 (끝난 회의에 멈춰 있지 않게)
+      if (office.backToLive) {
+        office.backToLive = false;
+        office.poll = setTimeout(() => { if (state.tab === "office" && office.run?.id === r.id && window.liveOn) { window.liveOn(); toast("회의가 끝나 실시간 화면으로 돌아왔어요", "radar"); } }, 20000);
+      }
+    }
+  } catch (e) {
+    // 서버가 잠깐 바쁘거나 응답이 늦어도 멈추지 않고 다시 묻는다
+    $("#meet-stage").textContent = "회의 상황을 다시 불러오는 중... (" + e.message + ")";
+    clearTimeout(office.poll);
+    if (!office.run || (office.run.id === id && office.run.status === "running")) office.poll = setTimeout(() => showRun(id), 4000);
+  }
 }
 
 async function loadRuns() {

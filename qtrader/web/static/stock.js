@@ -124,9 +124,12 @@ async function loadOrderbook() {
     const max = Math.max(...all.map((x) => x.volume), 1);
     const askSum = ob.asks.reduce((s, x) => s + x.volume, 0), bidSum = ob.bids.reduce((s, x) => s + x.volume, 0);
     const prev = st.sum?.prev_close;
+    // 현재가 표시는 한 줄에만 (매도·매수 양쪽에 같은 가격이 있어도 두 번 그리지 않는다)
+    let curDone = false;
+    const isCur = (x) => !curDone && Math.abs(x.price - st.last) < 1e-9 && (curDone = true);
     const row = (x, side) => {
       const r = prev ? x.price / prev - 1 : 0;
-      return `<div data-px="${x.price}" title="이 가격으로 주문" class="ob-row ${side}${Math.abs(x.price - st.last) < 1e-9 ? " cur" : ""}">
+      return `<div data-px="${x.price}" title="이 가격으로 주문" class="ob-row ${side}${isCur(x) ? " cur" : ""}">
         <span class="ob-vol ${side === "ask" ? "" : "hide"}"><i style="width:${x.volume / max * 100}%"></i>${side === "ask" ? Number(x.volume).toLocaleString() : ""}</span>
         <span class="ob-px ${cls(r)}">${pxFmt(x.price)}<small>${pct(r)}</small></span>
         <span class="ob-vol right ${side === "bid" ? "" : "hide"}"><i style="width:${x.volume / max * 100}%"></i>${side === "bid" ? Number(x.volume).toLocaleString() : ""}</span></div>`;
