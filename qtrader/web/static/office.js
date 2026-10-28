@@ -427,10 +427,15 @@ async function loadTrack() {
 }
 
 window.startMeeting = async (symbol) => {
-  symbol = (symbol || $("#meet-symbol").value).trim();
-  if (!symbol) { $("#meet-symbol").focus(); return; }
-  $("#meet-symbol").value = symbol;
-  if (!(await ask(`${symbol} AI 투자 회의를 시작합니다. 참석자 14명이 Claude 를 약 14번 호출합니다(몇 분 걸리고 API 비용이 듭니다). 계속할까요?`))) return;
+  const inp = $("#meet-symbol");
+  const typed = inp.value.trim();
+  // 검색에서 고른 종목이면 그 코드로, 아니면 쓴 그대로 (서버가 이름을 코드로 바꿔 준다)
+  symbol = (symbol || (inp.dataset.symbol && typed === inp.dataset.name ? inp.dataset.symbol : typed)).trim();
+  if (!symbol) { inp.focus(); return; }
+  const label = typed && symbol === inp.dataset.symbol ? `${typed}(${symbol})` : symbol;
+  if (!typed) inp.value = symbol;
+  const precise = state.config?.ai?.mode === "precise";
+  if (!(await ask(`${label} AI 투자 회의를 시작합니다. ${precise ? "정밀 회의라 Claude 를 약 14번" : "빠른 회의라 Claude 를 약 7번"} 호출합니다 (몇 분 걸리고 API 비용이 들어요). 계속할까요?`))) return;
   try {
     const r = await api("/api/ai/meeting", { method: "POST", body: { symbol } });
     office.selected = "chart";
@@ -440,7 +445,19 @@ window.startMeeting = async (symbol) => {
   } catch (e) { toast(e.message); }
 };
 $("#meet-start").onclick = () => window.startMeeting();
-$("#meet-symbol").addEventListener("keydown", (e) => { if (e.key === "Enter") window.startMeeting(); });
+// 회의 입력칸에도 종목 검색: 'SK하이닉'처럼 써도 고르면 종목 코드로 회의한다
+(() => {
+  const inp = $("#meet-symbol");
+  const wrap = document.createElement("div");
+  wrap.className = "srch-wrap";
+  inp.parentNode.insertBefore(wrap, inp);
+  wrap.appendChild(inp);
+  const list = document.createElement("div");
+  list.className = "gsearch-list hidden";
+  wrap.appendChild(list);
+  window.attachSearch(inp, list, (r) => { inp.value = r.name; inp.dataset.symbol = r.symbol; inp.dataset.name = r.name; });
+  inp.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.defaultPrevented && !e.isComposing) window.startMeeting(); });
+})();
 $("#meet-runs").onchange = () => { if ($("#meet-runs").value) { office.run = null; showRun($("#meet-runs").value); } };
 $("#office-overlay").addEventListener("click", (e) => {
   const a = e.target.closest(".agent");
