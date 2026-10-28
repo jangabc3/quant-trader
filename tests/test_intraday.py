@@ -182,3 +182,16 @@ def test_toss_us_intraday_buy_is_not_loc():
     assert c.loc is True  # 정기 실행은 그대로 LOC
     b.order(req, loc=False)
     assert c.loc is False  # 장중 매수는 바로 지정가
+
+def test_old_config_moves_to_all_sessions_once(isolated_home):
+    """예전에 저장한 설정(시간외 꺼짐)은 한 번 모든 세션으로 바뀌고, 그 뒤 사용자가 끄면 그대로 둔다."""
+    old = json.loads(json.dumps(config.DEFAULT))
+    old.pop("migrated")
+    old["markets"]["KR"]["extended"] = False
+    old["markets"]["US"]["extended_sessions"] = []
+    config.path().write_text(json.dumps(old), encoding="utf-8")
+    cfg = config.load()
+    assert cfg["markets"]["KR"]["extended"] and cfg["markets"]["US"]["extended_sessions"] == ["day", "pre", "after"]
+    cfg["markets"]["KR"]["extended"] = False  # 사용자가 넥스트레이드를 끄고 저장
+    config.save(cfg)
+    assert config.load()["markets"]["KR"]["extended"] is False

@@ -16,6 +16,7 @@ DATA_SOURCES = ("auto", "toss", "kis", "csv")
 
 DEFAULT = {
     "mode": "paper",
+    "migrated": ["all_sessions"],  # 이미 적용한 기본값 바꾸기 (migrate)
     # 실전 주문은 mode=kis_real 이면서 이 값이 true 일 때만 나간다
     "live_confirmed": False,
     "markets": {
@@ -26,8 +27,8 @@ DEFAULT = {
             # 예시 종목: 삼성전자, SK하이닉스, NAVER, 현대차, LG에너지솔루션, 카카오, 셀트리온, KB금융
             "universe": ["005930", "000660", "035420", "005380", "373220", "035720", "068270", "105560"],
             "run_time": "15:10",  # KST. 장 마감(15:30) 전
-            # 넥스트레이드(NXT) 시간외 08:00~20:00 에도 손절·익절 감시·주문 (토스 Open API 지원 여부를 먼저 확인하세요)
-            "extended": False,
+            # 넥스트레이드(NXT) 08:00~20:00 에도 감시·사고팔기 (지정가만). 정규장(09:00~15:30)만 하려면 끈다
+            "extended": True,
             "budget": 10_000_000,  # 이 전략이 쓸 최대 금액(원)
         },
         "US": {
@@ -41,8 +42,8 @@ DEFAULT = {
             "limit_offset": 0.003,  # 미국 지정가 주문을 현재가에서 얼마나 유리하게 걸지
             # 정기 실행: regular = 뉴욕 정규장 마감 전 (run_time 은 뉴욕 시각), day = 한국 낮 주간거래 (run_time 은 한국 시각)
             "run_session": "regular",
-            # 정규장 밖에서도 감시·주문할 세션: day(주간거래), pre(프리마켓), after(애프터마켓)
-            "extended_sessions": [],
+            # 정규장 밖에서도 감시·사고팔 세션: day(주간거래, 한국 낮), pre(프리마켓), after(애프터마켓). 모두 지정가만
+            "extended_sessions": ["day", "pre", "after"],
             "day_hours": "10:00-17:30",  # 주간거래 시간 (한국 시각). 토스 앱의 실제 시간에 맞게
         },
     },
@@ -169,7 +170,8 @@ def load() -> dict:
     if not p.exists():
         save(DEFAULT)
         return copy.deepcopy(DEFAULT)
-    cfg = _merge(DEFAULT, json.loads(p.read_text(encoding="utf-8")))
+    saved = json.loads(p.read_text(encoding="utf-8"))
+    cfg = migrate(_merge(DEFAULT, saved), saved)
     # 예전 기본 뉴스 피드(인베스팅닷컴 2개)만 저장돼 있으면 새 기본 목록으로 바꾼다
     old = {"https://kr.investing.com/rss/news_25.rss", "https://kr.investing.com/rss/news.rss"}
     feeds = cfg.get("news", {}).get("feeds") or []
@@ -179,6 +181,21 @@ def load() -> dict:
     if feeds and ({f.get("url") for f in feeds} <= old or legacy or any(("cnbc.com" in (f.get("url") or "")) or ("dowjones" in (f.get("url") or "")) or f.get("url") in english for f in feeds)
                   or not all("cat" in f for f in feeds)):
         cfg["news"]["feeds"] = copy.deepcopy(DEFAULT["news"]["feeds"])
+    return cfg
+
+
+# 한 번만 적용하는 기본값 바꾸기. 예전에 저장한 설정에는 옛 기본값이 그대로 들어 있어서, 새 기본값을 한 번 덮어쓴다
+# (적용한 뒤 사용자가 끄고 저장하면 그 선택을 따른다)
+MIGRATIONS = ("all_sessions",)
+
+
+def migrate(cfg: dict, saved: dict) -> dict:
+    """saved 는 파일에 저장돼 있던 그대로 (기본값과 합치기 전). 합친 뒤에는 새 기본값의 표시가 섞이기 때문."""
+    done = set(saved.get("migrated") or [])
+    if "all_sessions" not in done:  # 프리장·장중·애프터장 내내 사고팔기 (사용자 요청 2026-10)
+        cfg["markets"]["KR"]["extended"] = True
+        cfg["markets"]["US"]["extended_sessions"] = ["day", "pre", "after"]
+    cfg["migrated"] = sorted(done | set(MIGRATIONS))
     return cfg
 
 
