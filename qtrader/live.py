@@ -231,6 +231,92 @@ def run_rechecks(ctx, market: Market, llm=None) -> list[dict]:
     return out
 
 
+def today_plan(ctx, market: Market, name_of=lambda s: s) -> dict:
+    """AI 사무실 '오늘 AI 회의' 판: 자동으로 무엇을 하고 있는지 한눈에 (AI 호출 없음).
+    상태 한 줄(headline) + 오늘 회의 수 + 다음 회의 시각 + 후보마다 지금 단계."""
+    from datetime import timezone
+    from .agents import meeting
+    from .config import meetings_cap, met_today
+    from .engine import buy_blocked
+    from .extras import month_cost_krw
+    from .scheduler import session_name, trading_now
+    cfg, ai = ctx.cfg, ctx.cfg["ai"]
+    today = trade_date(market)
+    mc = cfg["markets"][market.value]
+    cap, met = meetings_cap(cfg, market), met_today(ctx.store, market, today)
+    auto = ctx.store.get("auto_trading", "0") == "1"
+    open_ = trading_now(cfg, market)
+    every = int(ai.get("intraday_every_min", 15))
+    state = json.loads(ctx.store.get(f"intraday_{market.value}_{today}") or "{}")
+    runs = {r["symbol"]: r for r in reversed(ctx.store.ai_runs(300)) if r["trade_date"] == today and r["market"] == market.value}
+    live = {r["symbol"]: r for r in meeting.live_runs() if r["status"] == "running"}
+    picks = json.loads(ctx.store.get(f"picks_{market.value}_{today}") or "[]")
+    last = ctx.store.get(f"intraday_last_{market.value}")
+    next_at = None
+    if last:
+        nx = datetime.fromisoformat(last) + timedelta(minutes=every)
+        next_at = max(nx, datetime.now(timezone.utc)).isoformat(timespec="minutes")
+    cap_krw = float(ai.get("monthly_cost_cap_krw") or 0)
+    try:
+        blocked = buy_blocked(ctx, market)
+    except Exception:
+        blocked = None
+    # 지금 상태 한 줄 (가장 먼저 걸리는 것 하나)
+    left = max(cap - len(met), 0)
+    if not mc.get("enabled"):
+        head, tone = "이 시장은 자동매매를 꺼 두었어요 (설정 → 3. 투자 방식).", "off"
+    elif cap == 0 or mc.get("strategy") != "ai":
+        head, tone = "이 시장은 AI 회의를 꺼 두었어요 (설정 → 3. 투자 방식). 손절·익절 매도는 계속해요.", "off"
+    elif not auto:
+        head, tone = "자동매매가 꺼져 있어요. 켜면 장이 열린 동안 아래 후보를 하나씩 AI 회의하고, 결론이 매수면 바로 사요.", "off"
+    elif ctx.kill:
+        head, tone = "긴급 정지 중이라 새로 사지 않아요. 손절·익절 매도는 계속해요.", "warn"
+    elif not open_:
+        head, tone = "지금은 장이 닫혀 있어요. 장이 열리면 아래 후보부터 차례로 회의해요.", "wait"
+    elif live:
+        r = next(iter(live.values()))
+        head, tone = f"지금 {name_of(r['symbol'])} AI 회의 중이에요 ({r.get('stage', '')}). 결론이 매수이고 기준을 통과하면 바로 사요.", "busy"
+    elif left == 0:
+        head, tone = f"오늘 회의 {cap}번을 다 썼어요. 내일 다시 회의해요. 가진 종목의 손절·익절 감시는 계속해요.", "done"
+    elif cap_krw and month_cost_krw(ctx.store) >= cap_krw:
+        head, tone = "이번 달 AI 비용 상한에 닿아 회의를 쉬어요 (설정 → 5. 알림·비용).", "warn"
+    elif blocked:
+        head, tone = f"오늘은 더 사지 않아 회의를 쉬어요: {blocked}. 손절·익절 감시는 계속해요.", "done"
+    else:
+        waiting = [p for p in picks if p["symbol"] not in met and p["symbol"] not in state and not p.get("held")]
+        if waiting:
+            head, tone = f"장이 열려 있어요. 다음 회의는 {name_of(waiting[0]['symbol'])} 예정이에요 ({every}분마다 한 종목씩).", "busy"
+        else:
+            head, tone = (f"오늘 기준을 통과한 후보를 모두 회의했어요. {every}분마다 새 후보를 찾고, 생기면 바로 회의해요.", "wait")
+    items = []
+    for p in picks:
+        s = p["symbol"]
+        e, r = state.get(s) or {}, runs.get(s)
+        rating = ((r or {}).get("final") or {}).get("rating") or (r or {}).get("rating")
+        if s in live:
+            st, note = "meeting", live[s].get("stage", "")
+        elif e.get("state") == "bought":
+            st, note = "bought", f"{e.get('qty', '')}주 샀어요"
+        elif e.get("state") == "approval":
+            st, note = "approval", "승인을 기다려요"
+        elif e.get("state") == "error" or (r and r.get("status") == "error"):
+            st, note = "error", (e.get("note") or (r or {}).get("error") or "")[:80]
+        elif rating == "Hold":
+            st, note = "hold", "보류: 지금은 사지 않아요"
+        elif rating in ("Buy", "Overweight"):
+            st, note = "nobuy", e.get("note") or "매수 의견이지만 기준에 걸려 사지 않았어요"
+        elif rating in ("Sell", "Underweight"):
+            st, note = "sell", "매도 의견이라 사지 않아요"
+        elif p.get("held"):
+            st, note = "held", "가진 종목 (손절·익절 감시 중)"
+        else:
+            st, note = "wait", "회의 대기"
+        items.append({"symbol": s, "name": name_of(s), "score": p.get("score"), "reason": p.get("reason", ""), "factors": p.get("factors"),
+                      "state": st, "note": note, "run_id": (r or {}).get("id") or e.get("run_id"), "held": p.get("held", False)})
+    return {"market": market.value, "auto": auto, "open": open_, "session": session_name(cfg, market), "cap": cap,
+            "used": len(met), "every": every, "next_at": next_at, "headline": head, "tone": tone, "items": items}
+
+
 def intraday_board(ctx, market: Market, name_of=lambda s: s) -> dict:
     """장중 회의 -> 매수 흐름: 오늘 장중에 연 회의와 그 결과 (scheduler._intraday 가 남긴 기록)."""
     from .agents import meeting
