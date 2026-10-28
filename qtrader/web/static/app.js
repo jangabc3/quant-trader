@@ -234,50 +234,87 @@ function openTab(name) {
 }
 $$("nav button").forEach((b) => b.addEventListener("click", () => openTab(b.dataset.tab)));
 
-// 전체 종목 검색 (위쪽 검색창)
-let searchTimer;
-$("#gsearch").addEventListener("input", () => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(async () => {
-    const q = $("#gsearch").value.trim();
-    const box = $("#gsearch-list");
-    if (!q) { box.classList.add("hidden"); return; }
+// 종목 검색 상자 (위쪽 검색창·AI 회의 입력칸이 함께 쓴다)
+// 띄어쓰기·대소문자·초성(ㅅㅅㅈㅈ)·줄임말(하닉)·영어 이름(apple)은 서버가 알아듣는다. 여기서는 고르기 편하게:
+// ↑↓ 로 고르고 Enter, 맞는 글자 강조, 국내·미국·ETF 표시, 비어 있으면 최근 본 종목
+const SEARCH_RECENT = "qtrader.recent";
+function recentStocks() { try { return JSON.parse(localStorage.getItem(SEARCH_RECENT) || "[]"); } catch { return []; } }
+function rememberStock(r) {
+  try { localStorage.setItem(SEARCH_RECENT, JSON.stringify([r, ...recentStocks().filter((x) => x.symbol !== r.symbol)].slice(0, 8))); } catch {}
+}
+function attachSearch(input, list, onPick) {
+  let timer, seq = 0, rows = [], active = -1;
+  const mark = (name, q) => {
+    const i = q ? name.toUpperCase().indexOf(q.toUpperCase().trim()) : -1;
+    return i < 0 ? esc(name) : esc(name.slice(0, i)) + "<mark>" + esc(name.slice(i, i + q.trim().length)) + "</mark>" + esc(name.slice(i + q.trim().length));
+  };
+  const badge = (r) => {
+    const kr = /^\d{6}$/.test(r.symbol) || ["KOSPI", "KOSDAQ"].includes(r.market);
+    return `<span class="gs-tag ${kr ? "kr" : "us"}">${kr ? "국내" : "미국"}</span>${/ETF/.test(r.type || "") ? `<span class="gs-tag etf">ETF</span>` : ""}`;
+  };
+  const draw = (title, q) => {
+    active = rows.length ? 0 : -1;
+    list.innerHTML = (title ? `<div class="gs-head">${title}</div>` : "") + (rows.map((r, i) => `<div class="gs-item ${i === active ? "on" : ""}" data-i="${i}">
+        ${logo(r.symbol, r.name, 26)}<div class="gs-txt"><b>${mark(r.name, q)}</b><span>${esc(r.symbol)}${r.market ? " · " + esc(r.market) : ""}</span></div>${badge(r)}</div>`).join("")
+      || `<div class="gs-item note">'${esc(q)}' 와 맞는 종목이 없어요. 이름 일부·종목 코드·영어 이름으로 찾아보세요</div>`);
+    list.classList.remove("hidden");
+  };
+  const move = (d) => {
+    if (!rows.length) return;
+    active = (active + d + rows.length) % rows.length;
+    list.querySelectorAll(".gs-item[data-i]").forEach((el) => el.classList.toggle("on", +el.dataset.i === active));
+    list.querySelector(".gs-item.on")?.scrollIntoView({ block: "nearest" });
+  };
+  const pick = (r) => { if (!r) return; rememberStock(r); list.classList.add("hidden"); onPick(r); input.dataset.picked = input.value.trim(); };
+  const find = async (q) => {
+    const my = ++seq;
     try {
-      const rows = await api("/api/stocks/search?q=" + encodeURIComponent(q));
-      box.innerHTML = rows.map((r) => `<div class="gs-item" data-open="${esc(r.symbol)}">${logo(r.symbol, r.name, 24)}<b>${esc(r.name)}</b><span class="note">${esc(r.symbol)} · ${esc(r.market || "")}</span></div>`).join("")
-        || `<div class="gs-item note">검색 결과가 없습니다</div>`;
-      box.classList.remove("hidden");
-    } catch (e) { box.innerHTML = `<div class="gs-item note">${esc(e.message)}</div>`; box.classList.remove("hidden"); }
-  }, 180);
+      const r = await api("/api/stocks/search?limit=12&q=" + encodeURIComponent(q));
+      if (my !== seq || input.value.trim() !== q) return;  // 늦게 온 예전 결과는 버린다
+      rows = r; draw("", q);
+    } catch (e) { list.innerHTML = `<div class="gs-item note">${esc(e.message)}</div>`; list.classList.remove("hidden"); }
+  };
+  const showRecent = () => { rows = recentStocks(); if (rows.length) draw("최근 본 종목", ""); else list.classList.add("hidden"); };
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (!q) return showRecent();
+    timer = setTimeout(() => find(q), 120);
+  });
+  input.addEventListener("focus", () => { if (!input.value.trim()) showRecent(); });
+  input.addEventListener("keydown", async (e) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); move(e.key === "ArrowDown" ? 1 : -1); return; }
+    if (e.key === "Escape") { list.classList.add("hidden"); return; }
+    if (e.key !== "Enter" || e.isComposing) return;
+    const q = input.value.trim();
+    if (!q || (list.classList.contains("hidden") && input.dataset.picked === q)) return;  // 이미 고른 종목: 다음 동작(회의 시작 등)에 맡긴다
+    e.preventDefault();
+    clearTimeout(timer);
+    if (list.classList.contains("hidden") || !rows.length || input.value.trim() !== q) await find(q);  // 아직 안 찾았으면 지금 찾는다
+    pick(rows[Math.max(active, 0)]);
+  });
+  list.addEventListener("mousedown", (e) => {  // 입력칸이 포커스를 잃기 전에 고른다
+    const it = e.target.closest(".gs-item[data-i]");
+    if (it) { e.preventDefault(); pick(rows[+it.dataset.i]); }
+  });
+  document.addEventListener("click", (e) => { if (e.target !== input && !list.contains(e.target)) list.classList.add("hidden"); });
+}
+window.attachSearch = attachSearch;
+attachSearch($("#gsearch"), $("#gsearch-list"), (r) => {
+  $("#gsearch").value = "";
+  $("#gsearch").blur();
+  openTab("stock");
+  window.openStock(r.symbol);
 });
-$("#gsearch").addEventListener("keydown", async (e) => {
-  if (e.key === "Enter") {
-    // 검색 결과가 아직 바뀌기 전에 Enter 를 누르면 이전 결과가 열리지 않도록 지금 입력으로 다시 찾는다
-    clearTimeout(searchTimer);
-    const q = $("#gsearch").value.trim();
-    if (!q) return;
-    try {
-      const rows = await api("/api/stocks/search?q=" + encodeURIComponent(q));
-      if (rows.length) {
-        $("#gsearch-list").classList.add("hidden");
-        $("#gsearch").value = "";
-        openTab("stock");
-        window.openStock(rows[0].symbol);
-      }
-    } catch {}
-  }
-  if (e.key === "Escape") $("#gsearch-list").classList.add("hidden");
-});
+
 document.addEventListener("click", (e) => {
   const o = e.target.closest("[data-open]");
   if (o) {
     $("#gsearch-list").classList.add("hidden");
-    $("#gsearch").value = "";
     openTab("stock");
     window.openStock && window.openStock(o.dataset.open);
     return;
   }
-  if (!e.target.closest(".gsearch")) $("#gsearch-list").classList.add("hidden");
 });
 
 // 상태 · 내 계좌
