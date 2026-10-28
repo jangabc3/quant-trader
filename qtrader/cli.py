@@ -37,6 +37,14 @@ def cmd_app(a):
     desktop.run(a.port)
 
 
+def cmd_mark_installed(a):
+    """설치 스크립트가 부른다: 어느 소스 폴더의 어느 커밋으로 만들었는지 적어 둔다 (자동 업데이트 A)."""
+    from pathlib import Path
+    from . import updater
+    d = updater.mark_installed(config_mod.home(), Path(a.src))
+    print(f"설치 기록: {d['src']} @ {d['rev'][:7]}")
+
+
 def cmd_supervise(a):
     """serve 를 자식 프로세스로 돌리고, 오류로 꺼지면 10초 뒤 다시 켠다 (Ctrl+C 나 정상 종료는 그대로 끝)."""
     import subprocess
@@ -134,6 +142,10 @@ def main(argv=None):
     s = sub.add_parser("app", help="프로그램 창으로 열기 (서버는 따로 돌리고, 꺼지면 다시 켠다)")
     s.add_argument("--port", type=int, default=8765)
     s.set_defaults(fn=cmd_app)
+
+    s = sub.add_parser("mark-installed", help="(설치 스크립트용) 소스 폴더와 커밋을 적어 두기")
+    s.add_argument("--src", required=True)
+    s.set_defaults(fn=cmd_mark_installed)
 
     s = sub.add_parser("serve", help="대시보드와 자동매매 스케줄러 실행")
     s.add_argument("--port", type=int, default=8765)

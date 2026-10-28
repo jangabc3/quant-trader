@@ -102,3 +102,15 @@ def test_conditional_and_split_paper(client, isolated_home):
     assert client.delete(f"/api/conditional/{s['conditions'][0]['id']}", headers=client.h).json()["ok"]
     csv = client.get("/api/export/trades.csv?market=KR")
     assert csv.status_code == 200 and "종목명" in csv.text and "삼성전자" in csv.text
+
+
+def test_update_endpoint_uses_git_mode_after_install(client, isolated_home, tmp_path):
+    """'QTrader 설치.cmd' 로 설치해 source.json 이 있으면, 업데이트 확인은 A 방식(git)으로 한다."""
+    import json
+    src = tmp_path / "src"
+    (src / ".git").mkdir(parents=True)
+    (isolated_home / "source.json").write_text(json.dumps({"src": str(src), "rev": "a" * 40}), encoding="utf-8")
+    r = client.get("/api/update?force=1").json()
+    assert r["mode"] == "git" and r["current_rev"] == "aaaaaaa" and r["available"] is False  # 시험 중에는 밖으로 안 나감
+    bad = client.post("/api/update/apply", headers=client.h)
+    assert bad.status_code == 400 and "개발 버전" in bad.json()["detail"]

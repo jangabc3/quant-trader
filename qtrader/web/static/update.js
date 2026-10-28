@@ -4,13 +4,16 @@ async function updCheck(force) {
   const body = $("#upd-body");
   try {
     const u = await api("/api/update" + (force ? "?force=1" : ""));
-    $("#upd-ver").textContent = `지금 v${u.current}`;
+    const git = u.mode === "git";  // 내 PC 소스 폴더에서 다시 만드는 방식: 버전 번호 대신 커밋으로 비교
+    $("#upd-ver").textContent = git ? `지금 v${u.current} · ${u.current_rev || ""}` : `지금 v${u.current}`;
+    $("#upd-repo-row")?.classList.toggle("hidden", git);
     if ($("#upd-repo") && document.activeElement !== $("#upd-repo")) $("#upd-repo").value = state.config?.update?.repo || "";
-    if (!u.repo) { body.innerHTML = "업데이트를 받을 GitHub 저장소를 적으면, 새 버전이 나왔을 때 알려 주고 한 번에 바꿔 줘요."; return u; }
-    if (!u.available) { body.innerHTML = u.reason ? esc(u.reason) : `최신 버전이에요 (v${esc(u.latest || u.current)})`; return u; }
-    body.innerHTML = `<b>새 버전 v${esc(u.latest)}</b> ${u.published ? `<span class="note">${esc(u.published.slice(0, 10))}</span>` : ""}
+    if (!u.repo) { body.innerHTML = "'QTrader 설치.cmd' 로 설치하면 새 버전이 나왔을 때 알려 주고, 버튼 하나로 바꿔 줘요."; return u; }
+    if (!u.available) { body.innerHTML = u.reason ? esc(u.reason) : git ? "최신 버전이에요." : `최신 버전이에요 (v${esc(u.latest || u.current)})`; return u; }
+    body.innerHTML = (git ? `<b>새 버전이 있어요</b> <span class="note">바뀐 것 ${esc(u.behind)}개</span>`
+      : `<b>새 버전 v${esc(u.latest)}</b> ${u.published ? `<span class="note">${esc(u.published.slice(0, 10))}</span>` : ""}`) + `
       <pre class="upd-notes">${esc(u.notes || "바뀐 점이 적혀 있지 않아요")}</pre>
-      ${u.installed ? `<button class="primary" id="upd-go"><i data-lucide="download"></i> 지금 업데이트 (잠깐 꺼졌다 켜져요)</button>`
+      ${u.installed ? `<button class="primary" id="upd-go"><i data-lucide="download"></i> 지금 업데이트 (${git ? "몇 분 동안 꺼졌다 켜져요" : "잠깐 꺼졌다 켜져요"})</button>`
         : `<p class="note">개발 버전이에요. 프로젝트 폴더에서 git pull 로 받아 주세요.</p>`}`;
     $("#upd-go") && ($("#upd-go").onclick = updApply);
     icons();
@@ -24,7 +27,7 @@ function updBanner(u) {
   const b = document.createElement("div");
   b.id = "upd-banner";
   b.className = "upd-banner";
-  b.innerHTML = `<i data-lucide="sparkles"></i><span>새 버전 <b>v${esc(u.latest)}</b> 이 나왔어요</span><button data-a="see">바뀐 점 보기</button><button data-a="later">나중에</button>`;
+  b.innerHTML = `<i data-lucide="sparkles"></i><span>${u.mode === "git" ? `새 버전이 나왔어요 <b>(바뀐 것 ${esc(u.behind)}개)</b>` : `새 버전 <b>v${esc(u.latest)}</b> 이 나왔어요`}</span><button data-a="see">바뀐 점 보기</button><button data-a="later">나중에</button>`;
   document.body.appendChild(b);
   b.onclick = (e) => {
     const a = e.target.closest("button")?.dataset.a;
@@ -35,13 +38,14 @@ function updBanner(u) {
   icons();
 }
 async function updApply() {
-  if (!(await ask("업데이트하면 프로그램이 잠깐 꺼졌다가 다시 켜져요. 키·기록·설정은 그대로 남아요.\n자동매매 중이라면 장이 열리지 않은 시간에 하는 게 좋아요. 지금 할까요?"))) return;
+  if (!(await ask("업데이트하면 프로그램이 꺼지고, 최신 코드를 받아 다시 만든 뒤 다시 켜져요 (몇 분 걸려요). 키·기록·설정은 그대로 남아요.\n그동안 손절·익절 감시가 멈추니, 장이 열리지 않은 시간에 하는 게 좋아요. 지금 할까요?"))) return;
   const b = $("#upd-go");
   b.disabled = true;
   b.textContent = "내려받는 중...";
   try {
     const r = await api("/api/update/apply", { method: "POST" });
-    $("#upd-body").innerHTML = `v${esc(r.latest)} 로 바꾸는 중이에요. 잠시 뒤 새 창이 열리면 이 창은 닫아도 돼요.`;
+    $("#upd-body").innerHTML = r.mode === "git" ? "곧 프로그램이 꺼지고, 까만 창에서 새 버전을 만들어요. 끝나면 QTrader 가 다시 켜져요."
+      : `v${esc(r.latest)} 로 바꾸는 중이에요. 잠시 뒤 새 창이 열리면 이 창은 닫아도 돼요.`;
   } catch (e) { toast(e.message); b.disabled = false; b.textContent = "다시 시도"; }
 }
 $("#upd-check")?.addEventListener("click", async () => {
