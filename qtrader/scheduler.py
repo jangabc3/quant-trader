@@ -325,7 +325,10 @@ class Scheduler:
         pk = f"picks_{m.value}_{today}"
         picks = _json.loads(ctx.store.get(pk) or "[]")
         have = {p["symbol"] for p in picks}
-        fresh = [c for c in live.next_candidates(ctx, m, ttl=every) if not c["missing"] and c["symbol"] not in have]
+        from . import principles, screener
+        allowed = int((principles.DEFAULT_RULES | principles.rules_for(ctx.cfg)).get("soft_miss_allowed", 1))
+        fresh = [c for c in live.next_candidates(ctx, m, ttl=every)
+                 if screener.passes(c["missing"], allowed) and c["symbol"] not in have]  # 후보 거르기와 같은 필수 + 추가 규칙
         from .screener import CANDIDATES_SHOWN
         cap = max(config_mod.meetings_cap(ctx.cfg, m), CANDIDATES_SHOWN)  # 후보 목록 길이 (회의 수 한도는 _intraday 가 본다)
         if fresh and len(picks) < cap:

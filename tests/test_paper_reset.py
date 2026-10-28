@@ -122,6 +122,8 @@ class FakeData:
 
 def test_candidate_exclusion_counts(tmp_path, monkeypatch):
     cfg = config.load()
+    cfg["ai"]["practice"] = False
+    cfg["ai"]["rules"] = {"soft_miss_allowed": 0}  # 예전처럼 하나라도 걸리면 빼는 엄격한 기준
     cfg["watchlist"] = []
     cfg["markets"]["KR"]["universe"] = list(F) + ["999990"]
     monkeypatch.setattr(screener, "GROWTH", {"KR": [], "US": []})
@@ -138,6 +140,12 @@ def test_candidate_exclusion_counts(tmp_path, monkeypatch):
                   "rules_out": 4, "basic": 1, "disclosure": 1, "weak_finance": 1, "passed": 3, "picked": 2, "full_scan": 0}
     # 예전처럼 stats 없이 불러도 목록은 같다
     assert screener.candidates(ctx, Market.KR, 10) == picks
+    # 기본(추가 기준 1개까지): 과열(RSI)만 걸린 111160 도 후보가 되고 이유에 '과열 주의'. 추세·변동성은 그대로 필수
+    cfg["ai"]["rules"] = {}
+    more = screener.candidates(ctx, Market.KR, 10)
+    assert {p["symbol"] for p in more} == {"111110", "111130", "111160"}
+    assert "과열 주의" in next(p for p in more if p["symbol"] == "111160")["reason"]
+    cfg["ai"]["rules"] = {"soft_miss_allowed": 0}  # 아래는 다시 엄격한 기준으로
     # 하루 한 번 저장한 뒤에도 같은 숫자를 돌려준다
     s1, s2 = {}, {}
     screener.todays(ctx, Market.KR, "2026-10-27", 10, s1)
@@ -181,6 +189,6 @@ def test_full_market_scan_feeds_candidates(tmp_path, monkeypatch):
     data.bars = lambda *a: (_ for _ in ()).throw(AssertionError("다시 받으면 안 됨"))
     st = {}
     picks = screener.candidates(ctx, Market.KR, 10, st)
-    assert {p["symbol"] for p in picks} == {"111110", "111120", "111130"} and st["full_scan"] == 9 and st["no_data"] == 1
+    assert {p["symbol"] for p in picks} == {"111110", "111120", "111130", "111160"} and st["full_scan"] == 9 and st["no_data"] == 1
     assert "국내 전체 훑기" in picks[0]["reason"]
     assert scan.maybe_start(ctx, Market.KR, today) is False  # 오늘 이미 훑음

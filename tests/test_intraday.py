@@ -19,6 +19,7 @@ def ctx(isolated_home, monkeypatch):
     cfg = loose_cfg()
     cfg["ai"]["require_approval"] = False
     cfg["ai"]["holding"] = "long"  # 하루 신규 매수 한도를 규칙 그대로 (단기·자동은 +1~2)
+    cfg["ai"]["practice"] = False  # 가상매매 연습 기준 없이, 실전과 같은 규칙으로 시험
     cfg["markets"]["KR"]["strategy"] = "ai"
     config.save(cfg)
     write_demo_csv(isolated_home / "data", cfg)
@@ -360,3 +361,16 @@ def test_picking_candidates_runs_in_background(ctx, monkeypatch):
             break
         __import__("time").sleep(0.05)
     assert scheduler.todays_later(ctx, Market.KR, today, 4) == [{"symbol": "005930"}]
+
+
+def test_paper_practice_rules_loosen_only_in_paper(ctx):
+    """가상매매 연습 기준: 가상매매일 때만 확신도·손익비·추가 기준 허용 수·하루 매수 수를 조금 낮춘다. 실전에는 안 씀."""
+    from qtrader import principles
+    cfg = json.loads(json.dumps(ctx.cfg))
+    cfg["ai"]["rules"] = {"min_confidence": 0.7, "min_reward_risk": 2.2, "soft_miss_allowed": 0, "max_new_buys_per_day": 1}
+    assert principles.rules_for(cfg) == cfg["ai"]["rules"]  # practice 꺼짐
+    cfg["ai"]["practice"] = True
+    r = principles.rules_for(cfg)
+    assert r["min_confidence"] == 0.5 and r["min_reward_risk"] == 1.5 and r["soft_miss_allowed"] == 2 and r["max_new_buys_per_day"] == 5
+    cfg["mode"] = "toss_real"
+    assert principles.rules_for(cfg) == cfg["ai"]["rules"]  # 실전에서는 절대 낮추지 않는다
