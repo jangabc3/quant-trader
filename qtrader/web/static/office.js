@@ -406,22 +406,31 @@ async function loadTrack() {
     const t = await api("/api/ai/track");
     const s = t.summary;
     const hr = s.hit_rate == null ? "-" : Math.round(s.hit_rate * 100) + "%";
-    el.innerHTML = `<h3>AI 판단 채점표 <small>AI 말이 맞았는지 나중에 확인하려고, 회의한 날 가격과 지금 가격을 비교해요</small></h3>
+    const bull = t.rows.filter((x) => x.rating === "Buy" || x.rating === "Overweight").length;
+    const bear = t.rows.filter((x) => x.rating === "Sell" || x.rating === "Underweight").length;
+    const holds = t.rows.filter((x) => x.correct == null);
+    const graded = t.rows.filter((x) => x.correct != null);
+    const since = (x) => x.days === 0 ? `<span class="note">오늘 회의</span>` : `<span class="${cls(x.return)}">${pct(x.return)}</span>`;
+    const verdict = (x) => (x.days === 0 ? "<span class='note'>내일부터 채점</span>" : x.correct ? "<b class='up'>맞힘</b>" : "<b class='down'>빗나감</b>")
+      + (x.hit_take ? " <span class='tk-tag up'>익절가 도달</span>" : "") + (x.hit_stop ? " <span class='tk-tag down'>손절가 도달</span>" : "");
+    el.innerHTML = `<h3>AI 판단 채점표 <small>AI 가 '사라·팔아라' 한 뒤 실제로 가격이 그쪽으로 갔는지 확인해요</small></h3>
       <div class="track-top">
-        <div><span class="k">지금까지 회의</span><b>${s.decisions}번</b></div>
-        <div><span class="k">채점한 회의</span><b>${s.judged}번</b><em class="note">매수·매도 의견만, 하루 지난 뒤</em></div>
-        <div><span class="k">맞힌 비율</span><b>${hr}</b></div>
-        <div><span class="k">'사라' 했던 종목 평균</span><b class="${cls(s.avg_return_bullish)}">${pct(s.avg_return_bullish)}</b></div>
+        <div><span class="k">지금까지 회의</span><b>${s.decisions}번</b><em class="note">사라 ${bull} · 보류 ${holds.length} · 팔아라 ${bear}</em></div>
+        <div><span class="k">채점한 회의</span><b>${s.judged}번</b><em class="note">사라·팔아라 의견만, 하루 지난 뒤</em></div>
+        <div><span class="k">맞힌 비율</span><b>${hr}</b><em class="note">${s.judged ? "채점한 회의 중" : "채점할 회의가 아직 없어요"}</em></div>
+        <div><span class="k">'사라' 했던 종목 평균</span><b class="${cls(s.avg_return_bullish)}">${pct(s.avg_return_bullish)}</b><em class="note">회의 때 가격 → 지금</em></div>
       </div>
-      <table><thead><tr><th>회의한 날</th><th>종목</th><th>AI 의견</th><th class="r">그날 가격</th><th class="r">지금 가격</th><th class="r">그 뒤 변화</th><th>채점</th></tr></thead><tbody>
-      ${t.rows.slice(0, 8).map((x) => `<tr class="${x.correct == null ? "tr-hold" : ""}"><td>${esc(x.date)}</td><td>${esc(x.name)}</td>
-        <td style="color:${RATING_COLOR[x.rating]}">${RATING_KO[x.rating]}</td><td class="r">${money(x.price, x.market)}</td>
-        <td class="r">${money(x.last, x.market)}</td><td class="r ${x.correct == null ? "note" : cls(x.return)}">${pct(x.return)}</td>
-        <td>${x.correct == null ? "<span class='note'>보류라 채점 안 함</span>" : x.days === 0 ? "<span class='note'>내일부터 채점</span>" : x.correct ? "<b class='up'>맞힘</b>" : "<b class='down'>빗나감</b>"}${x.hit_take ? " · 익절가 도달" : ""}${x.hit_stop ? " · 손절가 도달" : ""}</td></tr>`).join("")
-        || `<tr><td colspan="7"><div class="empty"><i data-lucide="clipboard-list"></i><p>아직 회의 기록이 없어요</p>
-          <span class="note">AI 회의를 하면 결론(매수·보류·매도)과 그때 가격이 여기 남고, 며칠 뒤 실제 가격과 비교해 <b>맞았는지 틀렸는지</b>를 자동으로 채점합니다.
-          기록이 쌓이면 '맞힌 비율'로 AI 판단을 얼마나 믿어도 되는지 알 수 있어요. 보류(사지 않음)는 채점하지 않아요.</span></div></td></tr>`}</tbody></table>
-      <p class="note">시연 회의는 기록에 남지 않습니다. 어떤 분석도 승률 100%를 보장할 수 없습니다. 결정을 숨김없이 쌓아 어떤 경우에 AI 판단이 믿을 만한지 직접 확인하세요.</p>`;
+      ${graded.length ? `<table><thead><tr><th>회의한 날</th><th>종목</th><th>AI 의견</th><th class="r">회의 때 가격</th><th class="r">지금 가격</th><th class="r">그 뒤 변화</th><th>채점</th></tr></thead><tbody>
+        ${graded.slice(0, 8).map((x) => `<tr><td>${esc(x.date.slice(5))}</td><td>${esc(x.name)}</td>
+          <td style="color:${RATING_COLOR[x.rating]}">${RATING_KO[x.rating]}</td><td class="r">${money(x.price, x.market)}</td>
+          <td class="r">${money(x.last, x.market)}</td><td class="r">${since(x)}</td><td>${verdict(x)}</td></tr>`).join("")}</tbody></table>`
+      : `<div class="empty tk-empty"><i data-lucide="clipboard-list"></i><p>${s.decisions ? `아직 '사라·팔아라' 의견이 없어요` : "아직 회의 기록이 없어요"}</p>
+          <span class="note">${s.decisions ? `지금까지 회의 ${s.decisions}번이 모두 보류(사지 않고 지켜봄)였어요. 보류는 맞고 틀림을 세지 않아요.`
+            : "AI 회의를 하면 결론과 그때 가격이 여기 남고, 며칠 뒤 실제 가격과 비교해 맞았는지 자동으로 채점해요."}</span></div>`}
+      ${holds.length ? `<div class="tk-holds"><b>보류한 종목 <span class="note">${holds.length}개 · 사지 않고 지켜본 뒤 가격이 어떻게 됐는지</span></b>
+        <div class="tk-chips">${holds.slice(0, 12).map((x) => `<span class="tk-chip" title="${esc(x.headline || "")}">${esc(x.name)}
+          <em>${esc(x.date.slice(5))}</em>${since(x)}</span>`).join("")}</div></div>` : ""}
+      <p class="note">시연 회의는 기록에 남지 않아요. 어떤 분석도 승률 100%를 보장할 수 없어요. 결정을 숨김없이 쌓아 어떤 경우에 AI 판단이 믿을 만한지 직접 확인하세요.</p>`;
     icons();
   } catch (e) { el.innerHTML = `<h3>AI 판단 채점표</h3><p class="note">${esc(e.message)}</p>`; }
 }

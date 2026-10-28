@@ -301,3 +301,14 @@ table.refs td { white-space: normal; font-size: 13px; vertical-align: top; }
 .cl-how { margin: -4px 0 8px; }
 .track-top em { display: block; font-size: 10.5px; font-style: normal; margin-top: 2px; }
 #track tr.tr-hold td { opacity: .7; }
+
+/* 채점표: 보류는 표 대신 작은 칩으로 */
+.tk-empty { padding: 18px 8px; }
+.tk-holds { margin: 10px 0 6px; }
+.tk-holds > b { display: block; font-size: 13px; margin-bottom: 6px; }
+.tk-holds > b .note { font-weight: 400; margin-left: 6px; }
+.tk-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.tk-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--bg); border: 1px solid var(--line, #232a35);
+  border-radius: 999px; padding: 4px 10px; font-size: 12.5px; }
+.tk-chip em { font-style: normal; color: var(--muted); font-size: 11px; }
+.tk-tag { font-size: 11px; margin-left: 4px; }

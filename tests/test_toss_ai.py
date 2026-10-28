@@ -482,3 +482,17 @@ def test_decision_guide_no_longer_defaults_to_hold():
     assert "가상매매 연습" in roles.decision_guide(True)
     assert "보류(Hold: 새로 사지 않고 지켜봄)'가 정답" not in roles.RULES
 
+
+def test_track_compares_with_price_at_meeting_time():
+    """장중 회의는 그날 종가가 아니라 회의 때 가격과 비교한다 (예전엔 같은 날이면 늘 0.00%)."""
+    import pandas as pd
+    from qtrader.agents import track
+    df = pd.DataFrame({"close": [100.0, 110.0], "high": [100.0, 112.0], "low": [99.0, 108.0]},
+                      index=pd.to_datetime(["2026-10-27", "2026-10-28"]))
+    runs = [{"id": "a", "symbol": "005930", "trade_date": "2026-10-28", "status": "done", "plan": {"price": 105},
+             "final": {"rating": "Overweight", "confidence": 0.6, "headline": "작게 시작"}},
+            {"id": "b", "symbol": "005930", "trade_date": "2026-10-28", "status": "done",
+             "final": {"rating": "Hold", "confidence": 0.5, "headline": "실적 발표 앞둠"}}]
+    rows = track.evaluate(runs, lambda s: df)["rows"]
+    assert rows[0]["price"] == 105 and rows[0]["return"] == round(110 / 105 - 1, 4) and rows[0]["days"] == 0
+    assert rows[1]["return"] == 0 and rows[1]["correct"] is None and rows[1]["headline"] == "실적 발표 앞둠"
