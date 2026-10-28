@@ -8,7 +8,7 @@ rem --windowed: 까만 창 없이 프로그램 창만 뜬다 (기록은 %APPDATA
 ".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --name QTrader --windowed --icon packaging\qtrader.ico ^
   --add-data "qtrader\web\static;qtrader\web\static" ^
   --collect-submodules uvicorn --collect-submodules keyring --hidden-import keyring.backends.Windows ^
-  --collect-submodules webview --hidden-import clr ^
+  --collect-submodules webview --hidden-import clr --collect-submodules pystray ^
   packaging\qtrader_app.py
 copy /y NOTICE dist\QTrader\ >nul
 copy /y README.md dist\QTrader\ >nul

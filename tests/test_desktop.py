@@ -42,7 +42,8 @@ class FakeSup:
 def test_opens_own_window_and_stops_server_on_close():
     FakeSup.made.clear()
     wv, ups = FakeWebview(), iter([False, False, True])
-    r = desktop.run(8765, webview=wv, supervisor_cls=FakeSup, up=lambda p: next(ups, True), wait_s=5)
+    r = desktop.run(8765, webview=wv, supervisor_cls=FakeSup, up=lambda p: next(ups, True), wait_s=5,
+                    tray_cls=lambda: desktop.Tray(maker=lambda o, q: None))
     assert r == "window"
     title, url, kw = wv.created
     assert title == "QTrader" and url == "http://127.0.0.1:8765" and kw["confirm_close"] is True
@@ -99,3 +100,83 @@ def test_supervisor_closes_window_for_update(isolated_home, monkeypatch):
     s = desktop.Supervisor(8765, on_update=win.destroy, popen=lambda a, **k: FakeProc(updater.RESTART_CODE), sleep=lambda s: None)
     s.run()
     assert win.destroyed  # 창을 닫아야 파일을 바꾸는 스크립트가 QTrader.exe 를 덮어쓸 수 있다
+
+
+class FakeEvents:
+    def __init__(self):
+        self.closing = []
+
+    class _E(list):
+        def __iadd__(self, f):
+            self.append(f)
+            return self
+
+
+class TrayWin(FakeWin):
+    def __init__(self):
+        super().__init__()
+        self.events = type("E", (), {"closing": FakeEvents._E()})()
+        self.hidden = self.shown = 0
+        self.answer = True
+
+    def hide(self):
+        self.hidden += 1
+
+    def show(self):
+        self.shown += 1
+
+    def restore(self):
+        pass
+
+    def create_confirmation_dialog(self, title, msg):
+        return self.answer
+
+
+class FakeIcon:
+    def __init__(self):
+        self.ran = self.stopped = False
+        self.notes = []
+
+    def run_detached(self):
+        self.ran = True
+
+    def stop(self):
+        self.stopped = True
+
+    def notify(self, msg, title):
+        self.notes.append(title)
+
+
+def test_x_hides_to_tray_and_keeps_running():
+    """X 를 누르면 닫지 않고 숨긴다 (자동매매 계속). 안내는 한 번만. '끄기' 를 확인해야만 닫힌다."""
+    import time
+    icon = FakeIcon()
+    tray = desktop.Tray(maker=lambda o, q: icon)
+    w = TrayWin()
+    tray.start(w)
+    assert icon.ran and w.events.closing == [tray.on_closing]
+    assert tray.on_closing() is False and tray.on_closing() is False  # 닫기 취소
+    time.sleep(0.05)
+    assert w.hidden == 2 and not w.destroyed and len(icon.notes) == 1
+    tray.open()
+    assert w.shown == 1
+    w.answer = False
+    tray.quit()
+    assert not w.destroyed  # '아니요' 면 그대로
+    w.answer = True
+    tray.quit()
+    assert w.destroyed and icon.stopped and tray.on_closing() is True
+
+
+def test_run_uses_tray_instead_of_close_confirm():
+    FakeSup.made.clear()
+
+    class WV(FakeWebview):
+        def create_window(self, title, url, **kw):
+            super().create_window(title, url, **kw)
+            return TrayWin()
+    wv, ups = WV(), iter([False, True])
+    icon = FakeIcon()
+    r = desktop.run(8765, webview=wv, supervisor_cls=FakeSup, up=lambda p: next(ups, True), wait_s=5,
+                    tray_cls=lambda: desktop.Tray(maker=lambda o, q: icon))
+    assert r == "window" and wv.created[2]["confirm_close"] is False and icon.ran and icon.stopped
