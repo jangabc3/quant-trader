@@ -369,7 +369,7 @@ def industries(t: Toss | None, market: str = "KR", kind: str = "TOP_GAINERS", du
                                           "marketCap": num(x.get("marketCapitalization")) or None, "leader": ld[0], "leader_symbol": ld[1],
                                           "count": ld[2]} for x, ld in zip(rows, leads)]}
 
-    return cached(f"industries:{market}:{kind}:{duration}", 300, build)
+    return cached(f"industries:{market}:{kind}:{duration}", 60, build)
 
 
 def industry_chart(t: Toss | None, sector_id: str, market: str = "KR") -> dict:
@@ -506,7 +506,7 @@ def investor_flows(t: Toss | None, side: str = "buy") -> dict:
             rows = [r for r in ex.map(one, base) if r]
         return {"updated": max((r["updated"] or "" for r in rows), default=None), "rows": rows}
 
-    data = cached("investor_flows", 600, build)
+    data = cached("investor_flows", 120, build)  # 토스 투자자 동향은 장중 몇 분 간격으로 바뀐다
     return {"demo": False, "updated": data["updated"], **pick(data["rows"])}
 
 

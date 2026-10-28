@@ -158,6 +158,13 @@ def mark_installed(home: Path, src: Path, run=None, app_dir: Path | None = None)
     데이터 폴더와 프로그램 폴더(QTrader.exe 옆) 두 곳에 남긴다 (한쪽이 없어져도 업데이트 버튼이 나오게)."""
     rev = _git(src, "rev-parse", "HEAD", run=run)
     d = {"src": str(src.resolve()), "rev": rev, "at": time.strftime("%Y-%m-%d %H:%M")}
+    try:  # 업데이트 전 커밋을 남겨 두면, 다시 켰을 때 '이번 업데이트로 바뀐 것'을 보여 줄 수 있다
+        old = json.loads((Path(home) / "source.json").read_text(encoding="utf-8"))
+        prev = old.get("rev") if old.get("rev") != rev else old.get("prev_rev")
+        if prev:
+            d["prev_rev"] = prev
+    except (OSError, ValueError):
+        pass
     for folder in [home] + ([app_dir] if app_dir else []):
         try:
             (Path(folder) / "source.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
@@ -177,6 +184,41 @@ def _git(src, *args, run=None, timeout: float = 60) -> str:
     return (r.stdout or "").strip()
 
 
+KIND_KO = {"feat": "새 기능", "fix": "고친 것", "perf": "빨라진 것"}
+
+
+def patch_notes(log: str) -> list[dict]:
+    """git 커밋 제목('- fix(market): 등락률을 … (#28)')을 쉬운 패치노트로: [{kind: '고친 것', text: '등락률을 …'}].
+    새 기능 → 고친 것 → 빨라진 것 순서. 문서·시험·정리 커밋은 다른 게 없을 때만 '손본 것'으로."""
+    import re
+    rows, rest = [], []
+    for line in (log or "").splitlines():
+        line = line.strip().lstrip("-").strip()
+        if not line or line.lower().startswith("merge"):
+            continue
+        m = re.match(r"^(\w+)(?:\([^)]*\))?!?:\s*(.+)$", line)
+        kind, text = (m.group(1).lower(), m.group(2)) if m else ("", line)
+        text = re.sub(r"\s*\(#\d+\)\s*$", "", text).strip()
+        (rows if kind in KIND_KO else rest).append({"kind": KIND_KO.get(kind, "손본 것"), "text": text})
+    order = list(KIND_KO.values())
+    rows.sort(key=lambda r: order.index(r["kind"]))
+    return rows or rest
+
+
+def just_updated(info: dict | None, store, run=None) -> dict | None:
+    """방금 업데이트했으면 그때 바뀐 것 (한 번 보고 '확인'을 누르면 다시 안 보인다)."""
+    if not info or not info.get("prev_rev") or not info.get("rev") or store is None:
+        return None
+    if store.get("update_seen") == info["rev"]:
+        return None
+    try:
+        log = _git(info["src"], "log", "--format=- %s", "-n", "30", f"{info['prev_rev']}..{info['rev']}", run=run)
+    except Exception:
+        return None
+    changes = patch_notes(log)
+    return {"rev": info["rev"][:7], "at": info.get("at"), "changes": changes} if changes else None
+
+
 def check_git(info: dict, store=None, force: bool = False, run=None) -> dict:
     """설치한 커밋과 GitHub main 을 비교한다. 6시간에 한 번만 묻는다."""
     src, rev = info["src"], info.get("rev") or ""
@@ -194,7 +236,7 @@ def check_git(info: dict, store=None, force: bool = False, run=None) -> dict:
         notes = _git(src, "log", "--format=- %s", "-n", "30", f"{rev}..origin/main", run=run) if rev else ""
     except Exception as e:
         return base | {"reason": f"확인 실패: {e}"}
-    res = {"latest": latest[:7], "behind": behind, "notes": notes, "available": behind > 0}
+    res = {"latest": latest[:7], "behind": behind, "notes": notes, "changes": patch_notes(notes), "available": behind > 0}
     if store is not None:
         store.set("update_check_git", json.dumps({"rev": rev, "at": time.time(), "res": res}))
     return base | res
