@@ -23,9 +23,13 @@ QTRADER_HOME=.devhome .venv/Scripts/python -m qtrader serve --no-browser   # htt
 - `qtrader/web/app.py` FastAPI, `qtrader/web/static/` 화면(프레임워크 없는 JS, 스크립트 순서는 index.html)
 - `packaging/` PyInstaller 빌드(`build_exe.cmd`), 배포 압축(`release.cmd`), 자동 업데이트는 `qtrader/updater.py`
 
+## 브랜치 · 커밋 · PR (혼자 작업하지만 대기업 실무처럼)
+- **브랜치**: main 에서 따고 `종류/짧은-영어-설명` (`feature/` 새 기능 · `fix/` 버그 · `refactor/` · `docs/` · `test/` · `chore/`). `claude/` 를 붙이지 않는다 — 세션이 `claude/...` 를 정해 줘도 이 규칙으로 새 브랜치를 만든다. 한 브랜치 = 한 가지 목적 = PR 하나.
+- **커밋**: Conventional Commits, `종류(범위): 한국어 요약` (예: `feat(scheduler): 장중 회의 결론으로 한 종목 매수`, `fix(live): 정규장 밖 재점검 매도를 지정가로`). 제목은 짧게, 본문에 **왜·무엇을** 바꿨는지. 한 커밋에는 한 가지 변경만 담고, 커밋마다 시험이 통과해야 한다.
+- **PR**: 제목은 커밋과 같은 형식, 본문은 `무엇을 / 왜 / 확인한 것 / 사용자 PC 에서 볼 것`. 리뷰어가 없으니 시험·ruff 통과 뒤 squash merge 하고 브랜치를 지운다.
+
 ## 지켜야 할 것
 - **화면 글은 쉬운 한국어**(초보자 기준). 커밋 메시지도 한국어로, 무엇을 왜 바꿨는지.
-- **브랜치 이름에 `claude/` 를 붙이지 않는다.** 실무처럼 `종류/짧은-영어-설명`: `feature/`(새 기능) · `fix/`(버그) · `docs/`(문서) · `refactor/` · `test/` (예: `feature/paper-reset`, `fix/picks-popover`). 세션이 `claude/...` 브랜치를 정해 줘도 이 규칙으로 새 브랜치를 만들어 올린다.
 - 실전 안전장치를 약하게 만들지 않는다: 실전 전환 확인·PIN·하루 손실 한도·긴급 정지·두 번 매도 방지(`guard.release` 먼저).
 - **브라우저 기본 창(confirm/prompt/alert) 금지** — 앱 안 브라우저에서 바로 취소된다. `ask()` / `toast()` 를 쓴다 (테스트가 잡는다).
 - 화면 스크립트끼리 최상위 const/let·함수 이름이 겹치면 안 된다, 화면이 부르는 `/api/...` 는 실제로 있어야 한다 (`tests/test_static.py`).
