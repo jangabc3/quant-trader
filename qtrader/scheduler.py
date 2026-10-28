@@ -135,6 +135,12 @@ def todays_later(ctx, m: Market, today: str, n: int) -> list[dict]:
     return []
 
 
+def mark_planned_stop(store, why: str, at: str | None = None) -> None:
+    """일부러 끈다고 적어 둔다 (why: update = 업데이트, quit = 사용자가 끄기). 다시 켰을 때 '꺼져 있었어요' 경고를 띄우지 않는다."""
+    from datetime import timezone as _tz
+    store.set("planned_stop", json.dumps({"why": why, "at": at or datetime.now(_tz.utc).isoformat(timespec="seconds")}))
+
+
 class Scheduler:
     def __init__(self, interval: float = 20.0):
         self.interval = interval
@@ -156,6 +162,16 @@ class Scheduler:
     def _beat_loop(self) -> None:
         from .storage import Store
         store = Store(config_mod.home() / "qtrader.db")
+        try:  # 설치된 버전이 지난번과 다르면 그 사이 꺼져 있던 건 업데이트 때문 (설치.cmd 를 직접 눌러 다시 깐 경우도)
+            from . import updater
+            rev = (updater.source_info(config_mod.home()) or {}).get("rev") or ""
+            seen = store.get("seen_rev") or ""
+            if rev and seen and rev != seen:
+                mark_planned_stop(store, "update", at="1970-01-01T00:00:00+00:00")
+            if rev:
+                store.set("seen_rev", rev)
+        except Exception:
+            pass
         while not self._stop.is_set():
             try:
                 cfg = config_mod.load()
@@ -297,16 +313,29 @@ class Scheduler:
         now = datetime.now(_tz.utc)
         last = ctx.store.get("heartbeat")
         ctx.store.set("heartbeat", now.isoformat(timespec="seconds"))
+        planned = json.loads(ctx.store.get("planned_stop") or "null")
+        if planned:  # 켜진 뒤 첫 심장박동에서만 쓰고 지운다 (남아 있으면 나중의 진짜 꺼짐을 가릴 수 있다)
+            ctx.store.exec("delete from state where key='planned_stop'")
         if not last or not auto:
             return
         prev = datetime.fromisoformat(last)
         gap = (now - prev).total_seconds()
         if gap < 600:
             return
+        if planned and planned.get("at", "") >= "1970-01-02" and planned["at"] < (prev - timedelta(minutes=2)).isoformat():
+            planned = None  # 이번 꺼짐보다 한참 전에 적힌 것
         hit = [m for m in (Market.KR, Market.US) if cfg["markets"][m.value].get("enabled") and (is_open(m, prev) or is_open(m, now))]
         if not hit:
             return
         loc = lambda t: t.astimezone().strftime("%m-%d %H:%M")
+        if planned and planned.get("why") in ("update", "quit"):  # 일부러 끈 것: 경고 대신 (업데이트면) 안내만
+            self._last_exit = 0.0  # 그래도 곧바로 체결 확인·손절 점검
+            if planned["why"] == "update":
+                extras.notify(ctx.store, cfg, f"🔄 업데이트를 마치고 다시 켜졌어요 ({int(gap // 60)}분 걸렸어요). "
+                                              f"지금 바로 체결과 손절·익절을 다시 확인해요.", "live")
+            else:
+                ctx.store.log("info", "live", f"직접 끈 뒤 다시 켜졌어요 ({loc(prev)} ~ {loc(now)})")
+            return
         extras.notify(ctx.store, cfg, f"⚠️ 프로그램이 {int(gap // 60)}분 동안 꺼져 있었어요 ({loc(prev)} ~ {loc(now)}). "
                                       f"그동안 손절·익절 감시가 멈췄습니다. 지금 바로 다시 확인합니다.", "live")
         self._last_exit = 0.0  # 곧바로 체결 확인·손절 점검

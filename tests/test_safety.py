@@ -211,6 +211,30 @@ def test_heartbeat_gap_notice(ctx, monkeypatch):
     assert any("꺼져 있었어요" in r["message"] for r in ctx.store.rows("select * from events where level='notice'"))
 
 
+def test_planned_stop_does_not_warn(ctx, monkeypatch):
+    """업데이트·직접 끄기로 꺼져 있었으면 '꺼져 있었어요' 경고 대신 안내만 (업데이트로 10분 넘게 걸려 놀라던 문제).
+    표시는 켜진 뒤 첫 확인에서만 쓰고 지워서, 나중에 진짜로 꺼졌을 때는 그대로 경고한다."""
+    from qtrader import scheduler
+    monkeypatch.setattr(scheduler, "is_open", lambda m, now=None: True)
+    warns = lambda: [r["message"] for r in ctx.store.rows("select * from events where level='notice'") if "꺼져 있었어요" in r["message"]]
+    old = (datetime.now(timezone.utc) - timedelta(minutes=25))
+    ctx.store.set("heartbeat", old.isoformat(timespec="seconds"))
+    scheduler.mark_planned_stop(ctx.store, "update", at=(old + timedelta(seconds=10)).isoformat(timespec="seconds"))
+    s = scheduler.Scheduler()
+    s._last_exit = 999.0
+    s._heartbeat(ctx, ctx.cfg, True)
+    assert warns() == [] and s._last_exit == 0.0
+    assert any("업데이트를 마치고" in r["message"] for r in ctx.store.rows("select * from events"))
+    assert ctx.store.get("planned_stop") is None
+    ctx.store.set("heartbeat", old.isoformat(timespec="seconds"))  # 다음에 진짜로 꺼지면 경고
+    s._heartbeat(ctx, ctx.cfg, True)
+    assert len(warns()) == 1
+    ctx.store.set("heartbeat", old.isoformat(timespec="seconds"))  # 예전에 적힌 끄기 표시는 이번 꺼짐을 가리지 않는다
+    scheduler.mark_planned_stop(ctx.store, "quit", at=(old - timedelta(hours=3)).isoformat(timespec="seconds"))
+    s._heartbeat(ctx, ctx.cfg, True)
+    assert len(warns()) == 2
+
+
 def test_extended_sessions_and_tick(ctx):
     from zoneinfo import ZoneInfo
     from qtrader.engine import kr_tick

@@ -212,5 +212,13 @@ def run(port: int = 8765, webview=None, supervisor_cls=Supervisor, up=server_up,
     if tray:
         tray.close()
     if sup:
+        try:  # 사용자가 끈 것 (업데이트로 닫혔으면 이미 'update' 로 적혀 있어 덮어쓰지 않는다)
+            from .scheduler import mark_planned_stop
+            from .storage import Store
+            st = Store(config_mod.home() / "qtrader.db")
+            if '"update"' not in (st.get("planned_stop") or ""):
+                mark_planned_stop(st, "quit")
+        except Exception:
+            pass
         sup.stop()
     return "window"
