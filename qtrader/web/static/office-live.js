@@ -78,8 +78,10 @@ function liveHud(d) {
   const hud = $("#office-hud");
   hud.className = "office-hud " + (d.schedule.open ? "running" : "");
   hud.innerHTML = `<span class="hud-dot"></span><div><b>실시간 사무실</b> <small>${d.market === "KR" ? "국내" : "미국"}</small>
-    <div>${d.schedule.open ? `<b class='blink'>● ${esc(d.schedule.session || "장중")}</b> 감시·사고팔기 중${d.intraday?.on ? " · 장중 회의 → 매수 켜짐" : ""}` : "장 마감 · 다음 장을 기다리는 중"}</div>
-    <div class="note">${d.auto ? "자동매매 켜짐" : "자동매매 꺼짐"}${d.kill ? " · 긴급 정지 중" : ""} · AI 호출 없이 움직임만 보여 줘요</div></div>`;
+    <div>${!d.auto ? "<b>자동매매 꺼짐</b> · 켜면 장이 열린 동안 알아서 회의하고 사고팔아요"
+      : d.schedule.open ? `<b class='blink'>● ${esc(d.schedule.session || "장중")}</b> 가진 종목 손절·익절을 2분마다 지키고, 후보를 ${d.intraday?.every || 15}분마다 하나씩 AI 회의해요`
+      : "장이 닫혀 있어요 · 다음 장을 기다리는 중"}</div>
+    <div class="note">${d.kill ? "긴급 정지 중 (새로 사지 않음) · " : ""}캐릭터는 지금 엔진이 하는 일을 보여 줘요. 실제 AI 회의가 열리면 회의 화면으로 바뀌어요</div></div>`;
   $("#stage-line").innerHTML = "";
 }
 

@@ -773,6 +773,17 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         return {"ok": True, "markets": out}
 
     # 실시간 사무실 현황판
+    @app.get("/api/ai/today")
+    def ai_today(market: str = "KR"):
+        """AI 사무실 '오늘 AI 회의' 판: 자동으로 무엇을 하는지, 후보마다 지금 단계 (AI 호출 없음)."""
+        from .. import live
+        from ..engine import trade_date
+        from ..screener import todays
+        c = ctx()
+        m = Market(market)
+        todays(c, m, trade_date(m), max(config_mod.meetings_cap(c.cfg, m), 1))  # 후보가 아직 없으면 지금 고른다
+        return live.today_plan(c, m, name_of)
+
     @app.get("/api/live")
     def live_board(market: str = "KR"):
         from .. import live

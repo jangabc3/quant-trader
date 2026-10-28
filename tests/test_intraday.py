@@ -311,3 +311,27 @@ def test_old_total_meeting_cap_split_in_half(isolated_home):
     cfg = config.load()
     assert cfg["markets"]["KR"]["meetings_per_day"] == 3 and cfg["markets"]["US"]["meetings_per_day"] == 3
     assert "max_symbols_per_day" not in cfg["ai"] and config.validate(cfg) == []
+
+
+def test_today_plan_explains_what_auto_meeting_is_doing(ctx, fake_meetings, monkeypatch):
+    """AI 사무실 '오늘 AI 회의' 판: 지금 무엇을 하는지 한 줄 + 후보마다 단계."""
+    from qtrader import live, scheduler
+    start, _ = fake_meetings
+    p = live.today_plan(ctx, Market.KR)
+    assert "자동매매가 꺼져" in p["headline"] and [i["state"] for i in p["items"]] == ["wait", "wait"]
+    ctx.store.set("auto_trading", "1")
+    monkeypatch.setattr(scheduler, "trading_now", lambda cfg, m, now=None: True)
+    assert "다음 회의는 005930" in live.today_plan(ctx, Market.KR)["headline"]
+    start.sell = {"000660"}
+    s = Scheduler()
+    s._intraday(ctx, Market.KR)
+    s._intraday(ctx, Market.KR)  # 005930 매수
+    s._intraday_KR = float("-inf")
+    s._intraday(ctx, Market.KR)
+    s._intraday(ctx, Market.KR)  # 000660 매도 의견
+    p = live.today_plan(ctx, Market.KR)
+    by = {i["symbol"]: i for i in p["items"]}
+    assert by["005930"]["state"] == "bought" and by["000660"]["state"] == "sell" and p["used"] == 2 and p["next_at"]
+    assert "모두 회의했어요" in p["headline"]
+    ctx.cfg["markets"]["KR"]["meetings_per_day"] = 2
+    assert "2번을 다 썼어요" in live.today_plan(ctx, Market.KR)["headline"]
