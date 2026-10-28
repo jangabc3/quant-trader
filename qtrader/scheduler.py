@@ -355,6 +355,8 @@ class Scheduler:
             return out
         setattr(self, ik, time.monotonic())
         ctx.store.log("info", f"ai.{m.value}", f"{sym} 장중 AI 회의 시작 (결론이 매수이고 체크리스트를 통과하면 바로 삽니다)")
+        from datetime import timezone as _tz
+        ctx.store.set(f"intraday_last_{m.value}", datetime.now(_tz.utc).isoformat(timespec="seconds"))  # 화면의 '다음 회의' 시각용
         try:
             run = meeting.start(sym, ctx.data, ctx.store, ctx.cfg, toss=getattr(ctx.data, "client", None)
                                 if getattr(ctx.data, "name", "") == "toss" else None)
