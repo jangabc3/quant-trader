@@ -479,8 +479,13 @@ $("#auto-btn").onclick = async () => {
   const on = !s.auto_trading;
   if (on) {
     const c = state.config || await api("/api/config");
+    // AI 전략은 켜 둔 세션 내내 수시로 회의하고 사고판다. 단순 규칙 전략은 정기 실행 시각에 하루 한 번
+    const sessions = (m, mc) => m === "KR" ? (mc.extended ? "넥스트레이드 08:00~20:00" : "정규장 09:00~15:30")
+      : ["주간거래", "프리마켓", "정규장", "애프터마켓"].filter((n, i) => i === 2 || (mc.extended_sessions || []).includes(["day", "pre", "", "after"][i])).join("·");
     const lines = Object.entries(c.markets).filter(([, mc]) => mc.enabled).map(([m, mc]) =>
-      `· ${MARKET_NAME[m]}: ${STRAT_NAME[mc.strategy]} 전략, 매 거래일 ${mc.run_time}(${m === "KR" ? "한국" : "뉴욕"} 시간), 한도 ${m === "US" ? usdWithKrw(mc.budget) : money(mc.budget, m)}`);
+      `· ${MARKET_NAME[m]}: ${STRAT_NAME[mc.strategy]} 전략, ` + (mc.strategy === "ai" && c.ai.intraday !== false
+        ? `${sessions(m, mc)} 동안 수시로 회의하고 사고팔아요` : `매 거래일 ${mc.run_time}(${m === "KR" ? "한국" : "뉴욕"} 시간)`)
+      + `, 한도 ${m === "US" ? usdWithKrw(mc.budget) : money(mc.budget, m)}`);
     const rules = c.markets.KR.strategy === "ai" || c.markets.US.strategy === "ai"
       ? "\n· AI 회의 결과가 매수여도 체크리스트(추세·모멘텀·과열·변동성·손익비·팩트체크)를 모두 넘어야 삽니다.\n· 산 종목은 손절가·익절가에 닿으면 자동으로 팝니다." + (c.ai.require_approval ? "\n· 주문은 승인 대기에 먼저 올라오고, 근거를 보고 승인해야 나갑니다." : "")
       : "";
