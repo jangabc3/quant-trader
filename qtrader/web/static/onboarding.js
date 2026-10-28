@@ -40,7 +40,7 @@ function obQuestion() {
 }
 
 const CRIT_GROUPS = [["money", "wallet", "돈 관리", "얼마나 사고, 하루에 얼마까지 잃어도 되는지"],
-  ["buy", "search-check", "살 때 조건", "하나라도 어기면 사지 않아요"], ["sell", "shield-check", "팔 때 · 안전장치", "손실을 작게 끊는 규칙"]];
+  ["buy", "search-check", "살 때 조건", "필수 조건은 꼭 지키고, 추가 조건은 조금 덜 맞으면 적게 사요"], ["sell", "shield-check", "팔 때 · 안전장치", "손실을 작게 끊는 규칙"]];
 function criteriaHtml(list) {
   return `<div class="crit-groups">${CRIT_GROUPS.map(([g, icon, title, sub]) => {
     const rows = list.filter((c) => (c.g || "buy") === g);

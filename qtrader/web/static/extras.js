@@ -153,16 +153,24 @@ const FACT = [["mom", "모멘텀", (v) => Math.max(0, Math.min(1, (v + 0.2) / 0.
   ["vol", "안정성", (v) => Math.max(0, Math.min(1, 1 - v / 0.8))], ["vol_ratio", "거래량", (v) => Math.max(0, Math.min(1, (v - 0.5) / 1.5))]];
 // '오늘 AI 회의' 판: 지금 자동으로 무엇을 하는지 한 줄 + 후보마다 단계 (대기 → 회의 중 → 보류/샀어요/…)
 const TD_STATE = { wait: ["회의 대기", "clock"], meeting: ["회의 중", "loader-2"], bought: ["샀어요", "shopping-cart"], approval: ["승인 대기", "hand"],
-  hold: ["보류", "pause-circle"], nobuy: ["안 삼", "shield-alert"], sell: ["매도 의견", "trending-down"], held: ["보유 중", "wallet"], error: ["회의 실패", "alert-triangle"] };
+  hold: ["보류 · 지켜봄", "eye"], nobuy: ["사지 않음", "shield-alert"], sell: ["매도 의견", "trending-down"], held: ["보유 중", "wallet"], error: ["회의 실패", "alert-triangle"] };
 const TD_TONE = { busy: "busy", wait: "wait", done: "done", warn: "warn", off: "off" };
+const pkCache = {};  // 시장별 마지막 결과: 국내↔미국을 바꾸면 이것부터 바로 그리고 뒤에서 새로 받는다
 async function loadPicks(refresh = false) {
-  const box = $("#picks"), head = $("#today-head");
+  const box = $("#picks");
   if (!box) return;
-  const first = !box.dataset.ready;
-  if (first || refresh) box.innerHTML = `<div class="skeleton" style="height:44px"></div>`;
+  const mk = pk.market, hit = pkCache[mk];
+  if (hit && !refresh) renderPicks(hit.res, hit.plan, mk);
+  else if (!box.dataset.ready || refresh || !hit) box.innerHTML = `<div class="skeleton" style="height:44px"></div>`;
   const [res, plan] = await Promise.all([
-    api(`/api/picks?market=${pk.market}&stats=true${refresh ? "&refresh=true" : ""}`).catch((e) => ({ error: e.message })),
-    api(`/api/ai/today?market=${pk.market}`).catch(() => null)]);
+    api(`/api/picks?market=${mk}&stats=true${refresh ? "&refresh=true" : ""}`).catch((e) => ({ error: e.message })),
+    api(`/api/ai/today?market=${mk}${refresh ? "&fresh=true" : ""}`).catch(() => null)]);
+  if (!res.error) pkCache[mk] = { res, plan };
+  if (pk.market === mk) renderPicks(res, plan, mk);  // 기다리는 사이 시장을 또 바꿨으면 그리지 않는다
+}
+function renderPicks(res, plan, mk) {
+  const box = $("#picks"), head = $("#today-head");
+  const first = box.dataset.ready !== mk;
   if (res.error) { box.innerHTML = `<p class="note">${esc(res.error)}</p>`; renderPicksWhy(null); return; }
   renderPicksWhy(res.excluded);
   if (plan && head) {
@@ -170,9 +178,10 @@ async function loadPicks(refresh = false) {
     const nx = plan.next_at && plan.tone === "busy" ? new Date(plan.next_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
     head.className = "td-head " + (TD_TONE[plan.tone] || "");
     head.innerHTML = `<span class="td-dot"></span><p>${esc(plan.headline)}</p>
-      <div class="td-meta"><span>오늘 회의 <b>${plan.used}/${plan.cap}</b><i class="td-bar"><b style="width:${pctUsed}%"></b></i></span>
+      <div class="td-meta"><span title="자동매매가 여는 회의 수. 직접 연 회의는 따로 세요">자동 회의 <b>${plan.used}/${plan.cap}</b><i class="td-bar"><b style="width:${pctUsed}%"></b></i></span>
+        ${plan.manual ? `<span>직접 연 회의 <b>${plan.manual}</b></span>` : ""}
         ${nx ? `<span>다음 회의 <b>${nx}</b>쯤</span>` : ""}${plan.session ? `<span class="td-sess">${esc(plan.session)}</span>` : ""}
-        ${!plan.auto && plan.tone === "off" && plan.cap ? `<button class="primary td-auto" id="td-auto"><i data-lucide="play"></i> 자동매매 켜기</button>` : ""}</div>`;
+        ${plan.off === "auto" ? `<button class="primary td-auto" id="td-auto"><i data-lucide="play"></i> 자동매매 켜기</button>` : ""}</div>`;
   }
   const rows = plan?.items?.length ? plan.items : (res.items || []).map((p) => ({ ...p, state: p.held ? "held" : p.met ? "hold" : "wait", note: "" }));
   const origin = (r) => (r.reason || "").split(" · ")[0];
@@ -181,7 +190,7 @@ async function loadPicks(refresh = false) {
     const [label, ic] = TD_STATE[p.state] || [p.state, "dot"];
     const tip = (p.reason || "") + (p.factors ? `\n모멘텀 ${pct(p.factors.mom)} · 52주 고가의 ${Math.round((p.factors.near_high || 0) * 100)}% · 변동성 ${Math.round((p.factors.vol || 0) * 100)}% · 거래량 ${(p.factors.vol_ratio || 1).toFixed(1)}배` : "");
     const act = p.state === "wait" || p.state === "held" ? `<button class="pk-go" data-meet="${esc(p.symbol)}" title="이 종목을 지금 AI 회의">지금 회의</button>`
-      : p.run_id ? `<button class="pk-go ghost" data-run="${esc(p.run_id)}" title="회의 내용 보기">결과</button>` : "";
+      : p.run_id ? `<button class="pk-go ghost" data-run="${esc(p.run_id)}" title="회의 내용 보기">회의 보기</button>` : "";
     return `<div class="pk-row" data-open="${esc(p.symbol)}" title="${esc(tip)}">
       <span class="pk-n">${i + 1}</span>${logo(p.symbol, p.name, 26)}
       <span class="pk-nm"><b>${esc(p.name)}</b><em title="${esc(p.note || "")}">${esc(["nobuy", "error", "approval"].includes(p.state) && p.note ? p.note : origin(p))}</em></span>
@@ -190,7 +199,7 @@ async function loadPicks(refresh = false) {
   }).join("")}</div>`
     : `<p class="note pk-none">오늘은 '사도 되는 조건'을 통과한 종목이 없어요. 내리막·과열 종목뿐이라 회의를 쉬어요 (쉬는 날도 손실을 줄이는 방법이에요). 새로 통과한 종목이 생기면 바로 회의해요.</p>`;
   if (first) {
-    box.dataset.ready = "1";
+    box.dataset.ready = mk;
     animateIn("#picks .pk-row", { step: 30 });
     if (!REDUCED && window.anime) anime({ targets: "#picks .pk-sc b", scaleX: [0, 1], duration: 700, delay: anime.stagger(30), easing: "easeOutCubic" });
   }
@@ -251,7 +260,13 @@ $("#picks-mkt")?.addEventListener("click", (e) => {
   $$("#picks-mkt button").forEach((x) => x.classList.toggle("on", x === b));
   loadPicks();
 });
-document.addEventListener("tab", (e) => { if (e.detail === "office") loadPicks(); });
+document.addEventListener("tab", (e) => {
+  if (e.detail !== "office") return;
+  loadPicks();
+  const other = pk.market === "KR" ? "US" : "KR";  // 다른 시장도 미리 받아 두면 바꿀 때 바로 보인다
+  if (!pkCache[other]) setTimeout(() => Promise.all([api(`/api/picks?market=${other}&stats=true`), api(`/api/ai/today?market=${other}`)])
+    .then(([res, plan]) => { pkCache[other] = { res, plan }; }).catch(() => {}), 1500);
+});
 
 // 오늘 마감 요약: 숫자 카드 + 최근 10일 자산 막대 + 오늘 거래 목록 + 감시 중 종목
 function renderDayReport(rep, m) {

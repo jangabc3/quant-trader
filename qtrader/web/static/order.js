@@ -131,6 +131,16 @@ async function ticketLoad(sym) {
     const i = await api("/api/order/info/" + encodeURIComponent(sym));
     if (tk.sym !== sym) return;
     const first = !tk.info || tk.info.symbol !== sym;
+    if (!i.price) {  // 키가 없어 시세를 못 받으면 0원 주문창 대신 무엇을 하면 되는지 알려 준다
+      tk.info = null;
+      $("#ticket").innerHTML = `<div class="empty"><i data-lucide="key-round"></i><p>지금은 주문할 수 없어요</p>
+        <span class="note">${state.status?.keys?.toss ? "이 종목의 현재가를 받지 못했어요. 잠시 뒤 다시 열어 주세요."
+          : "체험용 화면이에요. 설정에서 토스증권 키를 등록하면 실제 시세로 가상매매 주문을 할 수 있어요."}</span>
+        ${state.status?.keys?.toss ? "" : `<button class="primary" id="tk-open-cfg">설정 열기</button>`}</div>`;
+      $("#tk-open-cfg")?.addEventListener("click", () => openTab("cfg"));
+      icons();
+      return;
+    }
     tk.info = i;
     if (first) { tk.price = i.price ? tkRound(i.price) : 0; tk.qty = 0; tk.type = "limit"; ticketShell(); }
     if (!i.market_order && tk.type === "market") tk.type = "limit";

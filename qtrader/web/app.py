@@ -777,15 +777,21 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
 
     # 실시간 사무실 현황판
     @app.get("/api/ai/today")
-    def ai_today(market: str = "KR"):
+    def ai_today(market: str = "KR", fresh: bool = False):
         """AI 사무실 '오늘 AI 회의' 판: 자동으로 무엇을 하는지, 후보마다 지금 단계 (AI 호출 없음)."""
         from .. import live
         from ..engine import trade_date
         from ..screener import todays
         c = ctx()
         m = Market(market)
-        todays(c, m, trade_date(m), max(config_mod.meetings_cap(c.cfg, m), 1))  # 후보가 아직 없으면 지금 고른다
-        return live.today_plan(c, m, name_of)
+
+        def build():
+            todays(c, m, trade_date(m), max(config_mod.meetings_cap(c.cfg, m), 1))  # 후보가 아직 없으면 지금 고른다
+            return live.today_plan(c, m, name_of)
+        # 계좌·장 시간 확인에 토스 호출이 있어 국내↔미국 전환이 느렸다. 잠깐 담아 두고 뒤에서 새로 고친다
+        if fresh:
+            market_mod._cache.pop(f"ai_today:{m.value}", None)
+        return market_mod.cached(f"ai_today:{m.value}", 4, build, stale=60)
 
     @app.get("/api/live")
     def live_board(market: str = "KR"):

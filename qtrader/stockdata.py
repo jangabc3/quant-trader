@@ -170,20 +170,25 @@ def _resample(df: pd.DataFrame, rule: str) -> pd.DataFrame:
 
 
 def _demo_candles(symbol: str, src: str, n: int) -> pd.DataFrame:
+    """체험용 시세. 일봉은 길이와 상관없이 같은 줄(맨 끝 = 현재가)을 잘라 쓰고, 분봉은 그 현재가에서 끝나게 맞춘다.
+    (예전엔 받는 개수마다 다른 줄이 나와 머리말 85,417원·호가 82,000원처럼 화면마다 값이 달랐다)"""
     base = 72000.0 if symbol[:1].isdigit() else 180.0
     if symbol in INDEX_SYMBOLS:
         base = 3200.0 if symbol == "KOSPI" else 880.0
+    daily = synthetic(symbol, days=2600, start_price=base, seed=abs(hash(symbol)) % 1000)
     if src == "1d":
-        return synthetic(symbol, days=n, start_price=base, seed=abs(hash(symbol)) % 1000)
+        return daily.tail(n)
+    m = 2400
     rng = np.random.default_rng(abs(hash(symbol + "m")) % 2**32)
     end = pd.Timestamp.now().floor("min")
-    idx = pd.date_range(end=end, periods=n, freq="min")
-    close = base * np.exp(np.cumsum(rng.normal(0, 0.0012, n)))
+    idx = pd.date_range(end=end, periods=m, freq="min")
+    close = np.exp(np.cumsum(rng.normal(0, 0.0012, m)))
+    close = close / close[-1] * float(daily["close"].iloc[-1])
     op = np.r_[close[0], close[:-1]]
-    hi = np.maximum(op, close) * (1 + np.abs(rng.normal(0, 0.0006, n)))
-    lo = np.minimum(op, close) * (1 - np.abs(rng.normal(0, 0.0006, n)))
+    hi = np.maximum(op, close) * (1 + np.abs(rng.normal(0, 0.0006, m)))
+    lo = np.minimum(op, close) * (1 - np.abs(rng.normal(0, 0.0006, m)))
     return pd.DataFrame({"open": op, "high": hi, "low": lo, "close": close,
-                         "volume": rng.integers(100, 5000, n).astype(float)}, index=idx)
+                         "volume": rng.integers(100, 5000, m).astype(float)}, index=idx).tail(n)
 
 
 def candles(t: Toss | None, symbol: str, interval: str = "1d", count: int | None = None) -> dict:

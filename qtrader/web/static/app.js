@@ -496,9 +496,9 @@ $("#auto-btn").onclick = async () => {
         ? `${sessions(m, mc)} 동안 수시로 회의하고 사고팔아요` : `매 거래일 ${mc.run_time}(${m === "KR" ? "한국" : "뉴욕"} 시간)`)
       + `, 한도 ${m === "US" ? usdWithKrw(mc.budget) : money(mc.budget, m)}`);
     const rules = c.markets.KR.strategy === "ai" || c.markets.US.strategy === "ai"
-      ? "\n· AI 회의 결과가 매수여도 체크리스트(추세·모멘텀·과열·변동성·손익비·팩트체크)를 모두 넘어야 삽니다.\n· 산 종목은 손절가·익절가에 닿으면 자동으로 팝니다." + (c.ai.require_approval ? "\n· 주문은 승인 대기에 먼저 올라오고, 근거를 보고 승인해야 나갑니다." : "")
+      ? "\n· AI 회의 결과가 매수여도 안전 점검을 넘어야 삽니다. 필수(추세·손익비·확신도 등)는 모두, 추가(모멘텀·과열 등)는 조금 덜 맞으면 적게 사요.\n· 산 종목은 손절가·익절가에 닿으면 자동으로 팝니다." + (c.ai.require_approval ? "\n· 주문은 승인 대기에 먼저 올라오고, 근거를 보고 승인해야 나갑니다." : "")
       : "";
-    if (!(await ask(`${MODE_NAME[s.mode]} 계좌로 자동매매를 시작합니다.\n\n${lines.join("\n")}${rules}\n\n종목당 최대 ${Math.round(c.risk.max_weight * 100)}%, 하루 손실 ${Math.round(c.risk.daily_loss_limit * 100)}% 에 닿으면 긴급 정지(새로 사지 않음)가 켜집니다. 계속할까요?`))) return;
+    if (!(await ask(`${MODE_NAME[s.mode]} 계좌로 자동매매를 시작합니다.\n\n${lines.join("\n")}${rules}\n\n종목당 최대 ${+(c.risk.max_weight * 100).toFixed(1)}%, 하루 손실 ${+(c.risk.daily_loss_limit * 100).toFixed(1)}% 에 닿으면 긴급 정지(새로 사지 않음)가 켜집니다. 계속할까요?`))) return;
     if (LIVE.has(s.mode) && (await ask("실전 자동매매입니다. 진행하려면 아래 칸에 '실전주문' 이라고 입력하세요.", { input: "확인 문구", danger: true, ok: "실전 자동매매 시작" })) !== "실전주문") return;
   }
   await api("/api/auto", { method: "POST", body: { on } }).catch((e) => toast(e.message));
