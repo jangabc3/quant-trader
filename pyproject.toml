@@ -13,6 +13,8 @@ dependencies = [
   "anthropic>=2.3",
   "defusedxml>=0.7",
   "pywebview>=5.4; sys_platform == 'win32'",  # 프로그램 창 (윈도우 Edge WebView2)
+  "pystray>=0.19; sys_platform == 'win32'",   # X 를 눌러도 숨겨진 아이콘(^)으로 숨어 계속 돈다
+  "pillow>=10; sys_platform == 'win32'",      # 아이콘 그림
 ]
 
 [project.optional-dependencies]
