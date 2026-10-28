@@ -64,7 +64,7 @@ def watch_list(ctx, market: Market) -> list[dict]:
 def next_candidates(ctx, market: Market, n: int = 8, ttl: float = 900) -> list[dict]:
     """15분(ttl)마다 다시 계산. 통과한 종목 + 아깝게 떨어진 종목(무엇이 모자라는지)."""
     def build():
-        R = principles.DEFAULT_RULES | (ctx.cfg["ai"].get("rules") or {})
+        R = principles.DEFAULT_RULES | principles.rules_for(ctx.cfg)
         syms, held = screener.pool(ctx, market)
         rows = []
         for s in syms[:60]:  # 15분마다 도니까 시세 호출 수를 제한
