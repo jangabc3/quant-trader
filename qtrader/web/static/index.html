@@ -323,7 +323,7 @@
 
   <!-- 계산기 -->
   <section id="tab-calc" class="tab hidden">
-    <div class="seg big" id="calc-tab"><button data-v="pos" class="on"><i data-lucide="target"></i> 몇 주 살까 (포지션 크기)</button><button data-v="cp"><i data-lucide="sprout"></i> 목표 자산 (복리)</button><button data-v="tax"><i data-lucide="receipt"></i> 미국 주식 세금</button></div>
+    <div class="seg big" id="calc-tab"><button data-v="pos" class="on"><i data-lucide="target"></i> 몇 주 살까 (포지션 크기)</button><button data-v="cp"><i data-lucide="sprout"></i> 목표 자산 (복리)</button><button data-v="tax"><i data-lucide="receipt"></i> 미국 주식 세금</button><button data-v="sig"><i data-lucide="flask-conical"></i> 사는 신호 검증</button></div>
     <div class="calc-pane" id="calc-pos">
       <div class="calc-card panel">
         <div class="calc-in">
@@ -347,6 +347,16 @@
           <label>물가상승률 <b id="cp-inf-v"></b><input id="cp-inf" type="range" min="0" max="6" step="0.1" value="2.5"></label>
         </div>
         <div class="calc-res"><div class="calc-out" id="cp-out"></div><div id="cp-chart" class="chart small"></div></div>
+      </div>
+    </div>
+    <div class="calc-pane hidden" id="calc-sig">
+      <div class="panel">
+        <div class="rank-bar"><h3 style="margin:0">사는 신호 검증 <small>자동매매가 쓰는 사는 신호·팔기 규칙을 지난 3년 시세로 돌려 봐요 (AI 비용 없음)</small></h3>
+          <div class="seg" id="sg-mkt"><button data-v="KR" class="on">국내</button><button data-v="US">미국</button></div>
+          <button class="primary" id="sg-run"><i data-lucide="play"></i> 돌려 보기</button></div>
+        <p class="note">오늘 후보·관심 종목 최대 40개로 해요. 일봉이라 하루 안 순서를 모를 때는 손절이 먼저라고 보고, 수수료·세금·슬리피지를 뺐어요.
+          AI 거부권은 지난 뉴스를 다시 볼 수 없어 빼고 숫자 규칙만 봐요. 지난 결과일 뿐 앞으로를 약속하지 않아요.</p>
+        <div id="sg-out"><div class="empty"><i data-lucide="flask-conical"></i><p>'돌려 보기'를 누르면 결과가 나와요</p><span class="note">종목마다 3년 치 일봉을 받아서 10~30초쯤 걸려요.</span></div></div>
       </div>
     </div>
     <div class="calc-pane hidden" id="calc-tax">

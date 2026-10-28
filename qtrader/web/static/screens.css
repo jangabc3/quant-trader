@@ -525,3 +525,10 @@ nav { scrollbar-width: none; } nav::-webkit-scrollbar { display: none; }
 .mkt-ai-n { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 .mkt-ai-n input { width: 64px; text-align: center; padding: 6px; }
 .mkt-ai .hint { flex-basis: 100%; margin: 0; }
+
+/* 사는 신호 검증 */
+.sg-kpi { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 8px 0 12px; }
+@media (max-width: 900px) { .sg-kpi { grid-template-columns: 1fr 1fr; } }
+#calc-sig h4 { margin: 14px 0 6px; }
+#calc-sig .rank-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+#calc-sig .rank-bar h3 { flex: 1; }
