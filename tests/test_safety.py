@@ -217,6 +217,9 @@ def test_extended_sessions_and_tick(ctx):
     from qtrader.scheduler import trading_now
     kst = ZoneInfo("Asia/Seoul")
     eve = datetime(2026, 10, 28, 19, 0, tzinfo=kst)  # 수요일 저녁 7시
+    assert ctx.cfg["markets"]["KR"]["extended"] and ctx.cfg["markets"]["US"]["extended_sessions"] == ["day", "pre", "after"]  # 기본: 모든 세션
+    ctx.cfg["markets"]["KR"]["extended"] = False
+    ctx.cfg["markets"]["US"]["extended_sessions"] = []
     assert not trading_now(ctx.cfg, Market.KR, eve)
     ctx.cfg["markets"]["KR"]["extended"] = True
     assert trading_now(ctx.cfg, Market.KR, eve) and not trading_now(ctx.cfg, Market.KR, eve.replace(hour=21))

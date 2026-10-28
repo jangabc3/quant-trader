@@ -78,7 +78,7 @@ function liveHud(d) {
   const hud = $("#office-hud");
   hud.className = "office-hud " + (d.schedule.open ? "running" : "");
   hud.innerHTML = `<span class="hud-dot"></span><div><b>실시간 사무실</b> <small>${d.market === "KR" ? "국내" : "미국"}</small>
-    <div>${d.schedule.open ? `<b class='blink'>● 장중</b> 감시·후보 계산 중${d.intraday?.on ? " · 장중 회의 → 매수 켜짐" : ""}` : "장 마감 · 다음 장을 기다리는 중"}</div>
+    <div>${d.schedule.open ? `<b class='blink'>● ${esc(d.schedule.session || "장중")}</b> 감시·사고팔기 중${d.intraday?.on ? " · 장중 회의 → 매수 켜짐" : ""}` : "장 마감 · 다음 장을 기다리는 중"}</div>
     <div class="note">${d.auto ? "자동매매 켜짐" : "자동매매 꺼짐"}${d.kill ? " · 긴급 정지 중" : ""} · AI 호출 없이 움직임만 보여 줘요</div></div>`;
   $("#stage-line").innerHTML = "";
 }
