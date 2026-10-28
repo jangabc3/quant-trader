@@ -116,9 +116,9 @@ python -m venv .venv
    ```bash
    .venv\Scripts\qtrader demo-data
    ```
-2. **대시보드 열기** — 프로그램으로 깔려면 `QTrader 설치.cmd` 를 더블클릭(D:\QTrader 에 설치, 바탕화면 바로가기). 코드 그대로 켜려면 `QTrader 실행.cmd` 를 더블클릭하거나:
+2. **프로그램 열기** — 설치하려면 `QTrader 설치.cmd` 를 더블클릭하세요 (D:\QTrader 에 설치, 바탕화면 QTrader 아이콘). 브라우저 탭이 아니라 **자기 창**으로 뜹니다. 창을 닫으면 자동매매도 멈춥니다. 코드 그대로 켜려면 `QTrader 실행.cmd` 를 더블클릭하거나:
    ```bash
-   .venv\Scripts\qtrader serve
+   .venv\Scripts\qtrader app      # 프로그램 창 (브라우저로 보려면: qtrader serve)
    ```
 3. **백테스트** 탭에서 전략과 기간을 고르고 실행해 봅니다.
 4. **대시보드** 탭의 "지금 계산만"으로 오늘 어떤 주문이 나갈지 미리 봅니다.

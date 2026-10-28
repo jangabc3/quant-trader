@@ -12,6 +12,7 @@ dependencies = [
   "keyring>=24",
   "anthropic>=2.3",
   "defusedxml>=0.7",
+  "pywebview>=5.4; sys_platform == 'win32'",  # 프로그램 창 (윈도우 Edge WebView2)
 ]
 
 [project.optional-dependencies]
