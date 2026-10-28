@@ -26,7 +26,7 @@ from ..engine import trade_date
 from ..storage import Store, now
 from . import context as ctxmod
 from .llm import LLM, LLMError
-from .roles import BY_ID, CHECK_SCHEMA, FINAL_SCHEMA, RATING_KO, ROLES, STAGES, common_system, headline, role_brief
+from .roles import BY_ID, CHECK_SCHEMA, FINAL_SCHEMA, RATING_KO, ROLES, STAGES, common_system, decision_guide, headline, role_brief
 
 _lock = threading.Lock()
 _live: dict[str, dict] = {}  # 진행 중·최근 회의 (메모리)
@@ -265,7 +265,8 @@ class Meeting:
 
         final_ask = ("최종 결정을 JSON 으로 내라. confidence·probability 는 0~1, 손절·익절은 % 양수, 시나리오 가격과 진입 가격대는 "
                      f"회의 자료의 현재가({brief.facts['close']:,})와 같은 통화·단위. summary·reasons·trust·worry·watch 는 각 3개, "
-                     "short_args 는 3개. risk_votes 는 리스크 위원 3명의 의견. 근거가 약하면 Hold 를 택하라.")
+                     "short_args 는 3개. risk_votes 는 리스크 위원 3명의 의견. "
+                     + decision_guide(principles.practice_on(self.cfg)))
         if fast:
             # 4~7) 대표가 팀장(투자 논문)·트레이더(실행안)·리스크 위원 3명(공격/중립/보수) 관점을 함께 검토
             for k in ("lead", "trader", "risk"):

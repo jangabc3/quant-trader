@@ -472,3 +472,13 @@ def test_claude_client_does_not_wait_forever(fake_vault):
     fake_vault["anthropic_api_key"] = "sk-ant-test"
     c = make_client()
     assert c.max_retries == 2 and float(c.timeout) == 300.0
+
+
+def test_decision_guide_no_longer_defaults_to_hold():
+    """'근거가 약하면 Hold' 만 있으면 숫자 거르기를 통과한 후보도 다 보류로 끝났다. 위험 신호가 있을 때만 보류."""
+    from qtrader.agents import roles
+    g = roles.decision_guide(False)
+    assert "Overweight" in g and "위험 신호" in g and "가상매매" not in g
+    assert "가상매매 연습" in roles.decision_guide(True)
+    assert "보류(Hold: 새로 사지 않고 지켜봄)'가 정답" not in roles.RULES
+
