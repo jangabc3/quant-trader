@@ -16,7 +16,7 @@ DATA_SOURCES = ("auto", "toss", "kis", "csv")
 
 DEFAULT = {
     "mode": "paper",
-    "migrated": ["all_sessions"],  # 이미 적용한 기본값 바꾸기 (migrate)
+    "migrated": ["all_sessions", "meetings_per_market"],  # 이미 적용한 기본값 바꾸기 (migrate)
     # 실전 주문은 mode=kis_real 이면서 이 값이 true 일 때만 나간다
     "live_confirmed": False,
     "markets": {
@@ -30,6 +30,9 @@ DEFAULT = {
             # 넥스트레이드(NXT) 08:00~20:00 에도 감시·사고팔기 (지정가만). 정규장(09:00~15:30)만 하려면 끈다
             "extended": True,
             "budget": 10_000_000,  # 이 전략이 쓸 최대 금액(원)
+            # AI 회의를 국내·미국 따로: 켜기/끄기, 하루에 회의할 종목 수 (비용 상한. 회의 1번 = Claude 7번 + 웹 검색)
+            "ai_meetings": True,
+            "meetings_per_day": 4,
         },
         "US": {
             "enabled": False,
@@ -39,6 +42,8 @@ DEFAULT = {
             "universe": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "AMEX:SPY", "NYSE:KO"],
             "run_time": "15:45",  # 뉴욕 시간. 장 마감(16:00) 전
             "budget": 10_000,  # 달러
+            "ai_meetings": True,
+            "meetings_per_day": 4,
             "limit_offset": 0.003,  # 미국 지정가 주문을 현재가에서 얼마나 유리하게 걸지
             # 정기 실행: regular = 뉴욕 정규장 마감 전 (run_time 은 뉴욕 시각), day = 한국 낮 주간거래 (run_time 은 한국 시각)
             "run_session": "regular",
@@ -86,7 +91,6 @@ DEFAULT = {
         "risk_rounds": 1,
         "web_research": True,  # 뉴스·재무·여론 분석가가 웹 검색을 쓴다
         "run_before_minutes": 40,  # 실행 시각보다 이만큼 먼저 회의를 돌린다
-        "max_symbols_per_day": 8,  # 비용 상한: 하루 회의 종목 수
         # 최종 등급 -> 목표 비중 배수 (종목당 1/N 기준). Hold(보류)는 새로 사지 않고 가진 종목은 그대로
         "rating_weights": {"Buy": 1.0, "Overweight": 0.7, "Hold": None, "Underweight": 0.3, "Sell": 0.0},
         "min_confidence": 0.5,  # 이보다 확신이 낮으면 Hold 로 본다
@@ -100,7 +104,7 @@ DEFAULT = {
         "recheck_per_day": 5,  # 하루 재점검 횟수 상한 (0 = 재점검 안 함)
         "recheck_every_min": 2,  # 재점검이 필요한지 몇 분마다 볼지
         # 장중 계속 사기: 장중 N분마다 새로 규칙을 통과한 후보로 회의를 열고, 결론이 매수이고 체크리스트를 통과하면 그때 바로 산다.
-        # 끄면 하루 한 번 정기 실행 때만 산다. 회의 수는 max_symbols_per_day·monthly_cost_cap_krw 에 함께 센다
+        # 끄면 하루 한 번 정기 실행 때만 산다. 회의 수는 시장별 meetings_per_day·monthly_cost_cap_krw 에 함께 센다
         "intraday": True,
         "intraday_every_min": 15,
     },
@@ -185,7 +189,7 @@ def load() -> dict:
 
 # 한 번만 적용하는 기본값 바꾸기. 예전에 저장한 설정에는 옛 기본값이 그대로 들어 있어서, 새 기본값을 한 번 덮어쓴다
 # (적용한 뒤 사용자가 끄고 저장하면 그 선택을 따른다)
-MIGRATIONS = ("all_sessions",)
+MIGRATIONS = ("all_sessions", "meetings_per_market")
 
 
 def migrate(cfg: dict, saved: dict) -> dict:
@@ -194,6 +198,12 @@ def migrate(cfg: dict, saved: dict) -> dict:
     if "all_sessions" not in done:  # 프리장·장중·애프터장 내내 사고팔기 (사용자 요청 2026-10)
         cfg["markets"]["KR"]["extended"] = True
         cfg["markets"]["US"]["extended_sessions"] = ["day", "pre", "after"]
+    if "meetings_per_market" not in done:  # 하루 회의 수를 국내·미국 따로 (예전 하나로 합친 값은 반씩 나눈다)
+        old = (saved.get("ai") or {}).get("max_symbols_per_day")
+        if isinstance(old, int) and not any("meetings_per_day" in (saved.get("markets") or {}).get(m, {}) for m in ("KR", "US")):
+            for m in ("KR", "US"):
+                cfg["markets"][m]["meetings_per_day"] = max(1, old // 2)
+    cfg.get("ai", {}).pop("max_symbols_per_day", None)
     cfg["migrated"] = sorted(done | set(MIGRATIONS))
     return cfg
 
@@ -241,9 +251,25 @@ def validate(cfg: dict) -> list[str]:
         errs.append("재점검 간격(ai.recheck_every_min)은 2~240분이어야 합니다")
     if not _int_in("recheck_per_day", 0, 50, 5):
         errs.append("하루 재점검 횟수(ai.recheck_per_day)는 0~50 이어야 합니다")
-    if not _int_in("max_symbols_per_day", 0, 50, 8):
-        errs.append("하루 회의 종목 수(ai.max_symbols_per_day)는 0~50 이어야 합니다")
+    for m, mc in (cfg.get("markets") or {}).items():
+        v = mc.get("meetings_per_day", 4)
+        if not (isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 50):
+            errs.append(f"{m} 하루 회의 종목 수(meetings_per_day)는 0~50 이어야 합니다")
+        if not isinstance(mc.get("ai_meetings", True), bool):
+            errs.append(f"{m}.ai_meetings 는 true 또는 false")
     return errs
+
+
+def meetings_cap(cfg: dict, market) -> int:
+    """이 시장에서 하루에 AI 회의를 열 수 있는 종목 수. 이 시장 AI 회의를 끄면 0."""
+    mc = cfg["markets"][getattr(market, "value", market)]
+    return int(mc.get("meetings_per_day", 4)) if mc.get("ai_meetings", True) else 0
+
+
+def met_today(store, market, today: str) -> set[str]:
+    """오늘 이 시장에서 AI 회의를 한 종목 (정기·장중·직접 연 회의 모두)."""
+    mv = getattr(market, "value", market)
+    return {r["symbol"] for r in store.ai_runs(300) if r["trade_date"] == today and r["market"] == mv}
 
 
 def save(cfg: dict) -> None:

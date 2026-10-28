@@ -272,8 +272,9 @@ class Scheduler:
         picks = _json.loads(ctx.store.get(pk) or "[]")
         have = {p["symbol"] for p in picks}
         fresh = [c for c in live.next_candidates(ctx, m, ttl=every) if not c["missing"] and c["symbol"] not in have]
-        if fresh and len(picks) < int(ctx.cfg["ai"]["max_symbols_per_day"]):
-            add = fresh[: int(ctx.cfg["ai"]["max_symbols_per_day"]) - len(picks)]
+        cap = config_mod.meetings_cap(ctx.cfg, m)
+        if fresh and len(picks) < cap:
+            add = fresh[: cap - len(picks)]
             picks += [{"symbol": c["symbol"], "score": c["score"], "reason": "장중 새로 규칙 통과", "held": False, "fails": []} for c in add]
             ctx.store.set(pk, _json.dumps(picks, ensure_ascii=False))
             when = "곧 장중 회의" if ctx.cfg["ai"].get("intraday", True) else "다음 정기 회의·실행 때 검토"
@@ -281,7 +282,7 @@ class Scheduler:
 
     def _intraday(self, ctx, m: Market) -> list[dict]:
         """장중 계속 사기 (ai.intraday): 끝난 장중 회의는 그 종목만 바로 사고(engine.buy_one), N분마다 새 후보 하나로 회의를 연다.
-        비용 한도: 하루 회의 수(ai.max_symbols_per_day, 정기 회의와 합산)·월 비용 상한, 같은 종목은 하루 한 번, 회의는 한 번에 하나."""
+        비용 한도: 시장별 하루 회의 수(markets.*.meetings_per_day, 정기 회의와 합산)·월 비용 상한, 같은 종목은 하루 한 번, 회의는 한 번에 하나."""
         import json as _json
         from . import extras
         from .agents import meeting
@@ -331,15 +332,15 @@ class Scheduler:
                 ctx.store.set(f"intraday_skip_{m.value}_{today}", why)
                 ctx.store.log("info", f"intraday.{m.value}", f"장중 회의 쉼: {why}")
             return out
-        met = {r["symbol"] for r in ctx.store.ai_runs(200) if r["trade_date"] == today}
-        if len(met) >= int(ai["max_symbols_per_day"]):
+        met, cap = config_mod.met_today(ctx.store, m, today), config_mod.meetings_cap(ctx.cfg, m)
+        if len(met) >= cap:  # 이 시장 하루 회의 수를 다 썼거나, 이 시장 AI 회의를 껐다
             return out
         cap = float(ai.get("monthly_cost_cap_krw") or 0)
         if cap and extras.month_cost_krw(ctx.store) >= cap:
             return out
         from .screener import todays
         try:
-            picks = todays(ctx, m, today, int(ai["max_symbols_per_day"])) if ai.get("auto_pick", True) else \
+            picks = todays(ctx, m, today, cap) if ai.get("auto_pick", True) else \
                 [{"symbol": s} for s in ctx.cfg["markets"][m.value]["universe"]]
         except Exception as ex:
             ctx.store.log("warn", f"intraday.{m.value}", f"후보 고르기 실패: {ex}")
@@ -388,12 +389,12 @@ class Scheduler:
         if any(r["status"] == "running" for r in meeting.live_runs()):
             return
         today = trade_date(m)
-        done = {r["symbol"] for r in ctx.store.ai_runs(200) if r["trade_date"] == today}
-        if len(done) >= int(ai["max_symbols_per_day"]):
+        done, cap = config_mod.met_today(ctx.store, m, today), config_mod.meetings_cap(ctx.cfg, m)
+        if len(done) >= cap:
             return
         if ai.get("auto_pick", True):  # 종목을 정하지 않아도 AI 가 후보를 고른다
             from .screener import todays
-            symbols = [p["symbol"] for p in todays(ctx, m, today, int(ai["max_symbols_per_day"]))]
+            symbols = [p["symbol"] for p in todays(ctx, m, today, cap)]
         else:
             symbols = mc["universe"]
         for s in symbols:

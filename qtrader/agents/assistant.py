@@ -170,7 +170,8 @@ class Assistant:
             ctx = self.get_ctx()
             m = ctxmod.Market(args["market"])
             if name == "today_picks":
-                return json.dumps({"기준": screener.__doc__, "후보": screener.todays(ctx, m, trade_date(m), int(ctx.cfg["ai"]["max_symbols_per_day"]))},
+                from ..config import meetings_cap
+                return json.dumps({"기준": screener.__doc__, "후보": screener.todays(ctx, m, trade_date(m), max(meetings_cap(ctx.cfg, m), 1))},
                                   ensure_ascii=False)[:15000]
             if name == "performance":
                 r = extras.performance(ctx.store, ctx.broker.name, m.value)

@@ -523,7 +523,7 @@ async function loadConfig() {
   $("#ai-approve").checked = !!c.ai.require_approval;
   $("#ai-exit").checked = c.ai.auto_exit !== false;
   $("#ai-debate").value = c.ai.debate_rounds;
-  $("#ai-before").value = c.ai.run_before_minutes; $("#ai-max").value = c.ai.max_symbols_per_day;
+  $("#ai-before").value = c.ai.run_before_minutes;
   $("#ai-web").checked = !!c.ai.web_research;
   $("#ai-autopick").checked = c.ai.auto_pick !== false;
   const R = pr.rules;
@@ -540,6 +540,9 @@ async function loadConfig() {
       <label class="mkt-head"><span class="flag">${m === "KR" ? "🇰🇷" : "🇺🇸"}</span><b>${MARKET_NAME[m]} 주식</b>
         <span class="sw"><input type="checkbox" data-f="enabled" ${mc.enabled ? "checked" : ""}><i></i></span><em class="sw-txt">${mc.enabled ? "자동매매 켬" : "자동매매 끔"}</em></label>
       <label>이 시장에 쓸 돈 <em class="hint">${m === "KR" ? "원" : "달러"} · 계좌 돈 중 이만큼만 자동매매에 써요</em><input data-f="budget" type="number" value="${mc.budget}"></label>
+      <div class="mkt-ai"><label class="check"><input type="checkbox" data-f="ai_meetings" ${mc.ai_meetings !== false ? "checked" : ""}> ${MARKET_NAME[m]} AI 회의</label>
+        <span class="mkt-ai-n">하루 <input data-f="meetings_per_day" type="number" min="0" max="50" value="${mc.meetings_per_day ?? 4}"> 종목까지</span>
+        <em class="hint">회의 1번에 Claude 7번 + 웹 검색이라, 많을수록 비용이 늘어요</em></div>
       <details class="mini-adv"><summary>시간 · 종목 · 고르는 방법 (고급)</summary>
         <label>무엇을 살지 고르는 방법 <select data-f="strategy">${stratSelect(mc.strategy)}</select></label>
         ${m === "KR" ? `<div class="form-row"><label>정기 실행 시각 <em class="hint">한국 시각</em><input data-f="run_time" value="${esc(mc.run_time)}"></label></div>
@@ -682,7 +685,7 @@ $("#cfg-save").onclick = async () => {
     mode: $("#ai-mode").value, quick_model: $("#ai-quick").value, deep_model: $("#ai-deep").value,
     effort: $("#ai-effort").value, chat_effort: $("#ai-chat-effort").value, profile: $("#ai-profile").value.trim(),
     require_approval: $("#ai-approve").checked, auto_exit: $("#ai-exit").checked, debate_rounds: Number($("#ai-debate").value),
-    run_before_minutes: Number($("#ai-before").value), max_symbols_per_day: Number($("#ai-max").value),
+    run_before_minutes: Number($("#ai-before").value),
     min_confidence: conf, web_research: $("#ai-web").checked,  // 확신도 기준은 하나로 (회의 비중·체크리스트 같이)
     monthly_cost_cap_krw: Number($("#ai-cap").value) || 0, auto_pick: $("#ai-autopick").checked,
     holding: ($$("input[name=holding]").find((i) => i.checked) || {}).value || "auto",
@@ -703,6 +706,8 @@ $("#cfg-save").onclick = async () => {
       mc.extended_sessions = [...el.querySelectorAll("[data-ext]")].filter((x) => x.checked).map((x) => x.dataset.ext);
     }
     mc.budget = Number(el.querySelector("[data-f=budget]").value);
+    mc.ai_meetings = el.querySelector("[data-f=ai_meetings]").checked;
+    mc.meetings_per_day = Math.max(0, Math.round(Number(el.querySelector("[data-f=meetings_per_day]").value) || 0));
     mc.universe = el.querySelector("[data-f=universe]").value.split(",").map((x) => x.trim()).filter(Boolean);
     if (mc.strategy !== "ai") mc.params = readParams(el.querySelector("[data-params]"));
   });

@@ -92,14 +92,14 @@ def test_next_meeting_waits_for_interval_then_picks_new_symbol(ctx, fake_meeting
 
 def test_daily_meeting_cap_and_cost_cap(ctx, fake_meetings):
     _, opened = fake_meetings
-    ctx.cfg["ai"]["max_symbols_per_day"] = 1
+    ctx.cfg["markets"]["KR"]["meetings_per_day"] = 1
     s = Scheduler()
     s._intraday(ctx, Market.KR)
     s._intraday(ctx, Market.KR)
     s._intraday_KR = float("-inf")
     s._intraday(ctx, Market.KR)
     assert opened == ["005930"]  # 하루 회의 수 상한 (정기 회의와 합산)
-    ctx.cfg["ai"]["max_symbols_per_day"] = 8
+    ctx.cfg["markets"]["KR"]["meetings_per_day"] = 8
     ctx.cfg["ai"]["monthly_cost_cap_krw"] = 1
     ctx.store.set("recheck_cost_" + __import__("datetime").datetime.now().strftime("%Y-%m"), "1")  # 이번 달 비용이 상한을 넘음
     s._intraday_KR = float("-inf")
@@ -280,3 +280,34 @@ def test_no_meeting_when_market_regime_blocks_buys(ctx, fake_meetings, monkeypat
     monkeypatch.setattr(principles, "index_bars", lambda data, m: down.iloc[::-1].reset_index(drop=True))
     Scheduler()._intraday(ctx, Market.KR)
     assert opened == ["005930"]  # 상승 국면이면 연다
+
+
+def test_meetings_are_counted_per_market(ctx, fake_meetings):
+    """AI 회의는 국내·미국 따로: 하루 회의 수를 시장마다 세고, 한 시장만 끌 수 있다."""
+    from qtrader.config import meetings_cap, met_today
+    start, opened = fake_meetings
+    ctx.cfg["markets"]["KR"]["meetings_per_day"] = 1
+    start("AAPL", ctx.data, ctx.store, ctx.cfg)  # 미국 회의는 국내 한도에 안 센다
+    assert met_today(ctx.store, Market.KR, trade_date(Market.KR)) == set()
+    opened.clear()
+    s = Scheduler()
+    s._intraday(ctx, Market.KR)
+    assert opened == ["005930"]
+    ctx.cfg["markets"]["KR"]["ai_meetings"] = False  # 국내 AI 회의 끄기
+    assert meetings_cap(ctx.cfg, Market.KR) == 0 and meetings_cap(ctx.cfg, Market.US) == 4
+    s._intraday(ctx, Market.KR)  # 결론 -> 매수는 그대로
+    s._intraday_KR = float("-inf")
+    s._intraday(ctx, Market.KR)
+    assert opened == ["005930"]
+
+
+def test_old_total_meeting_cap_split_in_half(isolated_home):
+    old = json.loads(json.dumps(config.DEFAULT))
+    old.pop("migrated")
+    old["ai"]["max_symbols_per_day"] = 6
+    for m in ("KR", "US"):
+        old["markets"][m].pop("meetings_per_day")
+    config.path().write_text(json.dumps(old), encoding="utf-8")
+    cfg = config.load()
+    assert cfg["markets"]["KR"]["meetings_per_day"] == 3 and cfg["markets"]["US"]["meetings_per_day"] == 3
+    assert "max_symbols_per_day" not in cfg["ai"] and config.validate(cfg) == []
