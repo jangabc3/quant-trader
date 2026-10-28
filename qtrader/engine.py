@@ -88,6 +88,30 @@ def build_context(cfg: dict | None = None, store: Store | None = None) -> Contex
     return Context(cfg, store, KISData(client, store), KISBroker(client))
 
 
+def max_new_buys(cfg: dict) -> int:
+    """하루 신규 매수 종목 수 상한 (체크리스트 규칙). 단기일수록 하루에 조금 더 여러 종목을 작게 산다."""
+    from . import principles
+    ai = cfg["ai"]
+    base = int((ai.get("rules") or {}).get("max_new_buys_per_day", principles.DEFAULT_RULES["max_new_buys_per_day"]))
+    return base + principles.HOLDING.get(ai.get("holding", "long"), principles.HOLDING["long"])["buys"]
+
+
+def buy_blocked(ctx: "Context", market: Market) -> str | None:
+    """오늘 이 시장에서 새로 살 수 없는 이유 (없으면 None). 장중 회의를 열기 전에 봐서, 사지도 못할 회의에 비용을 쓰지 않는다.
+    체크리스트와 같은 규칙: 하루 신규 매수 한도, 시장 국면 '매수 중단'(지수가 200일선 아래)."""
+    from . import indicators as ind, principles
+    today = trade_date(market)
+    n, cap = ctx.store.new_buys_today(ctx.broker.name, market.value, today), max_new_buys(ctx.cfg)
+    if n >= cap:
+        return f"오늘 새로 산 종목이 하루 한도({cap}종목)에 닿음"
+    rules = principles.DEFAULT_RULES | (ctx.cfg["ai"].get("rules") or {})
+    if rules.get("market_filter") == "block":
+        b = principles.index_bars(ctx.data, market)
+        if b is not None and float(b["close"].iloc[-1]) < float(ind.sma(b["close"], 200).iloc[-1]):
+            return "지수가 200일선 아래라 매수 중단 (시장 국면 규칙)"
+    return None
+
+
 def ai_targets(store: Store, cfg: dict, panel_: dict, today: str, account: str = "", market: str = "KR",
                warnings_for=None, market_bars=None) -> tuple[dict, set, list]:
     """오늘 AI 회의 결정으로 목표 비중을 만든다.
@@ -98,9 +122,7 @@ def ai_targets(store: Store, cfg: dict, panel_: dict, today: str, account: str =
     ai = cfg["ai"]
     mult = ai["rating_weights"]
     rules = dict(ai.get("rules") or {})
-    h = principles.HOLDING.get(ai.get("holding", "long"), principles.HOLDING["long"])
-    if h["buys"]:  # 단기일수록 하루에 조금 더 여러 종목을 작게 산다
-        rules["max_new_buys_per_day"] = int(rules.get("max_new_buys_per_day", principles.DEFAULT_RULES["max_new_buys_per_day"])) + h["buys"]
+    rules["max_new_buys_per_day"] = max_new_buys(cfg)
     cooldown = int(rules.get("cooldown_days", principles.DEFAULT_RULES["cooldown_days"]))
     universe = list(panel_)
     base = 1.0 / max(len(universe), 1)

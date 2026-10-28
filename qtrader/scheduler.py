@@ -324,6 +324,13 @@ class Scheduler:
             return out
         if ctx.kill or any(r["status"] == "running" for r in meeting.live_runs()):
             return out
+        from .engine import buy_blocked
+        why = buy_blocked(ctx, m)
+        if why:  # 결론이 매수여도 오늘은 못 사므로 회의(비용)를 열지 않는다. 기록은 하루 한 번만
+            if ctx.store.get(f"intraday_skip_{m.value}_{today}") != why:
+                ctx.store.set(f"intraday_skip_{m.value}_{today}", why)
+                ctx.store.log("info", f"intraday.{m.value}", f"장중 회의 쉼: {why}")
+            return out
         met = {r["symbol"] for r in ctx.store.ai_runs(200) if r["trade_date"] == today}
         if len(met) >= int(ai["max_symbols_per_day"]):
             return out
