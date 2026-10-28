@@ -468,15 +468,15 @@
         <summary><i data-lucide="settings-2"></i> 고급 설정 <small>대부분은 그대로 두셔도 됩니다. 칸마다 무엇인지 적어 두었어요</small></summary>
         <details class="adv-group" open><summary><i data-lucide="building-2"></i> AI 회의 <span>AI가 종목을 어떻게, 얼마나 깊게 검토할지</span></summary>
           <div class="adv-grid">
-            <label>회의 방식 <em class="hint">정밀은 더 정확하지만 비용 2배</em><select id="ai-mode"><option value="fast">빠른 회의 (Claude 7번 호출)</option><option value="precise">정밀 회의 (14번 호출)</option></select></label>
             <label>생각 깊이 <em class="hint">깊을수록 정확하지만 느리고 비싸요</em><select id="ai-effort"><option value="low">얕게 (빠름·저렴)</option><option value="medium">보통 (추천)</option><option value="high">깊게</option><option value="xhigh">아주 깊게</option><option value="max">최대</option></select></label>
-            <label>빠른 모델 <em class="hint">자료 정리·의견 담당</em><select id="ai-quick"></select></label>
-            <label>깊은 모델 <em class="hint">최종 결론 담당</em><select id="ai-deep"></select></label>
+            <label>회의 모델 <em class="hint">7명 모두 이 모델을 써요</em><select id="ai-quick"></select></label>
+            <label>깊은 모델 <em class="hint">아래 칸을 켜면 대표만 이 모델</em><select id="ai-deep"></select></label>
             <label>찬반 토론 횟수 <em class="hint">0~3. 많을수록 반대 의견을 더 따져요</em><input id="ai-debate" type="number" min="0" max="3"></label>
             <label>정기 실행 몇 분 전에 회의 <em class="hint">분</em><input id="ai-before" type="number" min="10" max="180"></label>
             <label>큐비 답변 깊이 <em class="hint">채팅 답변</em><select id="ai-chat-effort"><option value="low">짧고 빠르게</option><option value="medium">보통 (추천)</option><option value="high">깊게</option></select></label>
           </div>
-          <label class="check"><input type="checkbox" id="ai-web"> 회의 때 웹 검색으로 뉴스·재무·여론 찾아보기</label>
+          <label class="check"><input type="checkbox" id="ai-deep-final"> 대표의 최종 결정만 깊은 모델로 <em class="hint">조금 더 꼼꼼하지만 회의 비용이 약 1.5~2배</em></label>
+          <label class="check"><input type="checkbox" id="ai-web"> 회의 때 웹 검색으로 뉴스·재무·공시 찾아보기 <em class="hint">밸류·헤드라인 2번, 검증관 1번까지</em></label>
           <label class="check"><input type="checkbox" id="ai-autopick"> 회의할 종목을 AI가 매일 고르기 <em class="hint">거래대금·급등·산업 상위 종목 중 점수 규칙을 통과한 것</em></label>
           <label class="wide">AI에게 전할 메모 <em class="hint">투자 성향 검사로 채워져요. 고쳐 써도 돼요 (예: 빚투·공매도 안 함)</em><textarea id="ai-profile" rows="4"></textarea></label>
         </details>

@@ -229,7 +229,8 @@ window.renderResult = (run) => {
   const entryOk = f && sane(f.entry_low, last) && sane(f.entry_high, last);
   const P = run.plan;
   const mid = entryOk ? (f.entry_low + f.entry_high) / 2 : last;
-  const votes = f?.risk_votes || {};
+  const rc = f?.risk_check || null;
+  const oldVotes = f?.risk_votes || null;  // 예전 14명 회의 기록 (리스크 위원 3명 투표)
   const bull = f?.bull_score ?? 50;
   box.innerHTML = `
   <div class="res-head panel">
@@ -253,9 +254,12 @@ window.renderResult = (run) => {
     <div class="res-votes">
       <div class="k">강세 vs 약세 토론</div>
       <div class="tug"><span class="bullside" style="width:${bull}%">강세 ${Math.round(bull)}</span><span class="bearside">약세 ${Math.round(100 - bull)}</span></div>
-      <div class="k" style="margin-top:10px">리스크 위원회</div>
-      <div class="votes">${[["aggr", "돌격·공격형"], ["neut", "저울·중립형"], ["cons", "방패·보수형"]].map(([k, n]) =>
-        `<div><span>${n}</span><b style="color:${VOTE_COLOR[votes[k]] || "#8b98a5"}">${esc(votes[k] || "-")}</b></div>`).join("")}</div>
+      <div class="k" style="margin-top:10px">대표의 위험 점검</div>
+      ${rc ? `<div class="votes"><div><span>비중</span><b style="color:${VOTE_COLOR[rc.verdict] || "#8b98a5"}">${esc(rc.verdict || "-")}</b></div></div>
+        <p class="note" style="margin:4px 0 0">${esc(rc.note || "")}</p>`
+      : oldVotes ? `<div class="votes">${[["aggr", "공격형"], ["neut", "중립형"], ["cons", "보수형"]].map(([k, n]) =>
+        `<div><span>${n}</span><b style="color:${VOTE_COLOR[oldVotes[k]] || "#8b98a5"}">${esc(oldVotes[k] || "-")}</b></div>`).join("")}</div>`
+      : `<p class="note">-</p>`}
     </div>
   </div>
 

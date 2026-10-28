@@ -89,9 +89,11 @@ class LLM:
         return self._client
 
     def run(self, system: str, user: str, web: bool = False, schema: dict | None = None,
-            max_tokens: int = 16000, model: str | None = None, context: str | None = None) -> Reply:
-        """context: 여러 참석자가 똑같이 읽는 회의 자료. 캐시 지점을 둬서 두 번째부터는 캐시 요금(입력의 1/10~1/20)만 낸다."""
-        output_config: dict = {"effort": self.effort}
+            max_tokens: int = 16000, model: str | None = None, context: str | None = None,
+            effort: str | None = None, searches: int | None = None) -> Reply:
+        """context: 여러 참석자가 똑같이 읽는 회의 자료. 캐시 지점을 둬서 두 번째부터는 캐시 요금(입력의 1/10~1/20)만 낸다.
+        effort·searches: 이 호출만 생각 깊이·웹 검색 횟수를 바꾼다 (검색 1번 = 1.4원 + 검색 결과 글 읽는 토큰)."""
+        output_config: dict = {"effort": effort or self.effort}
         if schema:
             output_config["format"] = {"type": "json_schema", "schema": schema}
         content = [{"type": "text", "text": context, "cache_control": {"type": "ephemeral"}}] if context else []
@@ -101,7 +103,7 @@ class LLM:
         model = model or self.model
         tokens_in = tokens_out = cr = cw = searches = 0
         sources: list[dict] = []
-        extra = {"tools": [WEB_SEARCH]} if web else {}
+        extra = {"tools": [WEB_SEARCH | ({"max_uses": searches} if searches else {})]} if web else {}
         for _ in range(5):  # 웹 검색이 길어지면 pause_turn 으로 끊겨 온다 -> 이어서 요청
             try:
                 resp = self.client.beta.messages.create(

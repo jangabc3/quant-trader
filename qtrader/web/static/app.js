@@ -554,7 +554,7 @@ async function loadConfig() {
   $("#ntf-report").checked = c.notify?.daily_report !== false;
   $("#ai-cap").value = c.ai.monthly_cost_cap_krw ?? 30000;
   setPct("sec-max", c.max_sector_weight ?? 0.4);
-  $("#ai-mode").value = c.ai.mode || "fast";
+  $("#ai-deep-final").checked = !!c.ai.deep_final;
   modelSelect("ai-quick", c.ai.quick_model); modelSelect("ai-deep", c.ai.deep_model || c.ai.model);
   $("#ai-effort").value = c.ai.effort; $("#ai-chat-effort").value = c.ai.chat_effort || "medium";
   $("#ai-profile").value = c.ai.profile || "";
@@ -721,7 +721,7 @@ $("#cfg-save").onclick = async () => {
   c.max_sector_weight = getPct("sec-max") || 0.4;
   const conf = getPct("rl-conf");
   Object.assign(c.ai, {
-    mode: $("#ai-mode").value, quick_model: $("#ai-quick").value, deep_model: $("#ai-deep").value,
+    deep_final: $("#ai-deep-final").checked, quick_model: $("#ai-quick").value, deep_model: $("#ai-deep").value,
     effort: $("#ai-effort").value, chat_effort: $("#ai-chat-effort").value, profile: $("#ai-profile").value.trim(),
     require_approval: $("#ai-approve").checked, practice: $("#ai-practice").checked, auto_exit: $("#ai-exit").checked, debate_rounds: Number($("#ai-debate").value),
     run_before_minutes: Number($("#ai-before").value),
