@@ -474,6 +474,8 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             except ValueError as e:
                 raise HTTPException(400, str(e))
             c.store.log("notice", "update", f"업데이트 {info['current_rev']} -> {info['latest']} ({info['behind']}개 바뀜): 다시 만들어 설치합니다")
+            from ..scheduler import mark_planned_stop
+            mark_planned_stop(c.store, "update")
             threading.Timer(1.5, lambda: os._exit(updater.RESTART_CODE)).start()
             return {"ok": True, "latest": info["latest"], "mode": "git"}
         info = updater.check(c.cfg, c.store, force=True)
@@ -485,6 +487,8 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             raise HTTPException(502, f"업데이트를 받지 못했어요: {e}")
         updater.write_script(stage, config_mod.home())
         c.store.log("notice", "update", f"업데이트 {__version__} -> {info['latest']} 준비 완료, 다시 켭니다")
+        from ..scheduler import mark_planned_stop
+        mark_planned_stop(c.store, "update")
         threading.Timer(1.5, lambda: os._exit(updater.RESTART_CODE)).start()
         return {"ok": True, "latest": info["latest"]}
 
