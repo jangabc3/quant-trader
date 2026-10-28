@@ -1173,8 +1173,13 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             import os
             if not os.environ.get("ANTHROPIC_API_KEY"):
                 raise HTTPException(400, "설정에서 Claude API 키를 먼저 등록하세요")
+        t = toss()
+        # 'SK하이닉'처럼 이름으로 써도 종목 코드로 바꾼다 (이름을 그대로 토스에 보내면 400 invalid-request)
+        sym = stockdata.resolve(stockdata.master(t, config_mod.home()), body.symbol)
+        if not sym:
+            raise HTTPException(400, f"'{body.symbol.strip()}' 종목을 찾지 못했어요. 검색에서 종목을 골라 주세요")
         try:
-            return meeting.start(body.symbol, c.data, c.store, c.cfg, llm=llm, toss=toss())
+            return meeting.start(sym, c.data, c.store, c.cfg, llm=llm, toss=t)
         except ValueError as e:
             raise HTTPException(400, str(e))
 
