@@ -310,7 +310,7 @@ class Store:
              run["status"], (run.get("final") or {}).get("rating"), (run.get("final") or {}).get("confidence"),
              json.dumps(run.get("final"), ensure_ascii=False),
              json.dumps({k: run.get(k) for k in ("agents", "check", "facts", "stages", "name", "debate", "risk_debate",
-                                                 "plan", "checklist", "mode", "cost_usd", "calls", "cache_read", "origin")},
+                                                 "plan", "checklist", "mode", "cost_usd", "calls", "cache_read", "origin", "signal")},
                         ensure_ascii=False),
              run.get("tokens_in", 0), run.get("tokens_out", 0), run.get("error")))
 
@@ -338,7 +338,7 @@ class Store:
         d["final"] = json.loads(d["final"]) if d.get("final") else None
         extra = json.loads(d.pop("reports")) if d.get("reports") else {}
         if isinstance(extra, dict) and "agents" in extra:
-            d.update({k: extra.get(k) for k in ("check", "plan", "checklist")})
+            d.update({k: extra.get(k) for k in ("check", "plan", "checklist", "origin", "signal")})
         return d
 
     # 일봉 캐시

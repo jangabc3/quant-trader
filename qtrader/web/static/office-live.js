@@ -7,8 +7,8 @@ const lv = { on: false, data: null, poll: null, tick: 0, rot: null, seen: 0, mar
 const SRC_ICON = { engine: "play", exit: "shield", sync: "check-circle-2", ai: "users", picks: "sparkles", alert: "bell-ring",
   order: "send", risk: "octagon-x", live: "radar", manual: "hand", report: "newspaper", approval: "hand", intraday: "shopping-cart" };
 // 장중 회의 한 건의 상태 -> 쉬운 말
-const IN_STATE = { meeting: ["회의 중", "users"], bought: ["바로 샀어요", "shopping-cart"], approval: ["승인 기다림", "hand"],
-  skipped: ["사지 않음", "circle-slash"], error: ["회의 실패", "alert-triangle"] };
+const IN_STATE = { veto: ["AI 확인 중", "loader-2"], meeting: ["회의 중", "users"], bought: ["바로 샀어요", "shopping-cart"],
+  approval: ["승인 기다림", "hand"], vetoed: ["AI 거부", "shield-x"], skipped: ["사지 않음", "circle-slash"], error: ["실패", "alert-triangle"] };
 
 const hhmm = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }); };
 const nm = (x) => x.name && x.name !== x.symbol ? x.name : x.symbol;
@@ -35,19 +35,22 @@ function liveAgents(d) {
   const n = pick(d.news);
   set("news", n ? "working" : "idle", n ? `${n.name}: ${n.title.slice(0, 34)}…` : "",
     "### 보유·후보 종목 뉴스\n\n" + (d.news.map((x) => `- [${x.name}] ${x.title}`).join("\n") || "- 새 뉴스 없음"));
-  // 불리: 장중 회의 -> 매수 흐름 (끄면 다음 일정)
+  // 불리: 사는 신호 -> 매수 흐름 (신호를 기다리는 동안에도 일하는 중)
   const it = d.intraday || { on: false, items: [] };
-  const cur = it.items.find((x) => x.state === "meeting") || it.items[0];
-  set("bull", it.on && cur ? (cur.state === "meeting" ? "working" : "done") : "idle",
-    it.on ? (cur ? `장중 회의 ${nm(cur)}: ${IN_STATE[cur.state]?.[0] || cur.state}${cur.stage ? " · " + cur.stage : ""}` : `장중 회의 ${it.every}분마다 · 아직 없음`)
-      : `다음 회의 ${hhmm(d.schedule.next_meeting)} · 실행 ${hhmm(d.schedule.next_run)}`,
-    "### 장중 회의 → 매수\n\n" + (it.on ? `장이 열린 동안 ${it.every}분마다 새 후보 하나로 AI 회의를 열고, 결론이 매수이고 체크리스트를 통과하면 그 종목만 바로 삽니다. 오늘 회의 ${it.met}/${it.cap}종목.\n\n`
+  const cur = it.items.find((x) => x.state === "veto") || it.items[0];
+  set("bull", it.on && d.schedule.open ? "working" : it.on && cur ? "done" : "idle",
+    it.on ? (cur ? `${nm(cur)}: ${cur.signal || ""} ${IN_STATE[cur.state]?.[0] || cur.state}` : `후보 ${it.watching || 0}종목 신호 기다리는 중`)
+      : "AI 확인이 꺼져 있어 새로 사지 않아요",
+    "### 사는 신호 → AI 거부권 → 매수\n\n" + (it.on ? `장이 열린 동안 2분마다 후보의 사는 신호를 보고, 신호가 뜬 종목만 베어리가 위험 신호를 확인한 뒤 그 종목만 바로 삽니다. 오늘 확인 ${it.met}/${it.cap}번.\n\n`
       + (it.items.map((x) => `- ${x.at || ""} **${nm(x)}** ${IN_STATE[x.state]?.[0] || x.state}${x.note ? ` — ${x.note}` : ""}`).join("\n") || "- 아직 없음")
-      : "꺼져 있어요. 정기 실행 때만 삽니다."));
-  // 베어리: 재점검 현황 (가진 종목에 위험 신호가 보이면 짧게 다시 묻는다)
+      : "꺼져 있어요. 새로 사지 않아요."));
+  // 베어리: 신호가 뜬 종목의 거부권 + 가진 종목 긴급 재점검
   const rc = Object.keys(d.rechecks).length;
-  set("bear", rc ? "done" : "idle", `AI 긴급 재점검 ${rc}/${d.recheck_cap}`,
-    "### 오늘 AI 긴급 재점검\n\n" + (Object.entries(d.rechecks).map(([s, a]) => `- ${s}: ${a === "sell" ? "일찍 매도" : a === "hold" ? "계속 보유" : a}`).join("\n") || "- 아직 없음")
+  const vt = it.items.find((x) => x.state === "veto"), lastV = it.items.find((x) => x.state === "vetoed");
+  set("bear", vt ? "working" : rc || lastV ? "done" : "idle",
+    vt ? `${nm(vt)}: 사면 안 되는 이유 찾는 중...` : lastV ? `${nm(lastV)} 거부: ${(lastV.note || "").slice(0, 30)}` : `AI 긴급 재점검 ${rc}/${d.recheck_cap}`,
+    "### 오늘 거부한 종목\n\n" + (it.items.filter((x) => x.state === "vetoed").map((x) => `- **${nm(x)}** ${x.note || ""}`).join("\n") || "- 없음")
+    + "\n\n### 오늘 AI 긴급 재점검\n\n" + (Object.entries(d.rechecks).map(([s, a]) => `- ${s}: ${a === "sell" ? "일찍 매도" : a === "hold" ? "계속 보유" : a}`).join("\n") || "- 아직 없음")
     + "\n\n가진 종목이 장중 -3% 넘게 빠지거나 손절선에 2% 안으로 다가오면 그 종목만 짧게 다시 묻습니다.");
   // 대표: 오늘 한 일
   const last = d.timeline.find((e) => ["order", "exit", "sync", "manual", "engine", "live"].includes(e.source));
@@ -79,10 +82,10 @@ function liveHud(d) {
   const hud = $("#office-hud");
   hud.className = "office-hud " + (d.schedule.open ? "running" : "");
   hud.innerHTML = `<span class="hud-dot"></span><div><b>지금 상황</b> <small>${d.market === "KR" ? "국내" : "미국"}</small>
-    <div>${!d.auto ? "<b>자동매매 꺼짐</b> · 켜면 장이 열린 동안 알아서 회의하고 사고팔아요"
-      : d.schedule.open ? `<b class='blink'>● ${esc(d.schedule.session || "장중")}</b> 가진 종목 손절·익절을 2분마다 지키고, 후보를 ${d.intraday?.every || 15}분마다 하나씩 AI 회의해요`
+    <div>${!d.auto ? "<b>자동매매 꺼짐</b> · 켜면 장이 열린 동안 사는 신호를 보고 알아서 사고팔아요"
+      : d.schedule.open ? `<b class='blink'>● ${esc(d.schedule.session || "장중")}</b> 가진 종목 손절·익절과 후보의 사는 신호를 2분마다 봐요`
       : "장이 닫혀 있어요 · 다음 장을 기다리는 중"}</div>
-    <div class="note">${d.kill ? "긴급 정지 중 (새로 사지 않음) · " : ""}캐릭터는 지금 엔진이 하는 일을 보여 줘요. 실제 AI 회의가 열리면 회의 화면으로 바뀌어요</div></div>`;
+    <div class="note">${d.kill ? "긴급 정지 중 (새로 사지 않음) · " : ""}캐릭터는 지금 엔진이 하는 일을 보여 줘요. 7명 회의를 열면 회의 화면으로 바뀌어요</div></div>`;
   $("#stage-line").innerHTML = "";
 }
 
@@ -97,14 +100,14 @@ function renderBoard(d) {
       ${d.watch.map((w) => `<div class="lb-watch" data-open="${esc(w.symbol)}"><div class="lb-top">${logo(w.symbol, nm(w), 24)}<b>${esc(nm(w))}</b><span class="${cls(w.pnl)}">${pct(w.pnl)}</span></div>
         ${w.stop ? guardGauge(w, d.market) : `<div class="lb-nobar">손절·익절이 없어 자동으로 팔지 않아요 · 내 계좌에서 정할 수 있어요</div>`}</div>`).join("")
         || `<div class="lb-emptyg"><i data-lucide="shield"></i><span>가진 주식이 없어요. 사면 여기서 손절~익절 사이 지금 위치를 실시간으로 보여 줘요.</span></div>`}</section>
-    <section><h4><i data-lucide="sparkles"></i> 다음 후보 <small>${d.intraday?.every || 15}분마다 다시 계산</small></h4>
+    <section><h4><i data-lucide="sparkles"></i> 다음 후보 <small>15분마다 다시 계산</small></h4>
       ${d.candidates.slice(0, 6).map((c) => `<div class="lb-cand" data-open="${esc(c.symbol)}">${logo(c.symbol, nm(c), 22)}<div class="lb-ct"><b>${esc(nm(c))}</b>
         ${c.missing.length ? `<span class="lb-miss">${esc(c.missing[0])}</span>` : `<span class="lb-ok">규칙 통과</span>`}</div></div>`).join("") || `<p class="note">후보가 없어요.</p>`}</section>
     <section><h4><i data-lucide="list"></i> 오늘 한 일</h4><div class="lb-tl">
       ${d.timeline.slice(0, 10).map((e) => `<div class="lb-ev ${e.level}"><i data-lucide="${SRC_ICON[e.source] || "dot"}"></i><time>${hhmm(e.ts)}</time><span>${esc(e.message)}</span></div>`).join("")
         || `<p class="note">아직 기록이 없어요.</p>`}</div></section>
     <section><h4><i data-lucide="clock"></i> 다음 일정</h4>
-      <div class="lb-sched"><div><span>AI 회의</span><b data-cd="${esc(d.schedule.next_meeting)}"></b></div><div><span>주문 실행</span><b data-cd="${esc(d.schedule.next_run)}"></b></div>
+      <div class="lb-sched"><div><span>신호 확인</span><b>2분마다</b></div><div><span>정기 실행</span><b data-cd="${esc(d.schedule.next_run)}"></b></div>
         <div><span>장 마감</span><b data-cd="${esc(d.schedule.close)}"></b></div><div><span>AI 재점검</span><b>${Object.keys(d.rechecks).length} / ${d.recheck_cap}</b></div></div>
       <h4 style="margin-top:12px"><i data-lucide="newspaper"></i> 관련 뉴스</h4>
       ${d.news.slice(0, 4).map((n) => `<a class="lb-news" href="${esc(n.link)}" target="_blank" rel="noopener noreferrer"><b>${esc(n.name)}</b> ${esc(n.title)}</a>`).join("") || `<p class="note">보유·후보 종목의 새 뉴스가 없어요.</p>`}
@@ -114,19 +117,19 @@ function renderBoard(d) {
   icons();
 }
 
-// 장중 회의 -> 매수 흐름판 (가로 한 줄 전체)
+// 사는 신호 -> AI 거부권 -> 매수 흐름판 (가로 한 줄 전체)
 function flowBoard(d) {
   const it = d.intraday;
   if (!it) return "";
-  if (!it.on) return `<section class="lb-flow off"><h4><i data-lucide="shopping-cart"></i> 장중 회의 → 매수 <small>꺼짐</small></h4>
-    <p class="lb-desc">장중 회의가 꺼져 있어 정기 실행 때만 사요.</p></section>`;
-  const steps = [["sparkles", "새 후보", `${it.every}분마다 규칙 통과 종목`], ["users", "AI 회의", "한 번에 하나, 같은 종목은 하루 한 번"],
-    ["list-checks", "안전 점검", "필수는 모두, 추가는 1개까지"], ["shopping-cart", "바로 매수", "안전장치 한도 안에서"]];
-  return `<section class="lb-flow"><h4><i data-lucide="shopping-cart"></i> 장중 회의 → 매수 <small>오늘 회의 ${it.met}/${it.cap}종목${d.kill ? " · 긴급 정지 중이라 사지 않아요" : ""}</small></h4>
+  if (!it.on) return `<section class="lb-flow off"><h4><i data-lucide="shopping-cart"></i> 사는 신호 → 매수 <small>꺼짐</small></h4>
+    <p class="lb-desc">AI 확인이 꺼져 있어 새로 사지 않아요. 가진 종목의 손절·익절은 계속 지켜요.</p></section>`;
+  const steps = [["radar", "사는 신호", `후보 ${it.watching || 0}종목 · 2분마다 (눌림목 반등·거래량 돌파)`], ["shield-check", "AI 거부권", "공시·뉴스 제목으로 위험 신호 확인 · Claude 1번"],
+    ["list-checks", "안전 점검", "필수는 모두, 추가는 1개까지"], ["shopping-cart", "바로 매수", "손절은 변동폭 2배 아래 · 익절 2배 위"]];
+  return `<section class="lb-flow"><h4><i data-lucide="shopping-cart"></i> 사는 신호 → AI 거부권 → 매수 <small>오늘 확인 ${it.met}/${it.cap}번${it.last_check ? ` · 마지막 확인 ${esc(it.last_check)}` : ""}${d.kill ? " · 긴급 정지 중이라 사지 않아요" : ""}</small></h4>
     <div class="lb-steps">${steps.map(([ic, t, s]) => `<div><i data-lucide="${ic}"></i><b>${t}</b><span>${s}</span></div>`).join('<i data-lucide="chevron-right" class="lb-arrow"></i>')}</div>
     <div class="lb-items">${it.items.map((x) => { const [label, ic] = IN_STATE[x.state] || [x.state, "dot"];
-      return `<div class="lb-item ${esc(x.state)}" data-open="${esc(x.symbol)}" title="${esc(x.note || "")}"><i data-lucide="${ic}"></i><time>${esc(x.at || "")}</time><b>${esc(nm(x))}</b><span>${label}${x.stage ? " · " + esc(x.stage) : ""}${x.state === "skipped" && x.note ? " · " + esc(x.note.slice(0, 40)) : ""}</span></div>`; }).join("")
-      || `<p class="note">${d.schedule.open ? "다음 후보가 나오면 회의를 열어요." : "장이 열리면 시작해요."}</p>`}</div></section>`;
+      return `<div class="lb-item ${esc(x.state)}" data-open="${esc(x.symbol)}" title="${esc(x.note || "")}"><i data-lucide="${ic}"></i><time>${esc(x.at || "")}</time><b>${esc(nm(x))}</b><span>${esc(x.signal || "")} ${label}${["skipped", "vetoed"].includes(x.state) && x.note ? " · " + esc(x.note.slice(0, 40)) : ""}</span></div>`; }).join("")
+      || `<p class="note">${d.schedule.open ? "신호가 뜨면 여기에 나와요." : "장이 열리면 시작해요."}</p>`}</div></section>`;
 }
 
 function countdowns() {

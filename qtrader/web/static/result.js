@@ -14,6 +14,19 @@ const upPct = (to, from) => from ? (to / from - 1) : 0;
 // AI 가 통화 단위를 헷갈린 가격(현재가의 0.3배 미만, 3배 초과)은 그리지 않고 경고한다
 const sane = (p, last) => p > 0 && (!last || (p > last * 0.3 && p < last * 3));
 
+// 사는 신호 + AI 거부권으로 산 경우: 회의 점수 대신 어떤 신호였고 AI 가 무엇을 확인했는지
+function signalPanel(run) {
+  const sg = run.signal || {}, f = run.final || {};
+  const vetoed = f.rating === "Hold";
+  return `<div class="panel sig-panel"><h3>사는 신호 · AI 거부권 <small>7명 회의 없이 Claude 1번</small></h3>
+    <div class="sig-row"><i data-lucide="radar"></i><div><b>${esc(sg.name || "신호")}</b><p>${esc(sg.why || "")}</p>
+      <span class="note">RSI ${sg.rsi ?? "-"} · 손절 -${sg.stop_pct ?? "-"}% (가격 변동폭의 2배) · 익절 +${sg.take_pct ?? "-"}%${sg.pace ? ` · 거래량 속도 ${sg.pace}배` : ""}</span></div></div>
+    <div class="sig-row ${vetoed ? "bad" : "ok"}"><i data-lucide="${vetoed ? "shield-x" : "shield-check"}"></i><div><b>베어리 거부권: ${vetoed ? "거부 (사지 않음)" : "통과"}</b>
+      <p>${esc(f.headline || "")}</p>
+      ${(f.worry || []).length ? `<ul>${f.worry.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : `<span class="note">공시·뉴스 제목·투자 유의 지정에서 사면 안 되는 이유를 찾지 못했어요.</span>`}</div></div>
+    <p class="note">자세히 보려면 7명 회의를 열 수 있어요 (약 400~700원).</p></div>`;
+}
+
 function radar(scores) {
   const keys = Object.keys(SCORE_KO);
   const cx = 130, cy = 120, R = 88;
@@ -133,7 +146,7 @@ function planBlock(run) {
     ["1", "매수", `${fmtPx(p.entry_low, m)} ~ ${fmtPx(p.entry_high, m)} 사이에서 ${p.qty.toLocaleString()}주 (${fmtPx(p.amount, m)})`, ""],
     ["2", "손절", `${fmtPx(p.stop, m)} 이하로 내려가면 전량 매도 (-${p.stop_pct}%, 최대 손실 ${fmtPx(p.max_loss, m)})`, "down"],
     ["3", "익절", `${fmtPx(p.take, m)} 이상 오르면 전량 매도 (+${p.take_pct}%, 예상 이익 ${fmtPx(p.max_gain, m)})`, "up"],
-    ["4", "기한", `${p.horizon_days}거래일 안에 둘 다 닿지 않으면 다시 회의해서 판단`, ""],
+    ["4", "기한", `${p.horizon_days}거래일 안에 둘 다 닿지 않으면 정리해요 (오래 안 움직이는 돈을 다른 기회에)`, ""],
   ];
   const ok = cl ? cl.rules.filter((r) => r.ok).length : 0;
   return `<div class="res-grid">
@@ -271,7 +284,7 @@ window.renderResult = (run) => {
       <div class="facts">${[["RSI", facts.rsi14], ["20일선 대비", facts.vs_sma20 != null ? facts.vs_sma20 + "%" : "-"], ["52주 고가 대비", facts.from_high != null ? facts.from_high + "%" : "-"],
         ["연 변동성", facts.vol_annual != null ? facts.vol_annual + "%" : "-"], ["거래량(5/20일)", facts.vol_ratio != null ? facts.vol_ratio + "배" : "-"]]
         .map(([k, v]) => `<div><span>${k}</span><b>${v ?? "-"}</b></div>`).join("")}</div></div>
-    <div class="panel"><h3>분야별 점수 <small>검증관 정리 · 0~100</small></h3>${ck?.scores ? radar(ck.scores) : "<p class='note'>점수 없음</p>"}</div>
+    ${run.origin === "signal" ? signalPanel(run) : `<div class="panel"><h3>분야별 점수 <small>검증관 정리 · 0~100</small></h3>${ck?.scores ? radar(ck.scores) : "<p class='note'>점수 없음</p>"}</div>`}
   </div>
 
   ${planBlock(run)}

@@ -317,3 +317,9 @@ table.refs td { white-space: normal; font-size: 13px; vertical-align: top; }
 #picks .pk-st { background: none !important; padding: 0; border-radius: 0; font-weight: 600; justify-content: flex-start; cursor: default; }
 #picks .pk-st.st-wait { color: var(--muted); }
 #picks .pk-st.st-hold { color: var(--muted); }
+
+/* 사는 신호 + 거부권 결과 */
+.sig-panel .sig-row { display: flex; gap: 10px; padding: 10px; border-radius: 10px; background: var(--bg); margin-bottom: 8px; }
+.sig-panel .sig-row svg { width: 20px; height: 20px; flex: none; color: var(--blue); margin-top: 2px; }
+.sig-panel .sig-row.ok svg { color: #2fbf71; } .sig-panel .sig-row.bad svg { color: var(--red); }
+.sig-panel .sig-row p { margin: 4px 0; } .sig-panel .sig-row ul { margin: 4px 0 0; padding-left: 18px; }

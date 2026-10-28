@@ -183,7 +183,7 @@
     </div>
     <div class="office-status"><div class="office-hud" id="office-hud"></div><div class="stage-line" id="stage-line"></div></div>
     <div class="panel picks" id="picks-panel">
-      <div class="pk-head"><h3><i data-lucide="sparkles"></i> 오늘 AI 회의 <small class="note">자동매매가 켜져 있으면 장이 열린 동안 후보를 하나씩 회의하고, 결론이 매수면 바로 사요</small></h3>
+      <div class="pk-head"><h3><i data-lucide="sparkles"></i> 오늘 자동매매 <small class="note">장이 열린 동안 후보의 사는 신호를 2분마다 보고, 신호가 뜬 종목만 AI 가 위험 신호를 확인한 뒤 사요</small></h3>
         <div class="pk-tools"><button class="icon-btn" id="picks-how-btn" title="어떻게 고르나요?"><i data-lucide="help-circle"></i></button>
           <button class="icon-btn" id="picks-refresh" title="지금 다시 고르기"><i data-lucide="refresh-cw"></i></button>
           <div class="seg" id="picks-mkt"><button data-v="KR" class="on">국내</button><button data-v="US">미국</button></div></div>
@@ -192,7 +192,10 @@
             <li><b>숫자로 거르기</b> 200일선 위 · 모멘텀 양수 · 과열(RSI)·변동성 상한 안쪽만</li>
             <li><b>점수</b> 모멘텀 35 · 52주 고가 근접 25 · 저변동 20 · 거래량 10 · 단기 급등 감점 10</li>
             <li><b>공시·재무</b> 유상증자·전환사채·감자·횡령 공시는 제외, 적자+매출 감소는 감점</li></ol>
-          <p class="note">숫자로 먼저 걸러서 통과한 종목만 AI 회의를 열어요 (비용 절약). 자동매매가 켜져 있으면 장이 열린 동안 몇 분마다 한 종목씩 회의해요. 줄에 마우스를 올리면 점수 근거가 보여요.</p>
+          <ol start="5"><li><b>사는 신호</b> 2분마다 실시간 가격으로: 오르는 추세에서 20일선까지 눌렸다가 다시 오를 때(눌림목 반등), 20일 최고가를 거래량과 함께 넘을 때(거래량 돌파)</li>
+            <li><b>AI 거부권</b> 신호가 뜬 종목만 베어리가 공시·뉴스 제목으로 '사면 안 되는 이유'를 한 번 찾아요 (약 10~30원)</li>
+            <li><b>안전 점검 → 매수</b> 손절은 가격 변동폭의 2배 아래, 익절은 그 2배 위 (손익비 2 : 1)</li></ol>
+          <p class="note">AI 는 신호가 뜬 종목에만 써서 비용이 적어요. 7명 회의는 '7명 회의'를 누를 때만 열리고, 결과로 자동 매수하지는 않아요. 줄에 마우스를 올리면 점수 근거가 보여요.</p>
           <div id="picks-why-detail"></div></div></div>
       <div id="today-head" class="td-head"></div>
       <div id="picks"></div>
@@ -477,7 +480,8 @@
           </div>
           <label class="check"><input type="checkbox" id="ai-deep-final"> 대표의 최종 결정만 깊은 모델로 <em class="hint">조금 더 꼼꼼하지만 회의 비용이 약 1.5~2배</em></label>
           <label class="check"><input type="checkbox" id="ai-web"> 회의 때 웹 검색으로 뉴스·재무·공시 찾아보기 <em class="hint">밸류·헤드라인 2번, 검증관 1번까지</em></label>
-          <label class="check"><input type="checkbox" id="ai-autopick"> 회의할 종목을 AI가 매일 고르기 <em class="hint">거래대금·급등·산업 상위 종목 중 점수 규칙을 통과한 것</em></label>
+          <label class="check"><input type="checkbox" id="ai-automeet"> 정기 실행 전에 7명 회의를 자동으로 열기 <em class="hint">기본 꺼짐. 켜면 하루 거부권 확인 수만큼 회의해서 비용이 크게 늘어요</em></label>
+          <label class="check"><input type="checkbox" id="ai-autopick"> 후보 종목을 매일 고르기 <em class="hint">거래대금·급등·산업 상위 종목 중 점수 규칙을 통과한 것</em></label>
           <label class="wide">AI에게 전할 메모 <em class="hint">투자 성향 검사로 채워져요. 고쳐 써도 돼요 (예: 빚투·공매도 안 함)</em><textarea id="ai-profile" rows="4"></textarea></label>
         </details>
         <details class="adv-group"><summary><i data-lucide="list-checks"></i> 사기 전 확인 규칙 <span>하나라도 어기면 사지 않아요</span></summary>
