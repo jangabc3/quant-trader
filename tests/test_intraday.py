@@ -33,10 +33,10 @@ def fake_meetings(monkeypatch):
     """scheduler 가 여는 회의를 가짜 Claude 로 바로 끝낸다. 열린 회의 종목을 기록한다."""
     opened, real = [], meeting.start
 
-    def start(symbol, data, store, cfg, llm=None, toss=None, background=True):
+    def start(symbol, data, store, cfg, llm=None, toss=None, background=True, origin="manual"):
         opened.append(symbol)
         rating = "Sell" if symbol in start.sell else "Buy"
-        return real(symbol, data, store, cfg, llm=FakeLLM(rating, 0.9), toss=toss, background=False)
+        return real(symbol, data, store, cfg, llm=FakeLLM(rating, 0.9), toss=toss, background=False, origin=origin)
     start.sell = set()
     monkeypatch.setattr(meeting, "start", start)
     return start, opened
@@ -374,3 +374,19 @@ def test_paper_practice_rules_loosen_only_in_paper(ctx):
     assert r["min_confidence"] == 0.5 and r["min_reward_risk"] == 1.5 and r["soft_miss_allowed"] == 2 and r["max_new_buys_per_day"] == 5
     cfg["mode"] = "toss_real"
     assert principles.rules_for(cfg) == cfg["ai"]["rules"]  # 실전에서는 절대 낮추지 않는다
+
+
+def test_manual_meetings_do_not_use_up_auto_cap(ctx, fake_meetings):
+    """직접 연 회의(지금 회의 버튼·검색)는 자동 회의 수에 넣지 않는다 (예전엔 '오늘 회의 7/4' 로 보이고 자동 회의가 멈췄다)."""
+    from qtrader import live
+    from qtrader.engine import trade_date
+    start, opened = fake_meetings
+    ctx.cfg["markets"]["KR"]["meetings_per_day"] = 1
+    start("000660", ctx.data, ctx.store, ctx.cfg)  # 사용자가 직접
+    today = trade_date(Market.KR)
+    assert config.met_today(ctx.store, Market.KR, today) == {"000660"}
+    assert config.met_today(ctx.store, Market.KR, today, auto_only=True) == set()
+    Scheduler()._intraday(ctx, Market.KR)
+    assert len(opened) == 2 and opened[1] != "000660"  # 자동 회의는 그대로 열리고, 직접 회의한 종목은 다시 안 연다
+    plan = live.today_plan(ctx, Market.KR)
+    assert plan["used"] == 1 and plan["manual"] == 1 and plan["cap"] == 1

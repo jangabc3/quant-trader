@@ -315,7 +315,8 @@ class Meeting:
 
 
 def start(symbol: str, data, store: Store, cfg: dict, llm: LLM | None = None, toss=None,
-          background: bool = True) -> dict:
+          background: bool = True, origin: str = "manual") -> dict:
+    """origin: 'auto' = 자동매매가 연 회의 (하루 회의 수에 셈), 'manual' = 사용자가 직접 연 회의 (따로 셈)."""
     symbol = symbol.strip().upper()
     if not symbol:
         raise ValueError("종목을 입력하세요")
@@ -328,6 +329,7 @@ def start(symbol: str, data, store: Store, cfg: dict, llm: LLM | None = None, to
     if cap and spent >= cap:
         raise ValueError(f"이번 달 AI 비용 {spent:,.0f}원이 상한 {cap:,.0f}원에 닿아 회의를 열지 않습니다. 설정에서 상한을 바꿀 수 있습니다")
     m = Meeting(symbol, data, store, cfg, llm, toss)
+    m.run["origin"] = origin
     if background:
         threading.Thread(target=m.execute, name=f"meeting-{symbol}", daemon=True).start()
         return get_run(m.run["id"])

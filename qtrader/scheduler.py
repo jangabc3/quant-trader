@@ -391,10 +391,10 @@ class Scheduler:
                 ctx.store.log("info", f"intraday.{m.value}", f"장중 회의 쉼: {why}")
             return out
         met, cap = config_mod.met_today(ctx.store, m, today), config_mod.meetings_cap(ctx.cfg, m)
-        if len(met) >= cap:  # 이 시장 하루 회의 수를 다 썼거나, 이 시장 AI 회의를 껐다
+        if len(config_mod.met_today(ctx.store, m, today, auto_only=True)) >= cap:  # 자동 회의 수를 다 썼거나 AI 회의를 껐다
             return out
-        cap = float(ai.get("monthly_cost_cap_krw") or 0)
-        if cap and extras.month_cost_krw(ctx.store) >= cap:
+        cost_cap = float(ai.get("monthly_cost_cap_krw") or 0)
+        if cost_cap and extras.month_cost_krw(ctx.store) >= cost_cap:
             return out
         try:
             picks = todays_later(ctx, m, today, cap) if ai.get("auto_pick", True) else \
@@ -416,7 +416,7 @@ class Scheduler:
         ctx.store.set(f"intraday_last_{m.value}", datetime.now(_tz.utc).isoformat(timespec="seconds"))  # 화면의 '다음 회의' 시각용
         try:
             run = meeting.start(sym, ctx.data, ctx.store, ctx.cfg, toss=getattr(ctx.data, "client", None)
-                                if getattr(ctx.data, "name", "") == "toss" else None)
+                                if getattr(ctx.data, "name", "") == "toss" else None, origin="auto")
         except ValueError as ex:  # 월 비용 상한 등
             ctx.store.log("warn", f"ai.{m.value}", str(ex))
             return out
@@ -449,7 +449,7 @@ class Scheduler:
             return
         today = trade_date(m)
         done, cap = config_mod.met_today(ctx.store, m, today), config_mod.meetings_cap(ctx.cfg, m)
-        if len(done) >= cap:
+        if len(config_mod.met_today(ctx.store, m, today, auto_only=True)) >= cap:
             return
         if ai.get("auto_pick", True):  # 종목을 정하지 않아도 AI 가 후보를 고른다
             symbols = [p["symbol"] for p in todays_later(ctx, m, today, cap)]
@@ -460,7 +460,7 @@ class Scheduler:
                 ctx.store.log("info", f"ai.{m.value}", f"{s} AI 회의 시작")
                 try:
                     meeting.start(s, ctx.data, ctx.store, ctx.cfg, toss=getattr(ctx.data, "client", None)
-                                  if getattr(ctx.data, "name", "") == "toss" else None)
+                                  if getattr(ctx.data, "name", "") == "toss" else None, origin="auto")
                 except ValueError as e:  # 월 비용 상한 등
                     ctx.store.log("warn", f"ai.{m.value}", str(e))
                 return

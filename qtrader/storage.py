@@ -310,7 +310,7 @@ class Store:
              run["status"], (run.get("final") or {}).get("rating"), (run.get("final") or {}).get("confidence"),
              json.dumps(run.get("final"), ensure_ascii=False),
              json.dumps({k: run.get(k) for k in ("agents", "check", "facts", "stages", "name", "debate", "risk_debate",
-                                                 "plan", "checklist", "mode", "cost_usd", "calls", "cache_read")},
+                                                 "plan", "checklist", "mode", "cost_usd", "calls", "cache_read", "origin")},
                         ensure_ascii=False),
              run.get("tokens_in", 0), run.get("tokens_out", 0), run.get("error")))
 

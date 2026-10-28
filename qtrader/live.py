@@ -244,6 +244,7 @@ def today_plan(ctx, market: Market, name_of=lambda s: s) -> dict:
     today = trade_date(market)
     mc = cfg["markets"][market.value]
     cap, met = meetings_cap(cfg, market), met_today(ctx.store, market, today)
+    used = len(met_today(ctx.store, market, today, auto_only=True))  # 하루 한도는 자동 회의만 센다
     auto = ctx.store.get("auto_trading", "0") == "1"
     open_ = trading_now(cfg, market)
     every = int(ai.get("intraday_every_min", 15))
@@ -262,12 +263,16 @@ def today_plan(ctx, market: Market, name_of=lambda s: s) -> dict:
     except Exception:
         blocked = None
     # 지금 상태 한 줄 (가장 먼저 걸리는 것 하나)
-    left = max(cap - len(met), 0)
+    left = max(cap - used, 0)
+    off = ""  # 무엇이 꺼져 있는지: market(이 시장) / ai(AI 회의) / auto(자동매매 전체). 화면은 auto 일 때만 '자동매매 켜기' 를 보인다
     if not mc.get("enabled"):
+        off = "market"
         head, tone = "이 시장은 자동매매를 꺼 두었어요 (설정 → 3. 투자 방식).", "off"
     elif cap == 0 or mc.get("strategy") != "ai":
+        off = "ai"
         head, tone = "이 시장은 AI 회의를 꺼 두었어요 (설정 → 3. 투자 방식). 손절·익절 매도는 계속해요.", "off"
     elif not auto:
+        off = "auto"
         head, tone = "자동매매가 꺼져 있어요. 켜면 장이 열린 동안 아래 후보를 하나씩 AI 회의하고, 결론이 매수면 바로 사요.", "off"
     elif ctx.kill:
         head, tone = "긴급 정지 중이라 새로 사지 않아요. 손절·익절 매도는 계속해요.", "warn"
@@ -314,7 +319,7 @@ def today_plan(ctx, market: Market, name_of=lambda s: s) -> dict:
         items.append({"symbol": s, "name": name_of(s), "score": p.get("score"), "reason": p.get("reason", ""), "factors": p.get("factors"),
                       "state": st, "note": note, "run_id": (r or {}).get("id") or e.get("run_id"), "held": p.get("held", False)})
     return {"market": market.value, "auto": auto, "open": open_, "session": session_name(cfg, market), "cap": cap,
-            "used": len(met), "every": every, "next_at": next_at, "headline": head, "tone": tone, "items": items}
+            "used": min(used, cap) if cap else used, "manual": max(len(met) - used, 0), "every": every, "next_at": next_at, "headline": head, "tone": tone, "off": off, "items": items}
 
 
 def intraday_board(ctx, market: Market, name_of=lambda s: s) -> dict:
@@ -333,7 +338,7 @@ def intraday_board(ctx, market: Market, name_of=lambda s: s) -> dict:
     from .config import meetings_cap, met_today
     cap = meetings_cap(ctx.cfg, market)
     return {"on": bool(ai.get("intraday", True)) and cap > 0, "every": int(ai.get("intraday_every_min", 15)),
-            "met": len(met_today(ctx.store, market, today)), "cap": cap, "items": items[::-1]}
+            "met": len(met_today(ctx.store, market, today, auto_only=True)), "cap": cap, "items": items[::-1]}
 
 
 def snapshot(ctx, market: Market, name_of=lambda s: s) -> dict:
