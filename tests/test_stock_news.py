@@ -182,3 +182,34 @@ def test_investor_profile(client):
     assert cfg["risk"]["max_weight"] == 0.30 and cfg["risk"]["daily_loss_limit"] == 0.04
     assert any(c["k"] == "손절·익절" for c in r["criteria"])
     assert client.post("/api/profile", json={"answers": {"age": 1}}, headers=client.h).status_code == 400
+
+
+def test_search_understands_partial_names_initials_and_aliases():
+    """'하이닉'·'sk 하이'·'하닉'·초성·영어 이름으로도 찾는다."""
+    from qtrader import stockdata as sd
+    rows = [{"symbol": "000660", "name": "SK하이닉스", "type": "STOCK"}, {"symbol": "005930", "name": "삼성전자", "type": "STOCK"},
+            {"symbol": "005935", "name": "삼성전자우", "type": "STOCK"}, {"symbol": "034730", "name": "SK", "type": "STOCK"},
+            {"symbol": "091160", "name": "KODEX 반도체", "type": "ETF"}, {"symbol": "AAPL", "name": "애플", "type": "STOCK"},
+            {"symbol": "NVDA", "name": "엔비디아", "type": "STOCK"}]
+    top = lambda q: (sd.search(rows, q, 3) or [{}])[0].get("name")
+    for q in ("하이닉", "sk 하이", "SK하이", "하닉"):
+        assert top(q) == "SK하이닉스", q
+    assert top("ㅅㅅㅈㅈ") == top("삼전") == top("삼성") == "삼성전자"
+    assert top("apple") == top("aapl") == "애플" and top("nvidia") == top("엔비") == "엔비디아"
+    assert top("sk") == "SK" and top("반도체") == "KODEX 반도체" and sd.search(rows, "없는회사") == []
+    assert sd.resolve(rows, "SK하이닉") == "000660" and sd.resolve(rows, "005930") == "005930" and sd.resolve(rows, "없는회사") is None
+
+
+def test_meeting_by_name_uses_stock_code(isolated_home):
+    """회의 입력칸에 이름을 써도 종목 코드로 바꿔 회의한다 (이름 그대로 토스에 보내던 400 오류)."""
+    from qtrader import config
+    from qtrader.data import write_demo_csv
+    from test_toss_ai import FakeLLM
+    write_demo_csv(isolated_home / "data", config.load())
+    app = create_app(llm=FakeLLM())
+    client = TestClient(app)
+    client.h = {"x-qtrader-token": app.state.token}
+    r = client.post("/api/ai/meeting", json={"symbol": "SK하이닉"}, headers=client.h)
+    assert r.status_code == 200 and r.json()["symbol"] == "000660"
+    bad = client.post("/api/ai/meeting", json={"symbol": "없는회사이름"}, headers=client.h)
+    assert bad.status_code == 400 and "찾지 못했어요" in bad.json()["detail"]
