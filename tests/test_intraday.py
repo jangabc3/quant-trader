@@ -254,3 +254,29 @@ def test_after_hours_tick_buys_then_stops_out(ctx, fake_meetings, monkeypatch):
     assert orders(ctx) == [("005930", "buy", "filled"), ("005930", "sell", "filled")]
     sell = ctx.store.rows("select * from orders where side='sell'")[0]
     assert sell["price"] > 0 and "손절" in sell["message"]  # 시간외라 시장가가 아닌 지정가
+
+
+def test_no_meeting_when_buy_limit_already_reached(ctx, fake_meetings):
+    """오늘 살 수 있는 종목 수를 다 채웠으면, 결론이 매수여도 못 사므로 회의(비용)를 열지 않는다."""
+    start, opened = fake_meetings
+    ctx.cfg["ai"]["rules"] = dict(ctx.cfg["ai"]["rules"], max_new_buys_per_day=1)
+    start("005930", ctx.data, ctx.store, ctx.cfg)
+    assert buy_one(ctx, Market.KR, "005930")["status"] == "filled"
+    opened.clear()
+    Scheduler()._intraday(ctx, Market.KR)
+    assert opened == []
+    assert any("장중 회의 쉼" in e["message"] and "하루 한도" in e["message"] for e in ctx.store.rows("select * from events"))
+
+
+def test_no_meeting_when_market_regime_blocks_buys(ctx, fake_meetings, monkeypatch):
+    import pandas as pd
+    from qtrader import principles
+    _, opened = fake_meetings
+    ctx.cfg["ai"]["rules"] = dict(ctx.cfg["ai"]["rules"], market_filter="block")
+    down = pd.DataFrame({"close": [300 - i * 0.5 for i in range(300)]})
+    monkeypatch.setattr(principles, "index_bars", lambda data, m: down)
+    Scheduler()._intraday(ctx, Market.KR)
+    assert opened == []  # 지수가 200일선 아래 + '매수 중단' 규칙
+    monkeypatch.setattr(principles, "index_bars", lambda data, m: down.iloc[::-1].reset_index(drop=True))
+    Scheduler()._intraday(ctx, Market.KR)
+    assert opened == ["005930"]  # 상승 국면이면 연다

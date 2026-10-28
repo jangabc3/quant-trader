@@ -11,7 +11,7 @@ import anthropic
 from .. import market as market_mod
 from . import context as ctxmod
 from . import meeting
-from .llm import BETAS, WEB_SEARCH, LLMError, make_client
+from .llm import BETAS, WEB_SEARCH, LLMError, make_client, usage_cost
 from .roles import PROFILE_DEFAULT
 
 SYSTEM = """너는 QTrader 의 AI 애널리스트 '큐비'다. 한국어로, 증권사 리서치 애널리스트처럼 숫자와 근거로 말한다.
@@ -231,7 +231,21 @@ class Assistant:
 
     def chat_stream(self, thread_id: str | None, text: str, page: str = ""):
         """답을 쓰는 대로 내보낸다: start → (tool → text …) → done | error.
-        글자가 생기는 즉시 화면에 보여서 기다리는 느낌이 줄고, 여러 도구는 동시에 실행한다."""
+        글자가 생기는 즉시 화면에 보여서 기다리는 느낌이 줄고, 여러 도구는 동시에 실행한다.
+        쓴 비용(토큰·웹 검색)은 이번 달 AI 비용에 더한다 (월 비용 상한이 큐비 대화도 센다)."""
+        spent = [0.0]
+        try:
+            yield from self._chat_stream(thread_id, text, page, spent)
+        finally:
+            if spent[0]:
+                try:
+                    from .. import config as config_mod, extras
+                    from ..storage import Store
+                    extras.add_month_cost(Store(config_mod.home() / "qtrader.db"), "chat", spent[0])
+                except Exception:
+                    pass
+
+    def _chat_stream(self, thread_id: str | None, text: str, page: str, spent: list[float]):
         from concurrent.futures import ThreadPoolExecutor
         cfg = self.cfg_loader()
         ai = cfg["ai"]
@@ -262,6 +276,7 @@ class Assistant:
                             answer += ev.text
                             yield {"type": "text", "text": ev.text}
                     resp = st.get_final_message()
+                spent[0] += usage_cost(req["model"], getattr(resp, "usage", None))
             except Exception as e:
                 if len(msgs) and msgs[-1].get("role") == "user" and isinstance(msgs[-1]["content"], str):
                     with self.lock:

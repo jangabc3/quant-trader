@@ -142,9 +142,16 @@ def check_alerts(store, cfg: dict, price_of, save) -> list[dict]:
 
 
 # AI 비용 (이번 달, 원)
+def add_month_cost(store, kind: str, usd: float) -> None:
+    """회의 밖에서 쓴 AI 비용(달러)을 이번 달 합계에 더한다. kind: recheck(장중 재점검) · chat(큐비 대화)"""
+    key = f"{kind}_cost_" + datetime.now().strftime("%Y-%m")
+    store.set(key, str(float(store.get(key, "0") or 0) + usd))
+
+
 def month_cost_krw(store) -> float:
+    """이번 달 AI 비용(원): AI 회의 + 장중 재점검 + 큐비 대화."""
     month = datetime.now().strftime("%Y-%m")
-    total = float(store.get("recheck_cost_" + month, "0") or 0)  # 장중 AI 재점검
+    total = sum(float(store.get(f"{k}_cost_{month}", "0") or 0) for k in ("recheck", "chat"))
     for r in store.rows("select reports from ai_runs where substr(started_at,1,7)=?", (month,)):
         try:
             total += float(json.loads(r["reports"] or "{}").get("cost_usd") or 0)
