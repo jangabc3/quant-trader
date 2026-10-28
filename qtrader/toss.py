@@ -51,6 +51,18 @@ def num(v, default: float = 0.0) -> float:
         return default
 
 
+# 호출 간격은 프로그램 전체가 함께 지킨다. 화면 요청마다 Toss 를 새로 만들어도 같은 Client ID 면 같은 기록을 쓴다
+# (따로 세면 여러 칸을 한꺼번에 부를 때 한도를 넘어 429 를 받고 최대 5초씩 쉬게 된다). 그룹마다 따로 잠가
+# 한 그룹이 기다리는 동안 다른 그룹(예: 주문)은 막히지 않는다.
+_PACE: dict[tuple[str, str], list] = {}
+_PACE_LOCK = threading.Lock()
+
+
+def _pace_slot(client_id: str, group: str) -> list:
+    with _PACE_LOCK:
+        return _PACE.setdefault((client_id, group), [threading.Lock(), 0.0])
+
+
 class Toss:
     def __init__(self, client_id: str, client_secret: str, token_dir: Path, account_seq: int | None = None,
                  session: requests.Session | None = None, base: str = BASE):
@@ -60,8 +72,6 @@ class Toss:
         self._token: str | None = None
         self._expires = datetime.min
         self._account_seq = account_seq
-        self._last: dict[str, float] = {}
-        self._lock = threading.Lock()
 
     # 인증
     def token(self, force: bool = False) -> str:
@@ -92,11 +102,12 @@ class Toss:
 
     def _pace(self, group: str) -> None:
         gap = GROUP_INTERVAL.get(group, 0.2)
-        with self._lock:
-            wait = gap - (time.monotonic() - self._last.get(group, 0.0))
+        slot = _pace_slot(self.client_id, group)
+        with slot[0]:
+            wait = gap - (time.monotonic() - slot[1])
             if wait > 0:
                 time.sleep(wait)
-            self._last[group] = time.monotonic()
+            slot[1] = time.monotonic()
 
     def _call(self, method: str, path: str, group: str, params: dict | None = None, body: dict | None = None,
               account: bool = False, _retry: int = 0):

@@ -198,6 +198,28 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
 
     assistant = Assistant(ctx, toss, config_mod.load, client=assistant_client)
 
+    def warm_market() -> None:
+        """시장 화면의 무거운 칸(외국인·기관 매매 동향은 종목 40개를 하나씩 묻는다)을 켜자마자 뒤에서 미리 받아 둔다.
+        처음 누를 때 몇 초씩 기다리지 않게. 시험(오프라인)·키 없음이면 하지 않는다."""
+        import os
+        import threading as _th
+        if os.environ.get("QTRADER_OFFLINE"):
+            return
+
+        def run():
+            t = toss()
+            if t is None:
+                return
+            for f in (lambda: market_mod.overview(t), lambda: market_mod.rankings(t, "amount", "KR"),
+                      lambda: market_mod.industries(t, "KR"), lambda: market_mod.investor_flows(t, "buy"),
+                      lambda: market_mod.industries(t, "US")):
+                try:
+                    f()
+                except Exception:
+                    pass
+        _th.Thread(target=run, name="warm-market", daemon=True).start()
+    warm_market()
+
     @app.get("/", response_class=HTMLResponse)
     def index():
         html = (STATIC / "index.html").read_text(encoding="utf-8")
