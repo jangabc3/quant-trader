@@ -295,3 +295,7 @@ table.refs td { white-space: normal; font-size: 13px; vertical-align: top; }
 @media (max-width: 640px) { .pk-row { grid-template-columns: 16px 26px minmax(0, 1fr) 84px; } .pk-row .pk-sc, .pk-row .pk-go { display: none; } }
 .pk-scan { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; color: #9cc3ff; }
 .pk-scan .spin { width: 10px; height: 10px; border: 2px solid rgba(156,195,255,.35); border-top-color: #9cc3ff; border-radius: 50%; animation: spin 1s linear infinite; }
+.cl-kind { font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 99px; margin-left: 4px; color: #9cc3ff; background: rgba(49,130,246,.14); }
+.cl-kind.soft { color: #c9b6ff; background: rgba(170,120,255,.14); }
+.chipst.warn { color: #f3c47a; background: rgba(233,162,59,.14); }
+.cl-how { margin: -4px 0 8px; }

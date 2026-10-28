@@ -726,7 +726,7 @@ $("#cfg-save").onclick = async () => {
     min_confidence: conf, web_research: $("#ai-web").checked,  // 확신도 기준은 하나로 (회의 비중·체크리스트 같이)
     monthly_cost_cap_krw: Number($("#ai-cap").value) || 0, auto_pick: $("#ai-autopick").checked,
     holding: ($$("input[name=holding]").find((i) => i.checked) || {}).value || "auto",
-    rules: { min_confidence: conf, min_reward_risk: Number($("#rl-rr").value),
+    rules: { ...(c.ai.rules || {}), min_confidence: conf, min_reward_risk: Number($("#rl-rr").value),  // 화면에 없는 값(추가 기준 허용 개수 등)은 그대로
       max_rsi: Number($("#rl-rsi").value), max_vol: getPct("rl-vol"), min_fact_ok: getPct("rl-fact"),
       max_new_buys_per_day: Number($("#rl-buys").value), cooldown_days: Number($("#rl-cool").value),
       require_trend: $("#rl-trend").checked, require_momentum: $("#rl-mom").checked, market_filter: $("#rl-market").value },
