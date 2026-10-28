@@ -183,7 +183,7 @@
     </div>
     <div class="office-status"><div class="office-hud" id="office-hud"></div><div class="stage-line" id="stage-line"></div></div>
     <div class="panel picks" id="picks-panel">
-      <div class="pk-head"><h3><i data-lucide="sparkles"></i> 오늘 AI 회의 후보</h3>
+      <div class="pk-head"><h3><i data-lucide="sparkles"></i> 오늘 AI 회의 <small class="note">자동매매가 켜져 있으면 장이 열린 동안 후보를 하나씩 회의하고, 결론이 매수면 바로 사요</small></h3>
         <div class="pk-tools"><button class="icon-btn" id="picks-how-btn" title="어떻게 고르나요?"><i data-lucide="help-circle"></i></button>
           <button class="icon-btn" id="picks-refresh" title="지금 다시 고르기"><i data-lucide="refresh-cw"></i></button>
           <div class="seg" id="picks-mkt"><button data-v="KR" class="on">국내</button><button data-v="US">미국</button></div></div>
@@ -192,8 +192,9 @@
             <li><b>숫자로 거르기</b> 200일선 위 · 모멘텀 양수 · 과열(RSI)·변동성 상한 안쪽만</li>
             <li><b>점수</b> 모멘텀 35 · 52주 고가 근접 25 · 저변동 20 · 거래량 10 · 단기 급등 감점 10</li>
             <li><b>공시·재무</b> 유상증자·전환사채·감자·횡령 공시는 제외, 적자+매출 감소는 감점</li></ol>
-          <p class="note">숫자로 먼저 걸러서 통과한 종목만 AI 회의를 열어요 (비용 절약). 자동매매가 켜져 있으면 실행 40분 전부터 차례로 회의합니다. 줄에 마우스를 올리면 점수 근거가 보여요.</p>
+          <p class="note">숫자로 먼저 걸러서 통과한 종목만 AI 회의를 열어요 (비용 절약). 자동매매가 켜져 있으면 장이 열린 동안 몇 분마다 한 종목씩 회의해요. 줄에 마우스를 올리면 점수 근거가 보여요.</p>
           <div id="picks-why-detail"></div></div></div>
+      <div id="today-head" class="td-head"></div>
       <div id="picks"></div>
       <div id="picks-why"></div>
     </div>
