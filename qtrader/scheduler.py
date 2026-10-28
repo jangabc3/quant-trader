@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from types import SimpleNamespace
 from datetime import datetime, time as dtime, timedelta
 
 from . import config as config_mod
@@ -101,6 +102,39 @@ def next_run(market: Market, run_time: str, now: datetime | None = None) -> date
     return cand
 
 
+_picking: set[str] = set()
+_picking_lock = threading.Lock()
+
+
+def todays_later(ctx, m: Market, today: str, n: int) -> list[dict]:
+    """오늘 후보가 이미 있으면 바로, 없으면 뒤에서 고르기 시작하고 빈 목록 (몇십 초~몇 분 걸리는 일이라
+    점검이 그동안 손절·익절 감시를 멈추지 않게). 다음 점검 때 다 골라져 있으면 그걸 쓴다."""
+    import json as _json
+    from .screener import todays
+    saved = ctx.store.get(f"picks_{m.value}_{today}")
+    if saved:
+        return _json.loads(saved)
+    with _picking_lock:
+        if m.value in _picking:
+            return []
+        _picking.add(m.value)
+
+    def work():
+        try:
+            from .engine import build_context
+            todays(build_context(), m, today, n)  # 이 스레드 전용 연결
+        except Exception as e:
+            try:
+                ctx.store.log("warn", f"picks.{m.value}", f"오늘 후보 고르기 실패: {e}")
+            except Exception:
+                pass
+        finally:
+            with _picking_lock:
+                _picking.discard(m.value)
+    threading.Thread(target=work, name=f"picks-{m.value}", daemon=True).start()
+    return []
+
+
 class Scheduler:
     def __init__(self, interval: float = 20.0):
         self.interval = interval
@@ -116,6 +150,19 @@ class Scheduler:
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, name="qtrader-scheduler", daemon=True)
         self._thread.start()
+        # '살아 있음' 표시는 점검과 따로 20초마다 (점검 한 번이 오래 걸려도 꺼진 것으로 잘못 알리지 않게)
+        threading.Thread(target=self._beat_loop, name="qtrader-heartbeat", daemon=True).start()
+
+    def _beat_loop(self) -> None:
+        from .storage import Store
+        store = Store(config_mod.home() / "qtrader.db")
+        while not self._stop.is_set():
+            try:
+                cfg = config_mod.load()
+                self._heartbeat(SimpleNamespace(store=store), cfg, store.get("auto_trading", "0") == "1")
+            except Exception:
+                pass
+            self._stop.wait(20)
 
     def stop(self) -> None:
         self._stop.set()
@@ -149,7 +196,6 @@ class Scheduler:
                 scan.maybe_start(ctx, Market.KR, trade_date(Market.KR))
             except Exception as e:
                 ctx.store.log("warn", "picks.KR", f"전체 종목 훑기 시작 실패: {e}")
-        self._heartbeat(ctx, cfg, auto)
         extras.keep_awake(auto)
         if not auto:
             return []
@@ -244,7 +290,8 @@ class Scheduler:
         return out
 
     def _heartbeat(self, ctx, cfg, auto: bool) -> None:
-        """20초마다 살아 있다고 적어 둔다. 장중에 10분 넘게 비어 있었으면 (PC·프로그램이 꺼졌던 것) 알리고 바로 다시 점검한다."""
+        """20초마다(_beat_loop) 살아 있다고 적어 둔다. 장중에 10분 넘게 비어 있었으면 (PC·프로그램이 꺼졌거나 PC 가 잠들었던 것)
+        알리고 바로 다시 점검한다. 점검(tick)이 오래 걸리는 것과는 상관없다 (따로 돈다)."""
         from datetime import timezone as _tz
         from . import extras
         now = datetime.now(_tz.utc)
@@ -346,9 +393,8 @@ class Scheduler:
         cap = float(ai.get("monthly_cost_cap_krw") or 0)
         if cap and extras.month_cost_krw(ctx.store) >= cap:
             return out
-        from .screener import todays
         try:
-            picks = todays(ctx, m, today, cap) if ai.get("auto_pick", True) else \
+            picks = todays_later(ctx, m, today, cap) if ai.get("auto_pick", True) else \
                 [{"symbol": s} for s in ctx.cfg["markets"][m.value]["universe"]]
         except Exception as ex:
             ctx.store.log("warn", f"intraday.{m.value}", f"후보 고르기 실패: {ex}")
@@ -403,8 +449,7 @@ class Scheduler:
         if len(done) >= cap:
             return
         if ai.get("auto_pick", True):  # 종목을 정하지 않아도 AI 가 후보를 고른다
-            from .screener import todays
-            symbols = [p["symbol"] for p in todays(ctx, m, today, cap)]
+            symbols = [p["symbol"] for p in todays_later(ctx, m, today, cap)]
         else:
             symbols = mc["universe"]
         for s in symbols:
