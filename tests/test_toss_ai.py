@@ -464,3 +464,11 @@ def test_cost_counts_web_search_fee():
     assert usage_cost("claude-sonnet-5-5", NS(input_tokens=1000, output_tokens=100, server_tool_use=NS(web_search_requests=2))) \
         == pytest.approx(tokens + 0.02)
     assert usage_cost("claude-sonnet-5-5", None) == 0
+
+
+def test_claude_client_does_not_wait_forever(fake_vault):
+    """응답 하나를 기본 10분 x 재시도 3번 기다리면 회의가 수십 분 멈춘 것처럼 보이고 다음 회의도 못 연다."""
+    from qtrader.agents.llm import make_client
+    fake_vault["anthropic_api_key"] = "sk-ant-test"
+    c = make_client()
+    assert c.max_retries == 2 and float(c.timeout) == 300.0
