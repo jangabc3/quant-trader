@@ -518,3 +518,10 @@ nav { scrollbar-width: none; } nav::-webkit-scrollbar { display: none; }
 .paper-bar > span:first-child { display: inline-flex; gap: 6px; align-items: center; } .paper-bar svg { width: 15px; height: 15px; }
 .paper-acts { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .paper-acts button { display: inline-flex; gap: 6px; align-items: center; }
+
+/* 설정 '어느 시장에서, 얼마로': 시장별 AI 회의 켜기 · 하루 회의 수 (한 줄) */
+.mkt-ai { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: #0f141b; border: 1px solid var(--line); }
+.mkt-ai .check { margin: 0; font-weight: 700; }
+.mkt-ai-n { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.mkt-ai-n input { width: 64px; text-align: center; padding: 6px; }
+.mkt-ai .hint { flex-basis: 100%; margin: 0; }
