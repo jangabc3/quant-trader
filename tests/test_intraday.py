@@ -335,3 +335,28 @@ def test_today_plan_explains_what_auto_meeting_is_doing(ctx, fake_meetings, monk
     assert "모두 회의했어요" in p["headline"]
     ctx.cfg["markets"]["KR"]["meetings_per_day"] = 2
     assert "2번을 다 썼어요" in live.today_plan(ctx, Market.KR)["headline"]
+
+
+def test_picking_candidates_runs_in_background(ctx, monkeypatch):
+    """오늘 후보 고르기(몇십 초~몇 분)는 뒤에서 한다. 그동안 점검은 기다리지 않고 손절·익절 감시를 계속한다."""
+    import threading
+    from qtrader import scheduler, screener
+    from qtrader import engine
+    today = trade_date(Market.KR)
+    ctx.store.exec("delete from state where key=?", (f"picks_KR_{today}",))
+    gate = threading.Event()
+
+    def slow(c, m, t, n, stats=None):
+        gate.wait(5)
+        c.store.set(f"picks_KR_{t}", json.dumps([{"symbol": "005930"}]))
+        return [{"symbol": "005930"}]
+    monkeypatch.setattr(screener, "todays", slow)
+    monkeypatch.setattr(engine, "build_context", lambda *a, **k: ctx)
+    assert scheduler.todays_later(ctx, Market.KR, today, 4) == []  # 바로 돌아온다
+    assert scheduler.todays_later(ctx, Market.KR, today, 4) == []  # 고르는 중엔 또 시작하지 않는다
+    gate.set()
+    for _ in range(50):
+        if ctx.store.get(f"picks_KR_{today}"):
+            break
+        __import__("time").sleep(0.05)
+    assert scheduler.todays_later(ctx, Market.KR, today, 4) == [{"symbol": "005930"}]
