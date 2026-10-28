@@ -108,13 +108,12 @@ DEFAULT = {
     "notify": {"telegram_chat_id": "", "daily_report": True},
     "alerts": [],  # 가격 알림 [{symbol, name, op: above|below, price}]
     "max_sector_weight": 0.4,  # 한 업종 비중 경고 기준
-    "security": {"pin": True},
     # 자동 업데이트: GitHub 저장소 "아이디/저장소이름" (Releases 에 -win.zip 과 .sha256 을 올린다). 비우면 확인 안 함
     "update": {"repo": "", "check": True},
     # 미국 주식은 달러로만 산다. 달러가 모자라면 자동 환전하지 않고 알려서 환전 우대로 직접 바꾸게 한다
     "fx_policy": "preferential_only",
     # 전략 비교: 같은 회의 결과로 매매 기간만 다른 가상 계좌들을 함께 돌린다 (AI 비용 추가 없음)
-    "compare": {"enabled": False, "modes": ["auto", "long", "swing", "short"]},  # 실전 주문 PIN (끄면 실전 모드 전환·직접 주문에도 묻지 않는다)
+    "compare": {"enabled": False, "modes": ["auto", "long", "swing", "short"]},
     "watchlist": ["005930", "000660", "AAPL", "NVDA"],
     "investor": None,  # 투자 성향 검사 결과 (처음 실행 때 묻는다)
     "news": {"feeds": [

@@ -23,36 +23,8 @@ async function api(path, opts = {}) {
   });
   const data = await res.json().catch(() => ({}));
   const detail = typeof data.detail === "string" ? data.detail : "";
-  if (res.status === 428 && detail.startsWith("PIN:")) {
-    // 실전 주문 PIN: 입력받아 같은 요청을 다시 보낸다
-    const msg = detail.split(":").slice(2).join(":");
-    const pin = await askPin(msg);
-    if (!pin) throw new Error("PIN 입력을 취소했습니다");
-    return api(path, { ...opts, headers: { ...(opts.headers || {}), "x-qtrader-pin": pin } });
-  }
-  if (!res.ok) throw new Error(detail.startsWith("PIN:") ? detail.split(":").slice(2).join(":") : detail || `HTTP ${res.status}`);
+  if (!res.ok) throw new Error(detail || `HTTP ${res.status}`);
   return data;
-}
-
-// PIN 입력 창 (숫자 4~8자리)
-function askPin(msg) {
-  return new Promise((resolve) => {
-    let box = document.getElementById("pin-ask");
-    if (!box) { box = document.createElement("div"); box.id = "pin-ask"; document.body.appendChild(box); }
-    box.innerHTML = `<form class="pin-box"><i data-lucide="lock-keyhole"></i><h3>실전 주문 PIN</h3>
-      <p class="${msg.includes("틀렸") ? "down" : "note"}">${esc(msg)}</p>
-      <input type="password" inputmode="numeric" autocomplete="off" maxlength="8" pattern="[0-9]*" placeholder="••••••" required>
-      <div class="pin-btns"><button type="button" data-x>취소</button><button class="primary">확인</button></div>
-      <p class="note">실제 돈이 움직이는 작업이라 한 번 더 확인합니다. 맞히면 5분 동안은 다시 묻지 않아요.</p></form>`;
-    box.classList.remove("hidden");
-    window.lucide && lucide.createIcons();
-    const input = box.querySelector("input");
-    setTimeout(() => input.focus(), 30);
-    const done = (v) => { box.classList.add("hidden"); resolve(v); };
-    box.querySelector("[data-x]").onclick = () => done(null);
-    box.querySelector("form").onsubmit = (e) => { e.preventDefault(); done(input.value.trim()); };
-    box.onkeydown = (e) => { if (e.key === "Escape") done(null); };
-  });
 }
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -559,9 +531,7 @@ async function loadConfig() {
   setPct("rl-vol", R.max_vol); setPct("rl-fact", R.min_fact_ok); $("#rl-buys").value = R.max_new_buys_per_day;
   $("#rl-cool").value = R.cooldown_days; $("#rl-trend").checked = R.require_trend; $("#rl-mom").checked = R.require_momentum;
   $("#rl-market").value = R.market_filter || "half";
-  $("#pin-enabled").checked = c.security?.pin !== false;
   $$("input[name=holding]").forEach((i) => (i.checked = i.value === (c.ai.holding || "auto")));
-  loadPin();
   const ruleKeys = Object.keys(state.strategies);
   const stratSelect = (cur) => `<option value="ai" ${cur === "ai" ? "selected" : ""}>${STRAT_NAME.ai} (추천)</option>
     <optgroup label="단순 규칙 (AI 회의 없이, 고급 사용자용)">${ruleKeys.map((k) => `<option value="${k}" ${k === cur ? "selected" : ""}>${STRAT_NAME[k] || k}</option>`).join("")}</optgroup>`;
@@ -606,11 +576,11 @@ async function loadConfig() {
   icons();
 }
 
-// 저장하지 않은 변경 표시 (키·PIN·업데이트 칸은 따로 저장되니 제외)
+// 저장하지 않은 변경 표시 (키·업데이트 칸은 따로 저장되니 제외)
 let cfgDirty = false;
 function setDirty(v) { cfgDirty = v; $("#cfg-dirty")?.classList.toggle("hidden", !v); }
-$("#tab-cfg").addEventListener("input", (e) => { if (!e.target.closest("#cfg-keys, #pin-panel, #upd-panel")) setDirty(true); });
-$("#tab-cfg").addEventListener("change", (e) => { if (!e.target.closest("#cfg-keys, #pin-panel, #upd-panel")) setDirty(true); });
+$("#tab-cfg").addEventListener("input", (e) => { if (!e.target.closest("#cfg-keys, #upd-panel")) setDirty(true); });
+$("#tab-cfg").addEventListener("change", (e) => { if (!e.target.closest("#cfg-keys, #upd-panel")) setDirty(true); });
 document.addEventListener("tab", (e) => { if (e.detail !== "cfg" && cfgDirty) toast("설정에 저장하지 않은 변경이 있어요. 설정 탭 아래 '설정 저장'을 눌러 주세요", "circle-dot"); });
 
 // 운용 모드: 지금 상태를 크게. 실전으로 갈 때만 따로 확인 (설정 저장 버튼과 별개로 바로 적용)
@@ -707,7 +677,6 @@ $("#cfg-save").onclick = async () => {
     .map(([n, u, k]) => ({ name: n.trim(), url: u.trim(), cat: (k || "").trim() === "global" ? "global" : "kr" })) };
   c.notify = { ...(c.notify || {}), telegram_chat_id: $("#tg-chat").value.trim(), daily_report: $("#ntf-report").checked };
   c.max_sector_weight = getPct("sec-max") || 0.4;
-  c.security = { ...(c.security || {}), pin: $("#pin-enabled").checked };
   const conf = getPct("rl-conf");
   Object.assign(c.ai, {
     mode: $("#ai-mode").value, quick_model: $("#ai-quick").value, deep_model: $("#ai-deep").value,
@@ -743,24 +712,6 @@ $("#cfg-save").onclick = async () => {
     setDirty(false);
     refresh();
   } catch (e) { $("#cfg-msg").textContent = "저장 실패: " + e.message; }
-};
-
-async function loadPin() {
-  const p = await api("/api/pin").catch(() => ({ set: false }));
-  $("#pin-badge").textContent = p.set ? "설정됨" : "아직 없음";
-  $("#pin-badge").className = "badge " + (p.set ? "green" : "amber");
-  $("#pin-old-wrap").classList.toggle("hidden", !p.set);
-  $("#pin-save").textContent = p.set ? "PIN 바꾸기" : "PIN 정하기";
-}
-$("#pin-form").onsubmit = async (e) => {
-  e.preventDefault();
-  if ($("#pin-new").value !== $("#pin-new2").value) return toast("새 PIN 두 번이 서로 다릅니다", "alert-triangle");
-  try {
-    await api("/api/pin", { method: "POST", body: { new: $("#pin-new").value, old: $("#pin-old").value } });
-    ["#pin-old", "#pin-new", "#pin-new2"].forEach((s) => ($(s).value = ""));
-    toast("실전 주문 PIN 을 저장했어요", "lock-keyhole");
-    loadPin();
-  } catch (err) { toast(err.message, "alert-triangle"); }
 };
 
 $("#key-save").onclick = async () => {
