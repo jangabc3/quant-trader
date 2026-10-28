@@ -706,7 +706,7 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         if refresh:
             c.store.exec("delete from state where key in (?,?)", (f"picks_{m.value}_{today}", stats_key(m, today)))
         st: dict = {}
-        rows = todays(c, m, today, int(c.cfg["ai"]["max_symbols_per_day"]), st)
+        rows = todays(c, m, today, max(config_mod.meetings_cap(c.cfg, m), 1), st)
         met = {r["symbol"]: r for r in c.store.ai_runs(200) if r["trade_date"] == today}
         items = [p | {"name": name_of(p["symbol"]), "met": bool(met.get(p["symbol"])),
                       "rating": (met.get(p["symbol"]) or {}).get("rating")} for p in rows]
