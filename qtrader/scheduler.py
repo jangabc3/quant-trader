@@ -59,6 +59,22 @@ def trading_now(cfg: dict, market: Market, now: datetime | None = None) -> bool:
     return False
 
 
+def session_name(cfg: dict, market: Market, now: datetime | None = None) -> str | None:
+    """지금 감시·주문하는 세션 이름 (화면용). 쉬는 시간이면 None."""
+    if is_open(market, now):
+        return "정규장"
+    if not trading_now(cfg, market, now):
+        return None
+    if market == Market.KR:
+        return "넥스트레이드"
+    ny = (now or datetime.now(TZ[Market.US])).astimezone(TZ[Market.US])
+    if ny.weekday() < 5 and dtime(4, 0) <= ny.time() < dtime(9, 30) and "pre" in (cfg["markets"]["US"].get("extended_sessions") or []):
+        return "프리마켓"
+    if ny.weekday() < 5 and dtime(16, 0) <= ny.time() < dtime(20, 0) and "after" in (cfg["markets"]["US"].get("extended_sessions") or []):
+        return "애프터마켓"
+    return "주간거래"
+
+
 def run_clock(cfg: dict, market: Market):
     """정기 실행 시각을 어느 시계로 볼지: 미국을 '주간거래'로 고르면 한국 시각, 아니면 그 나라 시각."""
     mc = cfg["markets"][market.value]

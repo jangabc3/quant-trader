@@ -182,3 +182,75 @@ def test_toss_us_intraday_buy_is_not_loc():
     assert c.loc is True  # 정기 실행은 그대로 LOC
     b.order(req, loc=False)
     assert c.loc is False  # 장중 매수는 바로 지정가
+
+def test_old_config_moves_to_all_sessions_once(isolated_home):
+    """예전에 저장한 설정(시간외 꺼짐)은 한 번 모든 세션으로 바뀌고, 그 뒤 사용자가 끄면 그대로 둔다."""
+    old = json.loads(json.dumps(config.DEFAULT))
+    old.pop("migrated")
+    old["markets"]["KR"]["extended"] = False
+    old["markets"]["US"]["extended_sessions"] = []
+    config.path().write_text(json.dumps(old), encoding="utf-8")
+    cfg = config.load()
+    assert cfg["markets"]["KR"]["extended"] and cfg["markets"]["US"]["extended_sessions"] == ["day", "pre", "after"]
+    cfg["markets"]["KR"]["extended"] = False  # 사용자가 넥스트레이드를 끄고 저장
+    config.save(cfg)
+    assert config.load()["markets"]["KR"]["extended"] is False
+
+def test_recheck_sell_outside_regular_hours_is_limit(ctx, monkeypatch):
+    """넥스트레이드 시간에는 국내 시장가가 안 되므로 AI 재점검 매도도 지정가로."""
+    from qtrader import live, scheduler
+    from qtrader.agents.llm import Reply
+    px = ctx.data.price(Market.KR, "000660")
+    ctx.broker.order(OrderRequest(Market.KR, "000660", Side.BUY, 5, px, "manual"))
+    monkeypatch.setattr(scheduler, "is_open", lambda m, now=None: False)
+    monkeypatch.setattr(live, "triggers", lambda c, m, w: [("000660", "장중 -5% 급락")])
+
+    class Sell:
+        def run(self, *a, **k):
+            d = {"action": "sell", "reason": "악재 확인", "watch": "-"}
+            return Reply(json.dumps(d), data=d, input_tokens=1, output_tokens=1)
+    out = live.run_rechecks(ctx, Market.KR, llm=Sell())
+    assert out and out[0]["action"] == "sell"
+    o = ctx.store.rows("select * from orders where side='sell'")[0]
+    assert o["status"] == "filled" and 0 < o["price"] < px
+    assert "000660" not in ctx.broker.account(Market.KR).positions
+
+def test_all_sessions_by_default_and_names():
+    """프리장·장중·애프터장 내내: 기본으로 모든 세션에서 감시·사고판다."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from qtrader.scheduler import session_name, trading_now
+    cfg = config.load()
+    kst, ny = ZoneInfo("Asia/Seoul"), ZoneInfo("America/New_York")
+    at = lambda tz, h, mi=0: datetime(2026, 10, 28, h, mi, tzinfo=tz)  # 수요일
+    assert session_name(cfg, Market.KR, at(kst, 8, 30)) == "넥스트레이드"
+    assert session_name(cfg, Market.KR, at(kst, 10)) == "정규장"
+    assert session_name(cfg, Market.KR, at(kst, 19, 30)) == "넥스트레이드"
+    assert session_name(cfg, Market.KR, at(kst, 21)) is None
+    assert session_name(cfg, Market.US, at(ny, 5)) == "프리마켓"
+    assert session_name(cfg, Market.US, at(ny, 10)) == "정규장"
+    assert session_name(cfg, Market.US, at(ny, 17)) == "애프터마켓"
+    assert session_name(cfg, Market.US, at(kst, 11)) == "주간거래"
+    assert trading_now(cfg, Market.US, at(ny, 17)) and not trading_now(cfg, Market.US, at(ny, 20, 30))
+
+
+def test_after_hours_tick_buys_then_stops_out(ctx, fake_meetings, monkeypatch):
+    """정규장이 아닌 시간(넥스트레이드)에도 2분 점검이 회의 -> 매수 -> 손절 매도까지 혼자 한다."""
+    from qtrader import scheduler
+    _, opened = fake_meetings
+    monkeypatch.setattr(scheduler, "trading_now", lambda cfg, m, now=None: m == Market.KR)
+    monkeypatch.setattr(scheduler, "is_open", lambda m, now=None: False)
+    monkeypatch.setattr(scheduler, "due", lambda *a, **k: False)  # 정기 실행은 이 시험에서 빼고
+    monkeypatch.setattr(scheduler.Scheduler, "_ai_meetings", lambda *a, **k: None)
+    ctx.store.set("auto_trading", "1")
+    s = scheduler.Scheduler()
+    s.tick()  # 회의 열기
+    s._last_exit = float("-inf")
+    s.tick()  # 결론 -> 매수
+    assert opened == ["005930"] and orders(ctx) == [("005930", "buy", "filled")]
+    ctx.store.exec("update plans set stop=? where symbol='005930'", (10 ** 9,))  # 손절가를 현재가 위로
+    s._last_exit = float("-inf")
+    s.tick()  # 손절
+    assert orders(ctx) == [("005930", "buy", "filled"), ("005930", "sell", "filled")]
+    sell = ctx.store.rows("select * from orders where side='sell'")[0]
+    assert sell["price"] > 0 and "손절" in sell["message"]  # 시간외라 시장가가 아닌 지정가
