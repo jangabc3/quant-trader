@@ -64,3 +64,55 @@ def test_download_rejects_path_escape(tmp_path, monkeypatch):
     monkeypatch.setattr(requests, "get", lambda url, **k: Resp(data) if url.endswith(".zip") else Resp(text=h))
     with pytest.raises(ValueError, match="경로"):
         updater.download({"latest": "1", "zip": "u.zip", "sha256": "u.sha256"}, tmp_path)
+
+
+def _git(cwd, *a):
+    import subprocess
+    subprocess.run(["git", *a], cwd=cwd, check=True, capture_output=True,
+                   env={"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+                        "PATH": __import__("os").environ["PATH"], "HOME": str(cwd)})
+
+
+def test_git_mode_finds_new_commits_and_prepares_reinstall(tmp_path):
+    """A 방식: 설치한 커밋과 GitHub main 을 비교해 알리고, '지금 업데이트'는 'QTrader 설치.cmd --update' 를 준비한다."""
+    import json
+    import subprocess
+    origin, src, home = tmp_path / "origin", tmp_path / "src", tmp_path / "home"
+    home.mkdir()
+    _git(tmp_path, "init", "-q", "-b", "main", str(origin))
+    (origin / "a.txt").write_text("1")
+    _git(origin, "add", ".")
+    _git(origin, "commit", "-q", "-m", "처음")
+    _git(tmp_path, "clone", "-q", str(origin), str(src))
+    (src / updater.INSTALLER).write_text("@echo off")
+    assert updater.source_info(home) is None  # 설치 기록이 없으면 B 방식
+    updater.mark_installed(home, src)
+    info = updater.source_info(home)
+    run = subprocess.run
+    r = updater.check_git(info, force=True, run=run)
+    assert r["mode"] == "git" and r["available"] is False and r["current_rev"] == info["rev"][:7]
+    (origin / "a.txt").write_text("2")
+    _git(origin, "commit", "-q", "-am", "fix(stock): 호가 겹침 고치기")
+    r = updater.check_git(info, force=True, run=run)
+    assert r["available"] and r["behind"] == 1 and "호가 겹침" in r["notes"]
+    updater.write_git_pending(info, home)
+    p = json.loads((home / "updates" / "pending.json").read_text(encoding="utf-8"))
+    assert p["args"][-2:] == [str(src / updater.INSTALLER), "--update"] and p["cwd"] == str(src)
+
+
+def test_git_mode_reports_fetch_failure(tmp_path):
+    class Fail:
+        returncode, stdout, stderr = 128, "", "fatal: could not read Username for 'https://github.com'"
+    r = updater.check_git({"src": str(tmp_path), "rev": "abc"}, force=True, run=lambda *a, **k: Fail())
+    assert r["available"] is False and "확인 실패" in r["reason"] and "Username" in r["reason"]
+
+
+def test_finish_pending_runs_args(tmp_path, monkeypatch):
+    import json
+    import subprocess
+    (tmp_path / "updates").mkdir()
+    (tmp_path / "updates" / "pending.json").write_text(json.dumps({"args": ["cmd", "/c", "x.cmd", "--update"], "cwd": "D:/src"}))
+    seen = {}
+    monkeypatch.setattr(subprocess, "Popen", lambda args, **kw: seen.update(args=args, cwd=kw.get("cwd")))
+    assert updater.finish_pending(tmp_path) and seen == {"args": ["cmd", "/c", "x.cmd", "--update"], "cwd": "D:/src"}
+    assert not (tmp_path / "updates" / "pending.json").exists()

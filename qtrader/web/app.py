@@ -413,7 +413,8 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         c = ctx()
         if not (c.cfg.get("update") or {}).get("check", True) and not force:
             return {"current": __version__, "available": False}
-        return updater.check(c.cfg, c.store, force)
+        src = updater.source_info(config_mod.home())  # A: 내 PC 소스 폴더로 설치했으면 git 으로 확인
+        return updater.check_git(src, c.store, force) if src else updater.check(c.cfg, c.store, force)
 
     @app.post("/api/update/apply", dependencies=[Depends(need_token)])
     def update_apply():
@@ -421,6 +422,20 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         c = ctx()
         if not updater.frozen():
             raise HTTPException(400, "개발 버전은 git pull 로 받아 주세요 (자동 업데이트는 설치본 QTrader.exe 에서만)")
+        import os
+        import threading
+        src = updater.source_info(config_mod.home())
+        if src:  # A: 꺼진 뒤 'QTrader 설치.cmd --update' 가 받기 -> 만들기 -> 설치 -> 다시 켜기
+            info = updater.check_git(src, c.store, force=True)
+            if not info.get("available"):
+                raise HTTPException(400, info.get("reason") or "이미 최신 버전이에요")
+            try:
+                updater.write_git_pending(src, config_mod.home())
+            except ValueError as e:
+                raise HTTPException(400, str(e))
+            c.store.log("notice", "update", f"업데이트 {info['current_rev']} -> {info['latest']} ({info['behind']}개 바뀜): 다시 만들어 설치합니다")
+            threading.Timer(1.5, lambda: os._exit(updater.RESTART_CODE)).start()
+            return {"ok": True, "latest": info["latest"], "mode": "git"}
         info = updater.check(c.cfg, c.store, force=True)
         if not info.get("available"):
             raise HTTPException(400, info.get("reason") or "이미 최신 버전이에요")
@@ -430,8 +445,6 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
             raise HTTPException(502, f"업데이트를 받지 못했어요: {e}")
         updater.write_script(stage, config_mod.home())
         c.store.log("notice", "update", f"업데이트 {__version__} -> {info['latest']} 준비 완료, 다시 켭니다")
-        import os
-        import threading
         threading.Timer(1.5, lambda: os._exit(updater.RESTART_CODE)).start()
         return {"ok": True, "latest": info["latest"]}
 
