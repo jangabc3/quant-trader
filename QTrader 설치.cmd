@@ -5,11 +5,13 @@ rem 프로그램의 '지금 업데이트'는 이 파일을 --update 로 부른�
 chcp 65001 >nul
 title QTrader 설치
 rem 최신 코드를 받다가 이 파일 자체가 바뀌어도 멈추지 않게, 임시 폴더에 복사본을 만들어 그걸로 돈다
-if /i not "%~1"=="--run" (
-  copy /y "%~f0" "%TEMP%\qtrader_install.cmd" >nul
-  call "%TEMP%\qtrader_install.cmd" --run "%~dp0" %1
-  exit /b
-)
+rem (복사본 이름은 매번 달라서, 새 설치 파일로 다시 시작할 때 돌고 있는 복사본을 덮어쓰지 않는다)
+if /i "%~1"=="--run" goto run
+set "QT_TMP=%TEMP%\qtrader_install_%RANDOM%%RANDOM%.cmd"
+copy /y "%~f0" "%QT_TMP%" >nul
+call "%QT_TMP%" --run "%~dp0" %1
+exit /b
+:run
 cd /d "%~2"
 set "DEST=D:\QTrader"
 set "MODE=%~3"
@@ -36,6 +38,8 @@ netstat -ano | find ":8765" | find "LISTENING" >nul && (echo 'QTrader 실행.cmd
 echo.
 echo [1/4] 최신 코드 받기
 git checkout -q main && git pull -q --ff-only || goto pullfail
+rem 받은 코드에서 이 설치 파일이 바뀌었으면, 새 설치 파일로 다시 시작한다 (옛 순서로 한 번 더 돌지 않게)
+fc /b "%~f0" "%CD%\QTrader 설치.cmd" >nul 2>&1 || (echo     설치 파일이 새로 바뀌어 새 순서로 다시 시작합니다. & call "%CD%\QTrader 설치.cmd" %MODE% & exit /b)
 
 :afterpull
 echo [2/4] 필요한 것 설치
@@ -52,7 +56,7 @@ robocopy dist\QTrader "%DEST%" /E /R:2 /W:1 /NFL /NDL /NJH /NJS /NP >nul
 if errorlevel 8 (echo %DEST% 에 복사하지 못했어요. & pause & exit /b 1)
 powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath('Desktop')+'\QTrader.lnk'); $s.TargetPath='D:\QTrader\QTrader.exe'; $s.WorkingDirectory='D:\QTrader'; $s.Save()" >nul 2>&1
 rem 어느 폴더의 어느 커밋으로 만들었는지 적어 둔다 (프로그램이 이것과 GitHub main 을 비교해 새 버전을 알린다)
-".venv\Scripts\python.exe" -m qtrader mark-installed --src "%CD%" >nul
+".venv\Scripts\python.exe" -m qtrader mark-installed --src "%CD%" --app "%DEST%" || echo     설치 기록을 남기지 못했어요. 이 창을 찍어서 보내 주세요 (프로그램은 그대로 쓸 수 있어요).
 
 echo.
 echo 설치 끝! 바탕화면의 QTrader 아이콘으로 켜면 돼요. 지금 바로 켭니다.

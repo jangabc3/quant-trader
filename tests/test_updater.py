@@ -116,3 +116,20 @@ def test_finish_pending_runs_args(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", lambda args, **kw: seen.update(args=args, cwd=kw.get("cwd")))
     assert updater.finish_pending(tmp_path) and seen == {"args": ["cmd", "/c", "x.cmd", "--update"], "cwd": "D:/src"}
     assert not (tmp_path / "updates" / "pending.json").exists()
+
+
+def test_install_record_also_next_to_program(tmp_path):
+    """설치 기록은 데이터 폴더와 프로그램 폴더 두 곳에. 데이터 폴더 기록이 없어도 업데이트 버튼이 나온다."""
+    import subprocess
+    origin, src, home, app = tmp_path / "o", tmp_path / "src", tmp_path / "home", tmp_path / "app"
+    home.mkdir()
+    app.mkdir()
+    _git(tmp_path, "init", "-q", "-b", "main", str(origin))
+    (origin / "a.txt").write_text("1")
+    _git(origin, "add", ".")
+    _git(origin, "commit", "-q", "-m", "처음")
+    _git(tmp_path, "clone", "-q", str(origin), str(src))
+    updater.mark_installed(home, src, run=subprocess.run, app_dir=app)
+    (home / "source.json").unlink()  # 데이터 폴더 기록이 없어져도
+    info = updater.source_info(home, app_dir=app)
+    assert info and info["src"] == str(src.resolve()) and len(info["rev"]) == 40
