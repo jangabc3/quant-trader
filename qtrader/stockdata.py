@@ -262,16 +262,20 @@ def summary(t: Toss | None, symbol: str) -> dict:
             limits = t.price_limits(sym)
         except Exception:
             limits = {}
+        base = None
         try:
-            last = t.prices([sym]).get(toss_symbol(sym)) or daily[-1]["close"]
+            q = t.quotes([sym]).get(toss_symbol(sym)) or {}
+            last, base = q.get("price") or daily[-1]["close"], q.get("base")
         except Exception:
             last = daily[-1]["close"]
     else:
+        base = None
         demo = {s: n for s, n, _ in DEMO_KR + DEMO_US}
         info = {"symbol": sym, "name": demo.get(sym, sym), "market": "KOSPI" if sym[:1].isdigit() else "NASDAQ",
                 "currency": "KRW" if sym[:1].isdigit() else "USD"}
         last = daily[-1]["close"]
-    prev = daily[-2]["close"] if len(daily) > 1 else last
+    # 기준가(전일 정규장 종가)는 토스 값을 쓴다. 일봉 두 개로 계산하면 시간외가 섞인 날 순위표와 등락률이 어긋난다
+    prev = base if t is not None and base else (daily[-2]["close"] if len(daily) > 1 else last)
     closes = [d["close"] for d in daily]
     shares = num(info.get("sharesOutstanding")) or None
     return {

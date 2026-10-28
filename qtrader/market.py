@@ -91,6 +91,16 @@ def names(t: Toss, symbols: list[str]) -> dict[str, str]:
 def _change(t: Toss, symbol: str, indicator: bool) -> dict:
     df = t.candles(symbol, "1d", 2, indicator=indicator)
     last, prev = float(df["close"].iloc[-1]), float(df["close"].iloc[-2]) if len(df) > 1 else float(df["close"].iloc[-1])
+    if not indicator:  # 종목은 토스가 준 현재가·기준가로 (순위표·종목 화면과 같은 숫자)
+        try:
+            from .toss import toss_symbol
+            q = t.quotes([symbol]).get(toss_symbol(symbol)) or {}
+            if q.get("price"):
+                last = q["price"]
+                if q.get("base"):
+                    prev = q["base"]
+        except Exception:
+            pass
     row = df.iloc[-1]
     return {"symbol": symbol, "name": NAMES.get(symbol, symbol), "price": last,
             "change": last - prev, "change_rate": (last / prev - 1) if prev else 0.0,

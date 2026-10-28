@@ -213,3 +213,38 @@ def test_meeting_by_name_uses_stock_code(isolated_home):
     assert r.status_code == 200 and r.json()["symbol"] == "000660"
     bad = client.post("/api/ai/meeting", json={"symbol": "없는회사이름"}, headers=client.h)
     assert bad.status_code == 400 and "찾지 못했어요" in bad.json()["detail"]
+
+
+def test_change_rate_uses_toss_base_price_everywhere():
+    """등락률은 토스가 준 기준가(전일 정규장 종가)로. 일봉 두 개로 계산하면 시간외가 섞인 날 순위표와 어긋났다."""
+    import pandas as pd
+    from qtrader import market as market_mod, stockdata
+    from qtrader.toss import Toss
+
+    class T(Toss):
+        def __init__(self):
+            pass
+
+        def _call(self, method, path, group, params=None, **kw):
+            assert path == "/api/v1/prices"
+            return [{"symbol": "005930", "lastPrice": "239250", "changeRate": "0.0788"}]
+
+        def candles(self, symbol, interval="1d", count=200, indicator=False):  # 어제 일봉 종가는 시간외까지 섞인 224,500
+            idx = pd.to_datetime(["2026-10-27", "2026-10-28"])
+            return pd.DataFrame({"open": [1, 1], "high": [240000, 240000], "low": [1, 1], "close": [224500.0, 239250.0],
+                                 "volume": [1, 1]}, index=idx)
+    t = T()
+    q = t.quotes(["005930"])["005930"]
+    assert q["change_rate"] == pytest.approx(0.0788) and q["base"] == pytest.approx(239250 / 1.0788)
+    d = market_mod._change(t, "005930", False)
+    assert d["change_rate"] == pytest.approx(0.0788, abs=1e-6)  # 관심 종목·시장 요약
+    t.stocks = lambda s: [{"symbol": "005930", "name": "삼성전자"}]
+    t.warnings = lambda s: []
+    t.price_limits = lambda s: {}
+    monkey = stockdata.candles
+    stockdata.candles = lambda tt, sym, iv, n: {"candles": [{"close": 224500.0, "volume": 1}, {"close": 239250.0, "volume": 1}]}
+    try:
+        s = stockdata.summary(t, "005930")
+    finally:
+        stockdata.candles = monkey
+    assert s["change_rate"] == pytest.approx(0.0788, abs=1e-6)  # 종목 화면
