@@ -141,7 +141,7 @@ FINAL = {"rating": "Buy", "confidence": 0.8, "headline": "추세 살아있음", 
                        "bull": {"price": 140, "probability": 0.3, "condition": "수주 확대"}},
          "entry_low": 95, "entry_high": 100, "stop_loss_pct": 7, "take_profit_pct": 15, "horizon_days": 20,
          "trust": ["t1", "t2", "t3"], "worry": ["w1", "w2", "w3"], "watch": ["m1", "m2", "m3"],
-         "risk_votes": {"aggr": "확대", "neut": "유지", "cons": "축소"}, "bull_score": 64}
+         "risk_check": {"verdict": "유지", "note": "손익비 무난"}, "bull_score": 64}
 CHECK = {"fact_checks": [{"claim": "영업이익 증가", "status": "확인됨", "detail": "2분기 보고서", "source": "DART"}],
          "key_questions": [{"question": "q", "answer": "a", "source": "s"}] * 5,
          "valuation": [{"metric": "PER", "current": 12.0, "hist_avg": 15.0, "peer_avg": None, "unit": "배", "note": ""}],
@@ -153,9 +153,9 @@ class FakeLLM:
     def __init__(self, rating="Buy", confidence=0.8):
         self.rating, self.confidence, self.calls = rating, confidence, []
 
-    def run(self, system, user, web=False, schema=None, max_tokens=16000, model=None, context=None):
+    def run(self, system, user, web=False, schema=None, max_tokens=16000, model=None, context=None, effort=None, searches=None):
         self.calls.append({"system": system, "user": user, "web": web, "schema": bool(schema), "model": model,
-                           "context": context})
+                           "context": context, "effort": effort, "searches": searches})
         if schema is not None and "fact_checks" in schema["properties"]:
             return Reply(json.dumps(CHECK), data=CHECK, input_tokens=100, output_tokens=50, model=model or "")
         if schema:
@@ -186,43 +186,42 @@ def loose_cfg():
     return cfg
 
 
-def test_meeting_fast_mode(tmp_path):
+def test_seven_person_meeting(tmp_path):
+    """7명 회의: 분석 3 + 검증관 + 강세·약세 2 + 대표 = Claude 7번. 모두 빠른 모델, 웹 검색은 밸류·헤드라인 2번·검증관 1번까지."""
+    from qtrader.agents.roles import STAGES
     st = Store(tmp_path / "m.db")
     llm = FakeLLM()
     run = meeting.start("005930", Bars(), st, config.load(), llm=llm, background=False)
     assert run["status"] == "done", run["error"]
-    assert run["mode"] == "fast" and run["final"]["rating"] == "Buy"
-    assert all(run["agents"][r.id]["status"] == "done" for r in ROLES)
-    # 분석 3 + 검증관 + 강세·약세 2 + 대표 = 7번
+    assert [r.id for r in ROLES] == ["chart", "fund", "news", "checker", "bull", "bear", "pm"]
+    assert [k for k, _ in STAGES] == ["analysts", "check", "debate", "pm"]
+    assert run["mode"] == "seven" and run["final"]["rating"] == "Buy"
+    assert all(run["agents"][r.id]["status"] == "done" for r in ROLES) and set(run["agents"]) == {r.id for r in ROLES}
     assert len(llm.calls) == 7 and sum(c["schema"] for c in llm.calls) == 2
     assert [c["web"] for c in llm.calls].count(True) == 3
-    models = [c["model"] for c in llm.calls]
-    assert models.count("claude-opus-5-5") == 2 and models.count("claude-sonnet-5-5") == 5
+    assert sorted(c["searches"] for c in llm.calls if c["web"]) == [1, 2, 2]
+    assert {c["model"] for c in llm.calls} == {"claude-sonnet-5-5"}  # 대표도 기본은 빠른 모델 (비용)
+    assert [c["effort"] for c in llm.calls].count("low") == 5  # 분석·토론은 얕게, 검증관·대표는 설정값
     # 모든 참석자가 같은 system 을 받아야 캐시가 맞는다 (역할은 user 에)
     assert len({c["system"] for c in llm.calls}) == 1
     assert "투자자 프로필" in llm.calls[0]["system"] and "Jegadeesh" in llm.calls[0]["system"]
     assert "[너의 역할]" in llm.calls[0]["user"] and llm.calls[0]["context"].startswith("오늘은")
     assert run["calls"] == 7 and run["cost_usd"] > 0 and run["cache_read"] > 0
     assert run["plan"]["stop"] < run["plan"]["entry"] < run["plan"]["take"] and run["checklist"]["rules"]
-    assert run["agents"]["earn"]["status"] == "done" and "대표" not in run["agents"]["earn"]["bubble"]
+    assert "위험 점검" in run["agents"]["pm"]["report"]
+    assert all(v == "done" for v in run["stages"].values()) and len(run["handoffs"]) == 7
     saved = st.latest_decision("005930", run["trade_date"])
     assert saved["plan"]["take"] == run["plan"]["take"] and saved["checklist"] is not None
-
-
-def test_meeting_precise_mode(tmp_path):
-    st = Store(tmp_path / "m.db")
-    cfg = config.load()
-    cfg["ai"]["mode"] = "precise"
-    llm = FakeLLM()
-    run = meeting.start("005930", Bars(), st, cfg, llm=llm, background=False)
-    assert run["status"] == "done", run["error"]
-    # 분석가 5 + 검증관 + 강세/약세 2 + 팀장 + 트레이더 + 리스크 3 + 대표 = 14번
-    assert len(llm.calls) == 14 and [c["web"] for c in llm.calls].count(True) == 5
-    assert [c["model"] for c in llm.calls].count("claude-opus-5-5") == 3
-    assert run["check"]["scores"]["flow"] == 72 and run["facts"]["levels"]["sma20"]
-    assert all(v == "done" for v in run["stages"].values()) and len(run["handoffs"]) >= 10
     hist = st.ai_runs(1)[0]
     assert hist["check"]["valuation"][0]["metric"] == "PER" and hist["name"] == "005930"
+
+
+def test_deep_model_only_for_final_when_asked(tmp_path):
+    cfg = config.load()
+    cfg["ai"]["deep_final"] = True
+    llm = FakeLLM()
+    meeting.start("005930", Bars(), Store(tmp_path / "m.db"), cfg, llm=llm, background=False)
+    assert [c["model"] for c in llm.calls].count("claude-opus-5-5") == 1 and llm.calls[-1]["model"] == "claude-opus-5-5"
 
 
 def test_meeting_error_is_recorded(tmp_path):
@@ -395,7 +394,7 @@ def test_ai_meeting_endpoint(client):
     runs = client.get("/api/ai/runs").json()
     assert runs[0]["rating_ko"] == "매수"
     roles = client.get("/api/ai/roles").json()
-    assert len(roles["roles"]) == 14 and len(roles["stages"]) == 7
+    assert len(roles["roles"]) == 7 and len(roles["stages"]) == 4
     ch = client.get("/api/ai/chart/005930").json()
     assert len(ch["candles"]) == 180 and ch["sma20"] and "support" in ch["levels"]
     tr = client.get("/api/ai/track").json()

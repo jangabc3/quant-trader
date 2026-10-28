@@ -77,8 +77,8 @@ DEFAULT = {
         "chat_effort": "medium",  # 큐비 답변 깊이 (low 는 빠르고 싸지만 분석이 얕아짐)
         "deep_model": "claude-opus-5-5",
         "effort": "medium",
-        # fast: Claude 호출 7번 (분석 묶음 + 대표가 팀장·트레이더·리스크 역할 통합), precise: 14번
-        "mode": "fast",
+        # 7명 회의 (Claude 호출 7번). 대표만 깊은 모델을 쓰려면 deep_final (비용이 약 2배)
+        "deep_final": False,
         # 매수 체크리스트 기준 (principles.DEFAULT_RULES 를 덮어쓴다)
         "rules": {},
         # AI 로 산 종목은 손절가·익절가에 닿으면 장중에 자동으로 판다
@@ -88,7 +88,6 @@ DEFAULT = {
         # AI 회의로 정한 주문은 화면에서 승인해야 나간다 (가이드 원칙: 최종 판단은 사람이)
         "require_approval": False,
         "debate_rounds": 1,
-        "risk_rounds": 1,
         "web_research": True,  # 뉴스·재무·여론 분석가가 웹 검색을 쓴다
         "run_before_minutes": 40,  # 실행 시각보다 이만큼 먼저 회의를 돌린다
         # 최종 등급 -> 목표 비중 배수 (종목당 1/N 기준). Hold(보류)는 새로 사지 않고 가진 종목은 그대로
@@ -237,9 +236,7 @@ def validate(cfg: dict) -> list[str]:
     ai = cfg.get("ai", {})
     if ai.get("effort") not in ("low", "medium", "high", "xhigh", "max"):
         errs.append("ai.effort 는 low/medium/high/xhigh/max 중 하나여야 합니다")
-    if ai.get("mode", "fast") not in ("fast", "precise"):
-        errs.append("ai.mode 는 fast 또는 precise")
-    if not 0 <= int(ai.get("debate_rounds", 1)) <= 3 or not 0 <= int(ai.get("risk_rounds", 1)) <= 3:
+    if not 0 <= int(ai.get("debate_rounds", 1)) <= 3:
         errs.append("토론 라운드는 0~3 이어야 합니다")
     if not isinstance(ai.get("intraday", True), bool):
         errs.append("ai.intraday 는 true 또는 false")
