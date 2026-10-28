@@ -41,7 +41,7 @@ def cmd_mark_installed(a):
     """설치 스크립트가 부른다: 어느 소스 폴더의 어느 커밋으로 만들었는지 적어 둔다 (자동 업데이트 A)."""
     from pathlib import Path
     from . import updater
-    d = updater.mark_installed(config_mod.home(), Path(a.src))
+    d = updater.mark_installed(config_mod.home(), Path(a.src), app_dir=Path(a.app) if a.app else None)
     print(f"설치 기록: {d['src']} @ {d['rev'][:7]}")
 
 
@@ -145,6 +145,7 @@ def main(argv=None):
 
     s = sub.add_parser("mark-installed", help="(설치 스크립트용) 소스 폴더와 커밋을 적어 두기")
     s.add_argument("--src", required=True)
+    s.add_argument("--app", help="설치한 프로그램 폴더 (QTrader.exe 옆에도 기록)")
     s.set_defaults(fn=cmd_mark_installed)
 
     s = sub.add_parser("serve", help="대시보드와 자동매매 스케줄러 실행")
