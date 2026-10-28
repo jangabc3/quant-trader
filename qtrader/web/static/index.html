@@ -115,6 +115,7 @@
         <div class="st-actions"><button id="st-watch">♥ 관심</button><button id="st-ai" class="primary">AI 투자 회의</button></div>
       </div>
       <div class="st-grid">
+        <div class="st-main">
         <div class="panel">
           <div class="chart-bar">
             <div class="seg" id="st-iv">
@@ -133,10 +134,14 @@
           <div id="st-chart" class="st-chart"></div>
           <div class="st-info" id="st-info"></div>
         </div>
+          <!-- 호가·체결은 차트 아래에 나란히 (오른쪽에 쌓으면 차트 칸이 같이 늘어나 빈 공간이 생긴다) -->
+          <div class="st-book">
+            <div class="panel"><h3>호가 <small id="ob-time"></small></h3><div id="st-ob" class="ob"></div></div>
+            <div class="panel"><h3>체결</h3><div id="st-trades" class="trades"></div></div>
+          </div>
+        </div>
         <div class="st-side">
           <div class="panel ticket" id="ticket"><p class="note">불러오는 중...</p></div>
-          <div class="panel"><h3>호가 <small id="ob-time"></small></h3><div id="st-ob" class="ob"></div></div>
-          <div class="panel"><h3>체결</h3><div id="st-trades" class="trades"></div></div>
         </div>
       </div>
       <div class="st-grid2">
