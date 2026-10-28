@@ -323,3 +323,4 @@ table.refs td { white-space: normal; font-size: 13px; vertical-align: top; }
 .sig-panel .sig-row svg { width: 20px; height: 20px; flex: none; color: var(--blue); margin-top: 2px; }
 .sig-panel .sig-row.ok svg { color: #2fbf71; } .sig-panel .sig-row.bad svg { color: var(--red); }
 .sig-panel .sig-row p { margin: 4px 0; } .sig-panel .sig-row ul { margin: 4px 0 0; padding-left: 18px; }
+.lb-trail { margin-top: 4px; font-size: 11.5px; }

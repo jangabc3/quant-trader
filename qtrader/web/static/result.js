@@ -142,7 +142,15 @@ function planBlock(run) {
   const p = run.plan, cl = run.checklist;
   if (!p) return "";
   const m = p.currency === "USD" ? "US" : "KR";
-  const steps = [
+  const trail = (state.config?.ai?.exit_style || "trail") === "trail" && p.entry > p.stop;
+  const oneR = p.entry + (p.entry - p.stop);  // 처음 위험 폭(R)만큼 오른 가격
+  const steps = trail ? [
+    ["1", "매수", `${fmtPx(p.entry_low, m)} ~ ${fmtPx(p.entry_high, m)} 사이에서 ${p.qty.toLocaleString()}주 (${fmtPx(p.amount, m)})`, ""],
+    ["2", "손절", `${fmtPx(p.stop, m)} 이하로 내려가면 전량 매도 (-${p.stop_pct}%, 최대 손실 ${fmtPx(p.max_loss, m)})`, "down"],
+    ["3", "절반 익절", `${fmtPx(oneR, m)} 에 닿으면 절반을 팔고, 남은 절반은 손절을 본전(${fmtPx(p.entry, m)})으로 올려요`, "up"],
+    ["4", "나머지", `그 뒤 최고가를 따라 손절을 올려 추세가 끝날 때 팔아요 (PC 가 꺼져 있으면 ${fmtPx(p.take, m)} 에서 토스가 팔아요)`, "up"],
+    ["5", "기한", "10거래일 안에 절반 익절 가격에 못 닿으면 정리해요 (오래 안 움직이는 돈을 다른 기회에)", ""],
+  ] : [
     ["1", "매수", `${fmtPx(p.entry_low, m)} ~ ${fmtPx(p.entry_high, m)} 사이에서 ${p.qty.toLocaleString()}주 (${fmtPx(p.amount, m)})`, ""],
     ["2", "손절", `${fmtPx(p.stop, m)} 이하로 내려가면 전량 매도 (-${p.stop_pct}%, 최대 손실 ${fmtPx(p.max_loss, m)})`, "down"],
     ["3", "익절", `${fmtPx(p.take, m)} 이상 오르면 전량 매도 (+${p.take_pct}%, 예상 이익 ${fmtPx(p.max_gain, m)})`, "up"],
