@@ -1,6 +1,7 @@
 "use strict";
 // 실시간 사무실: 회의가 없을 때도 장중 엔진 움직임을 캐릭터와 현황판으로 보여 준다 (AI 호출 없음).
-// 트레이더 = 손절·익절 감시, 차트봇·검증관 = 다음 후보 재계산, 헤드라인 = 보유 종목 뉴스, 대표 = 오늘 주문·체결
+// 차트봇 = 가진 종목 손절·익절 감시, 밸류 = 다음 후보, 검증관 = 기준에 걸린 종목, 헤드라인 = 뉴스,
+// 불리 = 장중 매수 흐름, 베어리 = AI 긴급 재점검, 대표 = 오늘 주문·체결
 
 const lv = { on: false, data: null, poll: null, tick: 0, rot: null, seen: 0, market: "KR" };
 const SRC_ICON = { engine: "play", exit: "shield", sync: "check-circle-2", ai: "users", picks: "sparkles", alert: "bell-ring",
@@ -17,16 +18,16 @@ function liveAgents(d) {
   const t = lv.tick;
   const pick = (arr) => arr.length ? arr[t % arr.length] : null;
   const set = (id, status, bubble, report) => { if (A[id]) Object.assign(A[id], { status, bubble, report }); };
-  // 트레이더: 감시 중 종목
+  // 차트봇: 감시 중 종목 (가격을 2분마다 본다)
   const w = pick(d.watch);
-  set("trader", d.watch.length ? "working" : "idle",
+  set("chart", d.watch.length ? "working" : "idle",
     w ? (w.stop ? `${nm(w)} 손절까지 ${pct(w.to_stop)} · 익절까지 ${pct(w.to_take)}` : `${nm(w)} ${pct(w.pnl)} · 손절 계획 없음`) : "감시할 종목이 없어요",
     "### 감시 중인 종목\n\n" + (d.watch.map((x) => `- **${nm(x)}** ${x.qty}주 · 손익 ${pct(x.pnl)}` + (x.stop ? ` · 손절 ${x.stop.toLocaleString()} / 익절 ${x.take.toLocaleString()}` : " · 손절 계획 없음 (직접 산 종목)")).join("\n") || "- 없음")
     + "\n\n장중 2분마다 가격을 확인하고, 손절가·익절가에 닿으면 바로 팝니다.");
-  // 차트봇·검증관: 다음 후보
+  // 밸류·검증관: 다음 후보
   const ok = d.candidates.filter((c) => !c.missing.length), no = d.candidates.filter((c) => c.missing.length);
   const c1 = pick(ok), c2 = pick(no);
-  set("chart", d.schedule.open ? "working" : "idle", c1 ? `${nm(c1)}: 규칙 통과 · 모멘텀 ${pct(c1.mom)}` : "통과한 후보가 아직 없어요",
+  set("fund", d.schedule.open ? "working" : "idle", c1 ? `${nm(c1)}: 규칙 통과 · 모멘텀 ${pct(c1.mom)}` : "통과한 후보가 아직 없어요",
     "### 다음 후보 (15분마다 다시 계산)\n\n" + (ok.map((c) => `- **${nm(c)}** 모멘텀 ${pct(c.mom)} · RSI ${c.rsi}`).join("\n") || "- 없음"));
   set("checker", d.schedule.open && c2 ? "working" : "idle", c2 ? `${nm(c2)}: ${c2.missing[0]}` : "",
     "### 아깝게 떨어진 종목\n\n" + (no.map((c) => `- **${nm(c)}**: ${c.missing.join(", ")}`).join("\n") || "- 없음"));
@@ -34,18 +35,18 @@ function liveAgents(d) {
   const n = pick(d.news);
   set("news", n ? "working" : "idle", n ? `${n.name}: ${n.title.slice(0, 34)}…` : "",
     "### 보유·후보 종목 뉴스\n\n" + (d.news.map((x) => `- [${x.name}] ${x.title}`).join("\n") || "- 새 뉴스 없음"));
-  // 수급왕: 장중 회의 -> 매수 흐름 (끄면 다음 일정)
+  // 불리: 장중 회의 -> 매수 흐름 (끄면 다음 일정)
   const it = d.intraday || { on: false, items: [] };
   const cur = it.items.find((x) => x.state === "meeting") || it.items[0];
-  set("flow", it.on && cur ? (cur.state === "meeting" ? "working" : "done") : "idle",
+  set("bull", it.on && cur ? (cur.state === "meeting" ? "working" : "done") : "idle",
     it.on ? (cur ? `장중 회의 ${nm(cur)}: ${IN_STATE[cur.state]?.[0] || cur.state}${cur.stage ? " · " + cur.stage : ""}` : `장중 회의 ${it.every}분마다 · 아직 없음`)
       : `다음 회의 ${hhmm(d.schedule.next_meeting)} · 실행 ${hhmm(d.schedule.next_run)}`,
     "### 장중 회의 → 매수\n\n" + (it.on ? `장이 열린 동안 ${it.every}분마다 새 후보 하나로 AI 회의를 열고, 결론이 매수이고 체크리스트를 통과하면 그 종목만 바로 삽니다. 오늘 회의 ${it.met}/${it.cap}종목.\n\n`
       + (it.items.map((x) => `- ${x.at || ""} **${nm(x)}** ${IN_STATE[x.state]?.[0] || x.state}${x.note ? ` — ${x.note}` : ""}`).join("\n") || "- 아직 없음")
       : "꺼져 있어요. 정기 실행 때만 삽니다."));
-  // 팀장: 재점검 현황
+  // 베어리: 재점검 현황 (가진 종목에 위험 신호가 보이면 짧게 다시 묻는다)
   const rc = Object.keys(d.rechecks).length;
-  set("lead", rc ? "done" : "idle", `AI 긴급 재점검 ${rc}/${d.recheck_cap}`,
+  set("bear", rc ? "done" : "idle", `AI 긴급 재점검 ${rc}/${d.recheck_cap}`,
     "### 오늘 AI 긴급 재점검\n\n" + (Object.entries(d.rechecks).map(([s, a]) => `- ${s}: ${a === "sell" ? "일찍 매도" : a === "hold" ? "계속 보유" : a}`).join("\n") || "- 아직 없음")
     + "\n\n가진 종목이 장중 -3% 넘게 빠지거나 손절선에 2% 안으로 다가오면 그 종목만 짧게 다시 묻습니다.");
   // 대표: 오늘 한 일
@@ -64,12 +65,12 @@ function liveRun(d) {
   // 새 주문·체결이 생기면 서류가 트레이더 -> 대표로 날아간다
   const newest = d.timeline[0]?.id || 0;
   if (lv.seen && newest > lv.seen && d.timeline.some((e) => e.id > lv.seen && ["order", "exit", "sync", "manual"].includes(e.source)))
-    r.handoffs.push({ from: "trader", to: "pm" });
+    r.handoffs.push({ from: "chart", to: "pm" });
   if (lv.seen && newest > lv.seen && d.timeline.some((e) => e.id > lv.seen && e.source === "picks"))
-    r.handoffs.push({ from: "chart", to: "lead" });
-  // 장중 회의 결론으로 바로 사면: 수급왕(장중 회의) -> 트레이더(주문)
+    r.handoffs.push({ from: "fund", to: "bull" });
+  // 장중 회의 결론으로 바로 사면: 불리(매수 흐름) -> 대표(주문)
   if (lv.seen && newest > lv.seen && d.timeline.some((e) => e.id > lv.seen && e.source === "intraday"))
-    r.handoffs.push({ from: "flow", to: "trader" });
+    r.handoffs.push({ from: "bull", to: "pm" });
   lv.seen = newest;
   return r;
 }

@@ -1210,7 +1210,13 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         try:
             df = c.data.bars(market_of(s), s, max(days, 130))
         except Exception as e:
-            raise HTTPException(502, f"차트 데이터를 받지 못했습니다: {e}")
+            if toss() is not None:
+                raise HTTPException(502, f"차트 데이터를 받지 못했습니다: {e}")
+            # 키 없는 체험: 종목 화면과 같은 체험 시세로 (파일 경로 같은 오류를 보이지 않게)
+            import pandas as pd
+            rows = stockdata.candles(None, s, "1d", max(days, 130))["candles"]
+            df = pd.DataFrame(rows)
+            df.index = pd.to_datetime(df.pop("time"))
         cl = df["close"]
         out = {"candles": [], "sma20": [], "sma60": [], "sma120": [], "levels": key_levels(df)}
         smas = {k: ind.sma(cl, k) for k in (20, 60, 120)}

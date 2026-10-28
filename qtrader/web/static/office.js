@@ -10,26 +10,18 @@ const ROOMS = [
   { id: "A", x: 8, y: 22, w: 300, h: 150, floor: "#7b5332", label: "분석팀" },
   { id: "B", x: 320, y: 22, w: 116, h: 150, floor: "#58606b", label: "검증실" },
   { id: "C", x: 448, y: 22, w: 184, h: 150, floor: "#5e3f35", label: "토론실" },
-  { id: "D", x: 8, y: 186, w: 180, h: 166, floor: "#6f4c2e", label: "트레이딩 데스크" },
-  { id: "E", x: 200, y: 186, w: 250, h: 166, floor: "#4f4a5c", label: "리스크 위원회" },
-  { id: "F", x: 462, y: 186, w: 170, h: 166, floor: "#6b4a26", label: "대표실" },
+  { id: "D", x: 8, y: 186, w: 424, h: 166, floor: "#4f4a5c", label: "트레이딩 데스크" },
+  { id: "F", x: 444, y: 186, w: 188, h: 166, floor: "#6b4a26", label: "대표실" },
 ];
-// 자리(발 위치)와 일할 때 오가는 지점
+// 자리(발 위치)와 일할 때 오가는 지점. 7명: 분석 3 · 검증 1 · 토론 2 · 대표 1 (트레이딩 데스크는 가격을 볼 때 들르는 곳)
 const SEATS = {
-  chart: { home: [44, 150], desk: true, visits: [[44, 92]] },
-  fund: { home: [102, 150], desk: true, visits: [[90, 82], [150, 82]] },
-  earn: { home: [160, 150], desk: true, visits: [[180, 82], [130, 90]] },
-  news: { home: [218, 150], desk: true, visits: [[240, 84], [200, 92]] },
-  flow: { home: [276, 150], desk: true, visits: [[270, 84], [250, 100]] },
-  checker: { home: [378, 150], desk: true, visits: [[44, 168], [102, 168], [160, 168], [218, 168], [276, 168], [360, 84]] },
-  bull: { home: [470, 144], visits: [[500, 142]] },
-  bear: { home: [610, 144], visits: [[580, 142]] },
-  lead: { home: [540, 106], visits: [[500, 106], [580, 106]] },
-  trader: { home: [98, 318], desk: true, visits: [[60, 300], [140, 300]] },
-  aggr: { home: [236, 336], visits: [[260, 316]] },
-  neut: { home: [326, 274], visits: [[300, 270], [352, 270]] },
-  cons: { home: [416, 336], visits: [[392, 316]] },
-  pm: { home: [578, 296], desk: true, visits: [[610, 232], [540, 240]] },
+  chart: { home: [62, 150], desk: true, visits: [[60, 92], [120, 300], [240, 300]] },
+  fund: { home: [158, 150], desk: true, visits: [[120, 82], [190, 82]] },
+  news: { home: [254, 150], desk: true, visits: [[230, 84], [280, 92]] },
+  checker: { home: [378, 150], desk: true, visits: [[62, 168], [158, 168], [254, 168], [360, 84]] },
+  bull: { home: [480, 144], visits: [[510, 142]] },
+  bear: { home: [600, 144], visits: [[570, 142]] },
+  pm: { home: [538, 300], desk: true, visits: [[600, 240], [480, 250], [360, 300]] },
 };
 const LOOKS = {
   teal: ["#1f8a8a", "#2a2a35"], navy: ["#2f4a8a", "#4a3020"], amber: ["#d08a1f", "#222"], rose: ["#c0507a", "#6a3a20"],
@@ -37,8 +29,9 @@ const LOOKS = {
   slate: ["#55606e", "#101418"], orange: ["#e0702a", "#5a2a10"], gray: ["#8a8f96", "#3a3a3a"], blue: ["#3a6ad0", "#1a2030"],
   gold: ["#c9a227", "#e8e0d0"], pink: ["#e07ab0", "#3a2010"], white: ["#d8dde3", "#5a3a20"],
 };
-const SHORT = { chart: "기술", fund: "재무", earn: "실적", news: "뉴스", flow: "수급", checker: "팩트체크", bull: "강세", bear: "약세",
-  lead: "리서치 팀장", trader: "주문 설계", aggr: "공격형", neut: "중립형", cons: "보수형", pm: "최종 결정" };
+const SHORT = { chart: "기술·타이밍", fund: "재무·실적", news: "뉴스·수급", checker: "팩트체크", bull: "강세", bear: "약세", pm: "최종 결정" };
+const ANALYSTS = ["chart", "fund", "news"];
+const MEETING_KRW = "400~700원";  // 7명 · 빠른 모델 · 웹 검색 5번까지 (실제 비용은 회의 화면 위에 나온다)
 const SKIN = "#f2c9a0";
 const RATING_COLOR = { Buy: "#f04452", Overweight: "#f08a5e", Hold: "#8b98a5", Underweight: "#5a9bff", Sell: "#3182f6" };
 const RATING_KO = { Buy: "매수", Overweight: "비중확대", Hold: "보류", Underweight: "비중축소", Sell: "매도" };
@@ -138,10 +131,9 @@ function person(e, t) {
 
 function deskFor(id, t, on) {
   const [x, y] = SEATS[id].home;
-  if (["chart", "fund", "earn", "news", "flow"].includes(id)) return desk(x - 22, y - 14, 44, on, t, [26]);
+  if (ANALYSTS.includes(id)) return desk(x - 30, y - 14, 60, on, t, [8, 34]);
   if (id === "checker") return desk(x - 24, y - 14, 48, on, t, [0, 32]);
-  if (id === "trader") return desk(x - 40, y - 14, 80, on, t, [0, 17, 47, 64]);
-  if (id === "pm") return desk(x - 28, y - 14, 56, on, t, [0]);
+  if (id === "pm") return desk(x - 32, y - 14, 64, on, t, [8, 40]);
 }
 
 // 상태 -> 움직임
@@ -205,12 +197,15 @@ function draw() {
   drawRooms();
   shelf(20, 40, 120); shelf(176, 40, 120); cabinet(330, 40); cabinet(346, 40); cabinet(410, 40);
   bigScreen(490, 34, 100, 34, t, !!office.run);
-  plant(292, 150); plant(424, 150); plant(616, 40); plant(16, 330); plant(176, 330); plant(434, 196); plant(616, 196);
-  px(24, 196, 140, 18, "#111"); // 시세판
-  for (let i = 0; i < 9; i++) px(28 + i * 15, 200, 10, 4, (i + t) % 3 ? "#3fe07a" : "#f0534e");
+  plant(292, 150); plant(424, 150); plant(616, 40); plant(16, 330); plant(410, 330); plant(456, 330); plant(616, 196);
+  // 트레이딩 데스크: 벽 시세판 + 차트 화면 (차트봇·대표가 가격을 볼 때 들른다)
+  px(24, 196, 392, 18, "#111");
+  for (let i = 0; i < 25; i++) px(28 + i * 15.5, 200, 10, 4, (i * 7 + t) % 5 > 1 ? "#3fe07a" : "#f0534e");
+  for (let i = 0; i < 25; i++) px(28 + i * 15.5, 207, 7, 3, "#5a6a7a");
+  bigScreen(40, 228, 150, 40, t + 9, true); bigScreen(232, 228, 150, 40, t + 21, true);
+  desk(60, 300, 120, false, t, [10, 40, 70, 98]); desk(196, 300, 120, false, t + 3, [10, 40, 70, 98]);
   px(600, 200, 26, 28, "#8fb4d8"); px(600, 213, 26, 2, "#5a3a20"); px(612, 200, 2, 28, "#5a3a20"); // 창문
   table(486, 112, 108, 20); px(500, 116, 14, 9, "#e8e0d0"); px(564, 118, 14, 9, "#e8e0d0"); px(534, 114, 12, 12, "#c9a227");
-  table(262, 282, 128, 22, "#6a4a3a");
 
   const ents = entities();
   Object.values(ents).forEach((e) => think(e, t));
@@ -234,7 +229,7 @@ function buildOverlay() {
     all.map((r) => {
       const hx = SEATS[r.id].home[0];
       const edge = hx < 70 ? "edge-l" : hx > 590 ? "edge-r" : "";
-      const narrow = ["chart", "fund", "earn", "news", "flow"].includes(r.id) ? "" : "wide";
+      const narrow = ANALYSTS.includes(r.id) ? "" : "wide";
       return `<div class="agent ${edge} ${narrow}" data-agent="${r.id}" style="height:${46 / H * 100}%">
         <div class="bubble hidden"></div><div class="hit"></div>
         <div class="tag"><b>${esc(r.name)}</b><span>${esc(SHORT[r.id] || r.title)}</span></div></div>`;
@@ -277,7 +272,7 @@ function renderStages() {
   const state = r.status === "running" ? `<b class="blink">● 회의 중</b> ${esc(r.stage)}` : r.status === "done" ? "<b>회의 완료</b>" : `<b class="down">오류</b> ${esc(r.error || "")}`;
   hud.className = "office-hud " + r.status;
   hud.innerHTML = `<span class="hud-dot"></span><div><b>${esc(r.name || r.symbol)}</b> <small>${esc(r.symbol)}</small><div>${state}</div>
-    <div class="note">${r.mode === "precise" ? "정밀" : "빠른"} 회의 · ${Math.floor(sec / 60)}분 ${sec % 60}초 · Claude ${r.calls || 0}회 · 약 ${Math.round((r.cost_usd || 0) * 1400).toLocaleString()}원</div></div>`;
+    <div class="note">7명 회의 · ${Math.floor(sec / 60)}분 ${sec % 60}초 · Claude ${r.calls || 0}회 · 약 ${Math.round((r.cost_usd || 0) * 1400).toLocaleString()}원</div></div>`;
   renderPlanPop(r);
 }
 
@@ -443,8 +438,7 @@ window.startMeeting = async (symbol) => {
   if (!symbol) { inp.focus(); return; }
   const label = typed && symbol === inp.dataset.symbol ? `${typed}(${symbol})` : symbol;
   if (!typed) inp.value = symbol;
-  const precise = state.config?.ai?.mode === "precise";
-  if (!(await ask(`${label} AI 투자 회의를 시작합니다. ${precise ? "정밀 회의라 Claude 를 약 14번" : "빠른 회의라 Claude 를 약 7번"} 호출합니다 (몇 분 걸리고 API 비용이 들어요). 계속할까요?`))) return;
+  if (!(await ask(`${label} AI 투자 회의를 시작합니다. 7명이 Claude 를 7번 불러요 (2~4분, 약 ${MEETING_KRW} 정도 들어요). 계속할까요?`))) return;
   try {
     const r = await api("/api/ai/meeting", { method: "POST", body: { symbol } });
     office.selected = "chart";
