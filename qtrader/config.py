@@ -268,10 +268,12 @@ def meetings_cap(cfg: dict, market) -> int:
     return int(mc.get("meetings_per_day", 4)) if mc.get("ai_meetings", True) else 0
 
 
-def met_today(store, market, today: str) -> set[str]:
-    """오늘 이 시장에서 AI 회의를 한 종목 (정기·장중·직접 연 회의 모두)."""
+def met_today(store, market, today: str, auto_only: bool = False) -> set[str]:
+    """오늘 이 시장에서 AI 회의를 한 종목 (정기·장중·직접 연 회의 모두).
+    auto_only: 자동매매가 연 회의만 (하루 회의 수 한도는 이것만 센다. 예전 기록은 origin 이 없어 자동으로 본다)."""
     mv = getattr(market, "value", market)
-    return {r["symbol"] for r in store.ai_runs(300) if r["trade_date"] == today and r["market"] == mv}
+    return {r["symbol"] for r in store.ai_runs(300) if r["trade_date"] == today and r["market"] == mv
+            and (not auto_only or r.get("origin", "auto") == "auto")}
 
 
 def save(cfg: dict) -> None:

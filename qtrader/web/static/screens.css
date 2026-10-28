@@ -15,8 +15,8 @@
 .kpi span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
 .kpi b { display: block; font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.5px; }
 .kpi em { display: block; font-style: normal; color: var(--muted); font-size: 12px; margin-top: 4px; }
-.kpi.hero { background: linear-gradient(135deg, rgba(49,130,246,.16), rgba(19,25,34,1) 60%); }
-.kpi.hero b { font-size: 30px; }
+.kpi.hero { display: block; margin: 0; background: linear-gradient(135deg, rgba(49,130,246,.16), rgba(19,25,34,1) 60%); }
+.kpi.hero b { font-size: clamp(22px, 2.1vw, 30px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .kpi.up b { color: var(--red); } .kpi.down b { color: var(--blue); }
 .kpi.wide { grid-column: 1 / -1; }
 .acct-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 12px; margin-bottom: 12px; }

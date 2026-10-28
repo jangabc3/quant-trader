@@ -294,7 +294,7 @@ def trade_plan(final: dict | None, last: float, budget: float, max_weight: float
     stop, take = rnd(entry * (1 - sl)), rnd(entry * (1 + tp))
     amount = budget * max_weight * max(0.0, min(1.0, size_factor * 4))  # 절반 켈리 0.25 를 비중 상한 100% 로 본다
     qty = int(amount // entry) if entry else 0
-    return {"entry_low": rnd(lo), "entry_high": rnd(hi), "entry": rnd(entry), "stop": stop, "take": take,
+    return {"price": rnd(last), "entry_low": rnd(lo), "entry_high": rnd(hi), "entry": rnd(entry), "stop": stop, "take": take,
             "stop_pct": round(sl * 100, 2), "take_pct": round(tp * 100, 2), "qty": qty,
             "amount": rnd(qty * entry), "max_loss": rnd(qty * (entry - stop)), "max_gain": rnd(qty * (take - entry)),
             "horizon_days": int(final.get("horizon_days") or 20), "currency": "KRW" if market == "KR" else "USD"}
