@@ -31,8 +31,8 @@ DEFAULT = {
             "extended": True,
             "budget": 10_000_000,  # 이 전략이 쓸 최대 금액(원)
             # AI 회의를 국내·미국 따로: 켜기/끄기, 하루에 회의할 종목 수 (비용 상한. 회의 1번 = Claude 7번 + 웹 검색)
-            "ai_meetings": True,
-            "meetings_per_day": 4,
+            "ai_meetings": True,  # 사는 신호가 뜬 종목을 AI 거부권으로 한 번 확인 (끄면 이 시장은 자동으로 사지 않음)
+            "meetings_per_day": 6,  # 하루 AI 거부권 확인 수 (1번 약 10~30원)
         },
         "US": {
             "enabled": False,
@@ -42,8 +42,8 @@ DEFAULT = {
             "universe": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "AMEX:SPY", "NYSE:KO"],
             "run_time": "15:45",  # 뉴욕 시간. 장 마감(16:00) 전
             "budget": 10_000,  # 달러
-            "ai_meetings": True,
-            "meetings_per_day": 4,
+            "ai_meetings": True,  # 사는 신호가 뜬 종목을 AI 거부권으로 한 번 확인 (끄면 이 시장은 자동으로 사지 않음)
+            "meetings_per_day": 6,  # 하루 AI 거부권 확인 수 (1번 약 10~30원)
             "limit_offset": 0.003,  # 미국 지정가 주문을 현재가에서 얼마나 유리하게 걸지
             # 정기 실행: regular = 뉴욕 정규장 마감 전 (run_time 은 뉴욕 시각), day = 한국 낮 주간거래 (run_time 은 한국 시각)
             "run_session": "regular",
@@ -102,9 +102,10 @@ DEFAULT = {
         "live_recheck": True,
         "recheck_per_day": 5,  # 하루 재점검 횟수 상한 (0 = 재점검 안 함)
         "recheck_every_min": 2,  # 재점검이 필요한지 몇 분마다 볼지
-        # 장중 계속 사기: 장중 N분마다 새로 규칙을 통과한 후보로 회의를 열고, 결론이 매수이고 체크리스트를 통과하면 그때 바로 산다.
-        # 끄면 하루 한 번 정기 실행 때만 산다. 회의 수는 시장별 meetings_per_day·monthly_cost_cap_krw 에 함께 센다
+        # 장중 계속 사기: 2분마다 후보의 사는 신호(눌림목 반등·거래량 돌파)를 보고, 신호가 뜬 종목만 AI 거부권 한 번 →
+        # 통과하고 숫자 안전 점검을 넘으면 그 종목만 산다 (signals.py). 확인 수는 시장별 meetings_per_day·monthly_cost_cap_krw
         "intraday": True,
+        "auto_meetings": False,  # 정기 실행 전 7명 회의를 자동으로 열지 (기본 꺼짐: 회의는 직접 누를 때만)
         # 가상매매 연습 기준: 가상매매일 때만 확신도·손익비·추가 기준 허용 수·하루 매수 수를 조금 낮춰 흐름을 시험해 본다 (실전에는 안 씀)
         "practice": True,
         "intraday_every_min": 15,
@@ -190,7 +191,7 @@ def load() -> dict:
 
 # 한 번만 적용하는 기본값 바꾸기. 예전에 저장한 설정에는 옛 기본값이 그대로 들어 있어서, 새 기본값을 한 번 덮어쓴다
 # (적용한 뒤 사용자가 끄고 저장하면 그 선택을 따른다)
-MIGRATIONS = ("all_sessions", "meetings_per_market")
+MIGRATIONS = ("all_sessions", "meetings_per_market", "signal_veto")
 
 
 def migrate(cfg: dict, saved: dict) -> dict:
@@ -204,6 +205,10 @@ def migrate(cfg: dict, saved: dict) -> dict:
         if isinstance(old, int) and not any("meetings_per_day" in (saved.get("markets") or {}).get(m, {}) for m in ("KR", "US")):
             for m in ("KR", "US"):
                 cfg["markets"][m]["meetings_per_day"] = max(1, old // 2)
+    if "signal_veto" not in done:  # 하루 회의 수 → 하루 거부권 확인 수 (1번 비용이 회의의 1/30 쯤이라 최소 6번)
+        for m in ("KR", "US"):
+            mc = cfg["markets"][m]
+            mc["meetings_per_day"] = max(int(mc.get("meetings_per_day", 6) or 0), 6) if mc.get("ai_meetings", True) else mc.get("meetings_per_day", 6)
     cfg.get("ai", {}).pop("max_symbols_per_day", None)
     cfg["migrated"] = sorted(done | set(MIGRATIONS))
     return cfg
@@ -253,7 +258,7 @@ def validate(cfg: dict) -> list[str]:
     for m, mc in (cfg.get("markets") or {}).items():
         v = mc.get("meetings_per_day", 4)
         if not (isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 50):
-            errs.append(f"{m} 하루 회의 종목 수(meetings_per_day)는 0~50 이어야 합니다")
+            errs.append(f"{m} 하루 AI 거부권 확인 수(meetings_per_day)는 0~50 이어야 합니다")
         if not isinstance(mc.get("ai_meetings", True), bool):
             errs.append(f"{m}.ai_meetings 는 true 또는 false")
     return errs

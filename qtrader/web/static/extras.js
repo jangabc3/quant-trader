@@ -151,8 +151,8 @@ const PICK_STEPS = [
 ];
 const FACT = [["mom", "모멘텀", (v) => Math.max(0, Math.min(1, (v + 0.2) / 0.8))], ["near_high", "52주 고가", (v) => Math.max(0, Math.min(1, (v - 0.6) / 0.4))],
   ["vol", "안정성", (v) => Math.max(0, Math.min(1, 1 - v / 0.8))], ["vol_ratio", "거래량", (v) => Math.max(0, Math.min(1, (v - 0.5) / 1.5))]];
-// '오늘 AI 회의' 판: 지금 자동으로 무엇을 하는지 한 줄 + 후보마다 단계 (대기 → 회의 중 → 보류/샀어요/…)
-const TD_STATE = { wait: ["회의 대기", "clock"], meeting: ["회의 중", "loader-2"], bought: ["샀어요", "shopping-cart"], approval: ["승인 대기", "hand"],
+// '오늘 자동매매' 판: 지금 자동으로 무엇을 하는지 한 줄 + 후보마다 단계 (신호 기다림 → AI 확인 → 샀어요/거부/…)
+const TD_STATE = { wait: ["장 열리면 시작", "clock"], watch: ["신호 기다림", "radar"], vetoed: ["AI 거부", "shield-x"], meeting: ["AI 확인 중", "loader-2"], bought: ["샀어요", "shopping-cart"], approval: ["승인 대기", "hand"],
   hold: ["보류 · 지켜봄", "eye"], nobuy: ["사지 않음", "shield-alert"], sell: ["매도 의견", "trending-down"], held: ["보유 중", "wallet"], error: ["회의 실패", "alert-triangle"] };
 const TD_TONE = { busy: "busy", wait: "wait", done: "done", warn: "warn", off: "off" };
 const pkCache = {};  // 시장별 마지막 결과: 국내↔미국을 바꾸면 이것부터 바로 그리고 뒤에서 새로 받는다
@@ -175,25 +175,24 @@ function renderPicks(res, plan, mk) {
   renderPicksWhy(res.excluded);
   if (plan && head) {
     const pctUsed = plan.cap ? Math.min(100, plan.used / plan.cap * 100) : 0;
-    const nx = plan.next_at && plan.tone === "busy" ? new Date(plan.next_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }) : "";
     head.className = "td-head " + (TD_TONE[plan.tone] || "");
     head.innerHTML = `<span class="td-dot"></span><p>${esc(plan.headline)}</p>
-      <div class="td-meta"><span title="자동매매가 여는 회의 수. 직접 연 회의는 따로 세요">자동 회의 <b>${plan.used}/${plan.cap}</b><i class="td-bar"><b style="width:${pctUsed}%"></b></i></span>
+      <div class="td-meta"><span title="사는 신호가 뜬 종목만 AI 가 위험 신호를 확인한 수 (1번 약 10~30원). 직접 연 7명 회의는 따로 세요">AI 거부권 확인 <b>${plan.used}/${plan.cap}</b><i class="td-bar"><b style="width:${pctUsed}%"></b></i></span>
         ${plan.manual ? `<span>직접 연 회의 <b>${plan.manual}</b></span>` : ""}
-        ${nx ? `<span>다음 회의 <b>${nx}</b>쯤</span>` : ""}${plan.session ? `<span class="td-sess">${esc(plan.session)}</span>` : ""}
+        ${plan.last_check && plan.tone === "busy" ? `<span>마지막 신호 확인 <b>${esc(plan.last_check)}</b> · 2분마다</span>` : ""}${plan.session ? `<span class="td-sess">${esc(plan.session)}</span>` : ""}
         ${plan.off === "auto" ? `<button class="primary td-auto" id="td-auto"><i data-lucide="play"></i> 자동매매 켜기</button>` : ""}</div>`;
   }
   const rows = plan?.items?.length ? plan.items : (res.items || []).map((p) => ({ ...p, state: p.held ? "held" : p.met ? "hold" : "wait", note: "" }));
   const origin = (r) => (r.reason || "").split(" · ")[0];
   box.innerHTML = rows.length ? `<div class="pk-list">${rows.map((p, i) => {
-    const sc = Math.round((p.score || 0) * 100);
+    const sc = Math.min(100, Math.round((p.score || 0) * 100));
     const [label, ic] = TD_STATE[p.state] || [p.state, "dot"];
     const tip = (p.reason || "") + (p.factors ? `\n모멘텀 ${pct(p.factors.mom)} · 52주 고가의 ${Math.round((p.factors.near_high || 0) * 100)}% · 변동성 ${Math.round((p.factors.vol || 0) * 100)}% · 거래량 ${(p.factors.vol_ratio || 1).toFixed(1)}배` : "");
-    const act = p.state === "wait" || p.state === "held" ? `<button class="pk-go" data-meet="${esc(p.symbol)}" title="이 종목을 지금 AI 회의">지금 회의</button>`
+    const act = ["wait", "watch", "held"].includes(p.state) ? `<button class="pk-go" data-meet="${esc(p.symbol)}" title="이 종목을 7명이 자세히 회의 (약 400~700원, 자동으로 사지는 않아요)">7명 회의</button>`
       : p.run_id ? `<button class="pk-go ghost" data-run="${esc(p.run_id)}" title="회의 내용 보기">회의 보기</button>` : "";
     return `<div class="pk-row" data-open="${esc(p.symbol)}" title="${esc(tip)}">
       <span class="pk-n">${i + 1}</span>${logo(p.symbol, p.name, 26)}
-      <span class="pk-nm"><b>${esc(p.name)}</b><em title="${esc(p.note || "")}">${esc(["nobuy", "error", "approval"].includes(p.state) && p.note ? p.note : origin(p))}</em></span>
+      <span class="pk-nm"><b>${esc(p.name)}</b><em title="${esc(p.note || "")}">${esc(["nobuy", "error", "approval", "vetoed", "bought"].includes(p.state) && p.note ? p.note : origin(p))}</em></span>
       <span class="pk-sc"><i><b style="width:${Math.max(4, sc)}%"></b></i><strong>${sc}</strong></span>
       <span class="pk-st st-${esc(p.state)}"><i data-lucide="${ic}"></i>${label}</span>${act}</div>`;
   }).join("")}</div>`
