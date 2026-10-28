@@ -59,7 +59,10 @@ def usage_cost(model: str, usage) -> float:
 def make_client() -> anthropic.Anthropic:
     key = vault.get_anthropic()
     # 저장된 키가 없으면 SDK 기본 순서(ANTHROPIC_API_KEY 환경변수, ant auth 프로필 등)를 쓴다
-    return anthropic.Anthropic(api_key=key, max_retries=3) if key else anthropic.Anthropic(max_retries=3)
+    # 응답 하나를 최대 5분까지만 기다린다 (기본 10분 x 재시도 3번이면 회의가 수십 분 멈춘 것처럼 보이고,
+    # 회의는 한 번에 하나라 다음 회의도 못 연다). 웹 검색이 있는 보고서도 보통 1~2분이면 끝난다
+    kw = {"max_retries": 2, "timeout": 300.0}
+    return anthropic.Anthropic(api_key=key, **kw) if key else anthropic.Anthropic(**kw)
 
 
 def _sources(content) -> list[dict]:
