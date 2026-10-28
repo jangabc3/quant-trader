@@ -238,8 +238,8 @@ class Scheduler:
                             from . import compare
                             compare.watch(ctx, m)
                         for x in check_exits(ctx, m):
-                            extras.notify(ctx.store, cfg, f"{'🛑 손절' if x['reason'] == 'stop' else '🎯 익절'} "
-                                                          f"{x['symbol']} @ {x['price']:,} ({x['status']})", "exit")
+                            head = {"stop": "🛑 손절", "take": "🎯 익절", "half": "🎯 절반 익절", "time": "⏱ 기간 정리"}.get(x["reason"], "💸 매도")
+                            extras.notify(ctx.store, cfg, f"{head} {x['symbol']} @ {x['price']:,} ({x['status']})", "exit")
                         if cfg["markets"][m.value].get("strategy") == "ai":
                             from . import live
                             rk = f"_recheck_{m.value}"

@@ -562,6 +562,7 @@ async function loadConfig() {
   $("#ai-approve").checked = !!c.ai.require_approval;
   $("#ai-practice").checked = c.ai.practice !== false;
   $("#ai-exit").checked = c.ai.auto_exit !== false;
+  $("#ai-trail").checked = (c.ai.exit_style || "trail") === "trail";
   $("#ai-debate").value = c.ai.debate_rounds;
   $("#ai-before").value = c.ai.run_before_minutes;
   $("#ai-web").checked = !!c.ai.web_research;
@@ -724,7 +725,7 @@ $("#cfg-save").onclick = async () => {
   Object.assign(c.ai, {
     deep_final: $("#ai-deep-final").checked, auto_meetings: $("#ai-automeet").checked, quick_model: $("#ai-quick").value, deep_model: $("#ai-deep").value,
     effort: $("#ai-effort").value, chat_effort: $("#ai-chat-effort").value, profile: $("#ai-profile").value.trim(),
-    require_approval: $("#ai-approve").checked, practice: $("#ai-practice").checked, auto_exit: $("#ai-exit").checked, debate_rounds: Number($("#ai-debate").value),
+    require_approval: $("#ai-approve").checked, practice: $("#ai-practice").checked, auto_exit: $("#ai-exit").checked, exit_style: $("#ai-trail").checked ? "trail" : "fixed", debate_rounds: Number($("#ai-debate").value),
     run_before_minutes: Number($("#ai-before").value),
     min_confidence: conf, web_research: $("#ai-web").checked,  // 확신도 기준은 하나로 (회의 비중·체크리스트 같이)
     monthly_cost_cap_krw: Number($("#ai-cap").value) || 0, auto_pick: $("#ai-autopick").checked,
