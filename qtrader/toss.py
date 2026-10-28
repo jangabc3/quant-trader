@@ -170,19 +170,25 @@ class Toss:
 
     # 시세
     def quotes(self, symbols: list[str]) -> dict[str, dict]:
-        """현재가와 토스가 계산한 등락률·기준가(전일 정규장 종가). 화면 어디서나 이 값을 써야 숫자가 같다.
-        (일봉 두 개로 직접 계산하면 시간외 거래가 섞인 날 기준가가 달라 등락률이 순위표와 어긋났다)"""
+        """현재가와 토스가 계산한 등락률·기준가. 화면 어디서나 이 값을 써야 숫자가 같다.
+        등락률은 토스 changeRate 를 그대로 쓴다 (순위표·토스 앱과 같은 값, 상·하한가의 기준이 되는 기준가 대비).
+        응답의 전일 종가 칸은 시간외(NXT) 종가가 들어올 때가 있어, 등락률과 맞을 때만 기준가로 쓰고
+        아니면 등락률로 기준가를 되짚는다 (예전엔 이 칸을 그대로 써서 순위표 +8.35% · 종목 화면 +5.68% 로 어긋났다)."""
         out = {}
         syms = [toss_symbol(s) for s in symbols]
         for i in range(0, len(syms), 200):
             for x in self._call("GET", "/api/v1/prices", "MARKET_DATA", {"symbols": ",".join(syms[i:i + 200])}) or []:
                 last = num(x.get("lastPrice"))
-                rate = x.get("changeRate")
-                base = num(x.get("basePrice") or x.get("previousClosePrice") or x.get("prevClosePrice"))
-                if not base and rate not in (None, "") and last:
-                    base = last / (1 + num(rate))
-                out[x["symbol"]] = {"price": last, "change_rate": num(rate) if rate not in (None, "") else (last / base - 1 if base else None),
-                                    "base": base or None}
+                raw = x.get("changeRate")
+                rate = num(raw) if raw not in (None, "") else None
+                cands = [num(x.get(k)) for k in ("basePrice", "previousClosePrice", "prevClosePrice") if num(x.get(k))]
+                if rate is None:
+                    base = cands[0] if cands else None
+                    rate = (last / base - 1) if base and last else None
+                else:
+                    ok = [c for c in cands if last and abs(last / c - 1 - rate) < 0.0006]
+                    base = ok[0] if ok else (last / (1 + rate) if last and rate > -1 else None)
+                out[x["symbol"]] = {"price": last, "change_rate": rate, "base": base or None}
         return out
 
     def prices(self, symbols: list[str]) -> dict[str, float]:
