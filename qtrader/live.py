@@ -100,7 +100,8 @@ def schedule(ctx, market: Market) -> dict:
     before = int(ctx.cfg["ai"]["run_before_minutes"])
     t = datetime.now(TZ[market])
     close = t.replace(hour=SESSIONS[market][1].hour, minute=SESSIONS[market][1].minute, second=0, microsecond=0)
-    return {"open": trading_now(ctx.cfg, market), "now": t.isoformat(timespec="seconds"), "next_run": nr.isoformat(timespec="minutes"),
+    from .scheduler import session_name
+    return {"open": trading_now(ctx.cfg, market), "session": session_name(ctx.cfg, market), "now": t.isoformat(timespec="seconds"), "next_run": nr.isoformat(timespec="minutes"),
             "next_meeting": (nr - timedelta(minutes=before)).isoformat(timespec="minutes"),
             "close": close.isoformat(timespec="minutes"), "strategy": mc["strategy"], "enabled": mc["enabled"]}
 

@@ -214,3 +214,21 @@ def test_recheck_sell_outside_regular_hours_is_limit(ctx, monkeypatch):
     o = ctx.store.rows("select * from orders where side='sell'")[0]
     assert o["status"] == "filled" and 0 < o["price"] < px
     assert "000660" not in ctx.broker.account(Market.KR).positions
+
+def test_all_sessions_by_default_and_names():
+    """프리장·장중·애프터장 내내: 기본으로 모든 세션에서 감시·사고판다."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from qtrader.scheduler import session_name, trading_now
+    cfg = config.load()
+    kst, ny = ZoneInfo("Asia/Seoul"), ZoneInfo("America/New_York")
+    at = lambda tz, h, mi=0: datetime(2026, 10, 28, h, mi, tzinfo=tz)  # 수요일
+    assert session_name(cfg, Market.KR, at(kst, 8, 30)) == "넥스트레이드"
+    assert session_name(cfg, Market.KR, at(kst, 10)) == "정규장"
+    assert session_name(cfg, Market.KR, at(kst, 19, 30)) == "넥스트레이드"
+    assert session_name(cfg, Market.KR, at(kst, 21)) is None
+    assert session_name(cfg, Market.US, at(ny, 5)) == "프리마켓"
+    assert session_name(cfg, Market.US, at(ny, 10)) == "정규장"
+    assert session_name(cfg, Market.US, at(ny, 17)) == "애프터마켓"
+    assert session_name(cfg, Market.US, at(kst, 11)) == "주간거래"
+    assert trading_now(cfg, Market.US, at(ny, 17)) and not trading_now(cfg, Market.US, at(ny, 20, 30))
