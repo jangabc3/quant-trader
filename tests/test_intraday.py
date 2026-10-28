@@ -232,3 +232,25 @@ def test_all_sessions_by_default_and_names():
     assert session_name(cfg, Market.US, at(ny, 17)) == "애프터마켓"
     assert session_name(cfg, Market.US, at(kst, 11)) == "주간거래"
     assert trading_now(cfg, Market.US, at(ny, 17)) and not trading_now(cfg, Market.US, at(ny, 20, 30))
+
+
+def test_after_hours_tick_buys_then_stops_out(ctx, fake_meetings, monkeypatch):
+    """정규장이 아닌 시간(넥스트레이드)에도 2분 점검이 회의 -> 매수 -> 손절 매도까지 혼자 한다."""
+    from qtrader import scheduler
+    _, opened = fake_meetings
+    monkeypatch.setattr(scheduler, "trading_now", lambda cfg, m, now=None: m == Market.KR)
+    monkeypatch.setattr(scheduler, "is_open", lambda m, now=None: False)
+    monkeypatch.setattr(scheduler, "due", lambda *a, **k: False)  # 정기 실행은 이 시험에서 빼고
+    monkeypatch.setattr(scheduler.Scheduler, "_ai_meetings", lambda *a, **k: None)
+    ctx.store.set("auto_trading", "1")
+    s = scheduler.Scheduler()
+    s.tick()  # 회의 열기
+    s._last_exit = float("-inf")
+    s.tick()  # 결론 -> 매수
+    assert opened == ["005930"] and orders(ctx) == [("005930", "buy", "filled")]
+    ctx.store.exec("update plans set stop=? where symbol='005930'", (10 ** 9,))  # 손절가를 현재가 위로
+    s._last_exit = float("-inf")
+    s.tick()  # 손절
+    assert orders(ctx) == [("005930", "buy", "filled"), ("005930", "sell", "filled")]
+    sell = ctx.store.rows("select * from orders where side='sell'")[0]
+    assert sell["price"] > 0 and "손절" in sell["message"]  # 시간외라 시장가가 아닌 지정가
