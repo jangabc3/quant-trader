@@ -982,19 +982,41 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
     _px: dict = {"t": 0.0, "key": "", "data": {}}
 
     def _prices(symbols: list[str]) -> dict:
+        """종목 현재가·등락률 + 지수(IDX:KOSPI) + 환율(FX). 토스 키가 없으면(체험용) 아무것도 보내지 않는다
+        (화면마다 합성 시세가 달라 섞이면 헷갈림)."""
         import time as _t
+        from ..toss import num
         key = ",".join(sorted(symbols))
         if key == _px["key"] and _t.time() - _px["t"] < 1.5:
             return _px["data"]
         t = toss()
-        out = {}
+        out: dict = {"prices": {}, "rates": {}, "idx": {}, "fx": None}
         if t is not None:
+            stocks = [s for s in symbols if not s.startswith(("IDX:", "FX"))]
+            idx = [s[4:] for s in symbols if s.startswith("IDX:")]
             try:
-                got = t.prices(symbols)
-                out = {s: got.get(s) or got.get(s.split(":")[-1]) for s in symbols}
+                got = t.quotes(stocks) if stocks else {}
+                for s in stocks:
+                    q = got.get(s) or got.get(s.split(":")[-1]) or {}
+                    if q.get("price"):
+                        out["prices"][s] = q["price"]
+                        if q.get("change_rate") is not None:
+                            out["rates"][s] = round(q["change_rate"], 5)
             except Exception:
-                out = {}
-        # 토스 키가 없으면(체험용) 실시간 시세를 보내지 않는다 (화면마다 합성 시세가 달라 섞이면 헷갈림)
+                pass
+            if idx:
+                try:
+                    for x in t.indicator_prices(idx):
+                        if num(x.get("lastPrice")):
+                            out["idx"][x["symbol"]] = num(x["lastPrice"])
+                except Exception:
+                    pass
+            if "FX" in symbols:
+                try:
+                    f = market_mod.cached("fx_live", 5, t.exchange_rate) or {}
+                    out["fx"] = {"rate": num(f.get("rate")) or None, "change": num(f.get("basisPoint"))}
+                except Exception:
+                    pass
         _px.update(t=_t.time(), key=key, data=out)
         return out
 
@@ -1006,13 +1028,19 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         syms = [s for s in dict.fromkeys(x.strip().upper() for x in symbols.split(",")) if s][:100]
 
         async def gen():
-            last = {}
+            last: dict = {}
             yield "retry: 3000\n\n"
             while True:
-                data = await asyncio.to_thread(_prices, syms) if syms else {}
-                changed = {k: v for k, v in data.items() if v and last.get(k) != v}
-                last.update(data)
-                yield f"data: {_json.dumps({'prices': changed, 'ts': __import__('time').time()})}\n\n"
+                d = await asyncio.to_thread(_prices, syms) if syms else {}
+                msg = {"ts": __import__("time").time()}
+                for k in ("prices", "rates", "idx"):  # 바뀐 값만 보낸다
+                    cur = d.get(k) or {}
+                    prev = last.setdefault(k, {})
+                    msg[k] = {s: v for s, v in cur.items() if v is not None and prev.get(s) != v}
+                    prev.update(cur)
+                if d.get("fx") and d["fx"] != last.get("fx"):
+                    msg["fx"] = last["fx"] = d["fx"]
+                yield f"data: {_json.dumps(msg)}\n\n"
                 await asyncio.sleep(2)
         return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
