@@ -142,7 +142,8 @@ def ai_targets(store: Store, cfg: dict, panel_: dict, today: str, account: str =
             check = d.get("check") if isinstance(d.get("check"), dict) else None
             warns = warnings_for(s) if warnings_for else []
             stopped = store.recent_stop(account, market, s, cooldown) if account else False
-            cl = principles.checklist(f, check, panel_[s], warns, rules, new_buys, stopped, market_bars)
+            cl = principles.checklist(f, check, panel_[s], warns, rules, new_buys, stopped, market_bars,
+                                      kind="signal" if d.get("origin") == "signal" else "meeting")
             note["checklist"] = cl
             if cl["passed"]:
                 target[s] = base * float(m) * min(1.0, cl["size"]["weight_factor"] * 4)
@@ -161,7 +162,8 @@ def ai_targets(store: Store, cfg: dict, panel_: dict, today: str, account: str =
 
 def order_reason(note: dict, plan: dict | None, base_reason: str) -> str:
     """주문 근거 문장: 왜 사는지/파는지 사람이 읽을 수 있게."""
-    parts = [f"AI 회의 {note.get('rating')} (확신도 {note.get('confidence', 0):.0%})"]
+    who = "AI 거부권 통과" if "거부권" in base_reason else f"AI 회의 {note.get('rating')}"
+    parts = [f"{who} (확신도 {note.get('confidence', 0):.0%})"]
     if note.get("headline"):
         parts.append(note["headline"])
     cl = note.get("checklist")
@@ -585,7 +587,7 @@ def intraday_allowed(ctx: Context, market: Market, today: str) -> set[str]:
 
 
 def buy_one(ctx: Context, market: Market, symbol: str) -> dict:
-    """장중 회의 결론으로 이 한 종목만 산다.
+    """사는 신호 + AI 거부권(또는 직접 연 회의) 결론으로 이 한 종목만 산다.
 
     run_market(목표 비중 전체를 맞추는 리밸런싱)과 달리 다른 보유 종목은 건드리지 않고, 절대 팔지 않는다.
     매수 체크리스트(ai_targets)와 같은 리스크 검사(check_orders: 허용 종목·킬 스위치·오늘 중복·현금)를 거치고,
@@ -640,8 +642,9 @@ def buy_one(ctx: Context, market: Market, symbol: str) -> dict:
         return skip(f"살 수량이 없음 (목표 {w:.1%}, 투자 비중·주문 금액 한도)")
     order_px = round(px * (1 + mc.get("limit_offset", 0.0)), 2) if market == Market.US else px
     d = store.latest_decision(symbol, today) or {}
+    how = f"사는 신호({(d.get('signal') or {}).get('name', '')}) + AI 거부권 통과" if d.get("origin") == "signal" else "장중 회의 매수"
     req = OrderRequest(market, symbol, Side.BUY, qty, order_px, "ai",
-                       order_reason(note, d.get("plan"), f"장중 회의 매수 · 목표 {w:.1%} 보유 {held} -> {held + qty}"))
+                       order_reason(note, d.get("plan"), f"{how} · 목표 {w:.1%} 보유 {held} -> {held + qty}"))
 
     kill = check_loss(ctx, market)  # 하루 손실 한도를 넘었으면 여기서 킬 스위치가 켜진다
     chk = check_orders([req], lim, allowed, kill, store.ordered_today(acct_id, market.value, today), acct.cash)

@@ -494,10 +494,10 @@ $("#auto-btn").onclick = async () => {
       : ["주간거래", "프리마켓", "정규장", "애프터마켓"].filter((n, i) => i === 2 || (mc.extended_sessions || []).includes(["day", "pre", "", "after"][i])).join("·");
     const lines = Object.entries(c.markets).filter(([, mc]) => mc.enabled).map(([m, mc]) =>
       `· ${MARKET_NAME[m]}: ${STRAT_NAME[mc.strategy]} 전략, ` + (mc.strategy === "ai" && c.ai.intraday !== false
-        ? `${sessions(m, mc)} 동안 수시로 회의하고 사고팔아요` : `매 거래일 ${mc.run_time}(${m === "KR" ? "한국" : "뉴욕"} 시간)`)
+        ? `${sessions(m, mc)} 동안 2분마다 사는 신호를 보고, 신호가 뜬 종목만 AI 가 위험 신호를 확인한 뒤 사요` : `매 거래일 ${mc.run_time}(${m === "KR" ? "한국" : "뉴욕"} 시간)`)
       + `, 한도 ${m === "US" ? usdWithKrw(mc.budget) : money(mc.budget, m)}`);
     const rules = c.markets.KR.strategy === "ai" || c.markets.US.strategy === "ai"
-      ? "\n· AI 회의 결과가 매수여도 안전 점검을 넘어야 삽니다. 필수(추세·손익비·확신도 등)는 모두, 추가(모멘텀·과열 등)는 조금 덜 맞으면 적게 사요.\n· 산 종목은 손절가·익절가에 닿으면 자동으로 팝니다." + (c.ai.require_approval ? "\n· 주문은 승인 대기에 먼저 올라오고, 근거를 보고 승인해야 나갑니다." : "")
+      ? "\n· AI 가 거부하지 않아도 안전 점검을 넘어야 삽니다. 필수(추세·손익비·확신도 등)는 모두, 추가(모멘텀·과열 등)는 조금 덜 맞으면 적게 사요.\n· 산 종목은 손절가·익절가에 닿으면 자동으로 팝니다." + (c.ai.require_approval ? "\n· 주문은 승인 대기에 먼저 올라오고, 근거를 보고 승인해야 나갑니다." : "")
       : "";
     if (!(await ask(`${MODE_NAME[s.mode]} 계좌로 자동매매를 시작합니다.\n\n${lines.join("\n")}${rules}\n\n종목당 최대 ${+(c.risk.max_weight * 100).toFixed(1)}%, 하루 손실 ${+(c.risk.daily_loss_limit * 100).toFixed(1)}% 에 닿으면 긴급 정지(새로 사지 않음)가 켜집니다. 계속할까요?`))) return;
     if (LIVE.has(s.mode) && (await ask("실전 자동매매입니다. 진행하려면 아래 칸에 '실전주문' 이라고 입력하세요.", { input: "확인 문구", danger: true, ok: "실전 자동매매 시작" })) !== "실전주문") return;
@@ -555,6 +555,7 @@ async function loadConfig() {
   $("#ai-cap").value = c.ai.monthly_cost_cap_krw ?? 30000;
   setPct("sec-max", c.max_sector_weight ?? 0.4);
   $("#ai-deep-final").checked = !!c.ai.deep_final;
+  $("#ai-automeet").checked = !!c.ai.auto_meetings;
   modelSelect("ai-quick", c.ai.quick_model); modelSelect("ai-deep", c.ai.deep_model || c.ai.model);
   $("#ai-effort").value = c.ai.effort; $("#ai-chat-effort").value = c.ai.chat_effort || "medium";
   $("#ai-profile").value = c.ai.profile || "";
@@ -579,9 +580,9 @@ async function loadConfig() {
       <label class="mkt-head"><span class="flag">${m === "KR" ? "🇰🇷" : "🇺🇸"}</span><b>${MARKET_NAME[m]} 주식</b>
         <span class="sw"><input type="checkbox" data-f="enabled" ${mc.enabled ? "checked" : ""}><i></i></span><em class="sw-txt">${mc.enabled ? "자동매매 켬" : "자동매매 끔"}</em></label>
       <label>이 시장에 쓸 돈 <em class="hint">${m === "KR" ? "원" : "달러"} · 계좌 돈 중 이만큼만 자동매매에 써요</em><input data-f="budget" type="number" value="${mc.budget}"></label>
-      <div class="mkt-ai"><label class="check"><input type="checkbox" data-f="ai_meetings" ${mc.ai_meetings !== false ? "checked" : ""}> ${MARKET_NAME[m]} AI 회의</label>
-        <span class="mkt-ai-n">하루 <input data-f="meetings_per_day" type="number" min="0" max="50" value="${mc.meetings_per_day ?? 4}"> 종목까지</span>
-        <em class="hint">회의 1번에 Claude 7번 + 웹 검색이라, 많을수록 비용이 늘어요</em></div>
+      <div class="mkt-ai"><label class="check"><input type="checkbox" data-f="ai_meetings" ${mc.ai_meetings !== false ? "checked" : ""}> ${MARKET_NAME[m]} AI 거부권 확인</label>
+        <span class="mkt-ai-n">하루 <input data-f="meetings_per_day" type="number" min="0" max="50" value="${mc.meetings_per_day ?? 6}"> 번까지</span>
+        <em class="hint">사는 신호가 뜬 종목만 AI 가 위험 신호를 한 번 확인해요 (1번 약 10~30원). 끄면 이 시장은 새로 사지 않아요</em></div>
       <details class="mini-adv"><summary>시간 · 종목 · 고르는 방법 (고급)</summary>
         <label>무엇을 살지 고르는 방법 <select data-f="strategy">${stratSelect(mc.strategy)}</select></label>
         ${m === "KR" ? `<div class="form-row"><label>정기 실행 시각 <em class="hint">한국 시각</em><input data-f="run_time" value="${esc(mc.run_time)}"></label></div>
@@ -721,7 +722,7 @@ $("#cfg-save").onclick = async () => {
   c.max_sector_weight = getPct("sec-max") || 0.4;
   const conf = getPct("rl-conf");
   Object.assign(c.ai, {
-    deep_final: $("#ai-deep-final").checked, quick_model: $("#ai-quick").value, deep_model: $("#ai-deep").value,
+    deep_final: $("#ai-deep-final").checked, auto_meetings: $("#ai-automeet").checked, quick_model: $("#ai-quick").value, deep_model: $("#ai-deep").value,
     effort: $("#ai-effort").value, chat_effort: $("#ai-chat-effort").value, profile: $("#ai-profile").value.trim(),
     require_approval: $("#ai-approve").checked, practice: $("#ai-practice").checked, auto_exit: $("#ai-exit").checked, debate_rounds: Number($("#ai-debate").value),
     run_before_minutes: Number($("#ai-before").value),

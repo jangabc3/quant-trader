@@ -214,15 +214,21 @@ def market_signals(bars: pd.DataFrame) -> dict:
 
 def checklist(final: dict | None, check: dict | None, bars: pd.DataFrame, warnings: list[dict] | None = None,
               rules: dict | None = None, new_buys_today: int = 0, recent_stop: bool = False,
-              market_bars: pd.DataFrame | None = None) -> dict:
-    """매수 전 체크리스트. 모두 통과해야 매수 가능."""
+              market_bars: pd.DataFrame | None = None, kind: str = "meeting") -> dict:
+    """매수 전 체크리스트. 필수는 모두, 추가 기준은 soft_miss_allowed 개까지 못 넘어도 산다.
+    kind="signal": 사는 신호 + AI 거부권으로 산 경우 (회의가 없어서 'AI 의견 매수' 대신 '거부권 통과', 팩트체크는 빼고
+    공시·뉴스 확인은 거부권이 맡는다). 손실을 막는 숫자 기준은 회의와 똑같다."""
     R = DEFAULT_RULES | (rules or {})
     s = market_signals(bars)
     f = final or {}
     out: list[Rule] = []
     rating = f.get("rating")
-    out.append(Rule("rating", "AI 최종 의견이 매수 계열", rating in ("Buy", "Overweight"), rating or "없음",
-                    "Buy 또는 Overweight", "afml"))
+    if kind == "signal":
+        out.append(Rule("rating", "AI 거부권 통과 (사면 안 되는 위험 신호 없음)", rating in ("Buy", "Overweight"),
+                        "통과" if rating in ("Buy", "Overweight") else "거부", "거부 없음", "afml"))
+    else:
+        out.append(Rule("rating", "AI 최종 의견이 매수 계열", rating in ("Buy", "Overweight"), rating or "없음",
+                        "Buy 또는 Overweight", "afml"))
     conf = float(f.get("confidence") or 0)
     out.append(Rule("confidence", "AI 확신도", conf >= R["min_confidence"], f"{conf:.0%}", f"{R['min_confidence']:.0%} 이상", "grinold"))
     sl, tp = float(f.get("stop_loss_pct") or 0), float(f.get("take_profit_pct") or 0)
@@ -240,14 +246,16 @@ def checklist(final: dict | None, check: dict | None, bars: pd.DataFrame, warnin
     out.append(Rule("vol", "변동성 과다 아님", s["vol"] <= R["max_vol"], f"{s['vol']:.0%}", f"연 {R['max_vol']:.0%} 이하", "bab"))
     fc = (check or {}).get("fact_checks") or []
     ok = sum(1 for x in fc if x.get("status") == "확인됨")
+    facts_rule = kind != "signal"
     wrong = sum(1 for x in fc if x.get("status") == "틀림")
     unsure = sum(1 for x in fc if x.get("status") == "확인 불가")
     # '확인 불가'(전망·아직 공시 전 등)는 틀린 게 아니라 확인을 못 한 것: 반만 센다. 틀린 주장은 하나라도 있으면 통과 못 함.
     # (예전엔 확인 불가를 실패로 세서 확인 5·확인 불가 4 = 56% 로 거의 다 걸렸다)
     ratio = (ok + 0.5 * unsure) / len(fc) if fc else 0
-    out.append(Rule("facts", "팩트체크 통과 (틀린 주장 없음)", bool(fc) and ratio >= R["min_fact_ok"] and wrong == 0,
-                    f"확인 {ok} · 확인 불가 {unsure} · 틀림 {wrong} (점수 {ratio:.0%})",
-                    f"점수 {R['min_fact_ok']:.0%} 이상(확인 불가는 반만), 틀림 0", "hlz"))
+    if facts_rule:
+        out.append(Rule("facts", "팩트체크 통과 (틀린 주장 없음)", bool(fc) and ratio >= R["min_fact_ok"] and wrong == 0,
+                        f"확인 {ok} · 확인 불가 {unsure} · 틀림 {wrong} (점수 {ratio:.0%})",
+                        f"점수 {R['min_fact_ok']:.0%} 이상(확인 불가는 반만), 틀림 0", "hlz"))
     bad = [w.get("warningType") for w in (warnings or []) if not w.get("endDate")
            or str(w.get("endDate")) >= pd.Timestamp.today().strftime("%Y-%m-%d")]
     out.append(Rule("warnings", "투자 유의·과열 지정 없음", not bad, ", ".join(bad) or "없음", "없음", "odean"))
