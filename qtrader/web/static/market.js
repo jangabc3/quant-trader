@@ -35,9 +35,10 @@ function flowCell(label, v) {
   return `<div class="flow"><span>${label}</span><b class="${cls(v)}">${v > 0 ? "+" : ""}${Number(v || 0).toLocaleString()}억</b></div>`;
 }
 
-function idxCard(id, name, tag, price, change, rate, flows, sym) {
+function idxCard(id, name, tag, price, change, rate, flows, sym, live) {
   const up = change >= 0;
-  return `<div class="idx-card" ${sym ? `data-open="${esc(sym)}"` : ""}>
+  // live: 국내 지수는 2초 스트림으로 값이 바로 바뀐다 (data-prev 로 등락 다시 계산)
+  return `<div class="idx-card" ${sym ? `data-open="${esc(sym)}"` : ""} ${live ? `data-key="i:${esc(id)}" data-prev="${price - change}" data-val="${price}"` : ""}>
     <div class="idx-top"><span class="idx-name">${esc(name)} <small class="note">${esc(tag)}</small></span>
       <span class="idx-tag ${up ? "up-bg" : "down-bg"}">${up ? "▲ 상승" : "▼ 하락"}</span></div>
     <div class="idx-val">${Number(price).toLocaleString("ko-KR", { maximumFractionDigits: 2 })}</div>
@@ -54,7 +55,7 @@ async function renderIndices() {
   box.style.gridTemplateColumns = `repeat(${mkt.group === "KR" ? 2 : 3}, minmax(0, 1fr))`;
   if (mkt.group === "KR") {
     box.innerHTML = ov.indices.map((i) => idxCard(i.symbol, i.name, "", i.price, i.change, i.change_rate,
-      i.flows?.unit ? flowCell("개인", i.flows.individual) + flowCell("외국인", i.flows.foreigner) + flowCell("기관", i.flows.institution) : "", "")).join("");  // 지수는 사고팔 수 없어 종목 화면을 열지 않는다
+      i.flows?.unit ? flowCell("개인", i.flows.individual) + flowCell("외국인", i.flows.foreigner) + flowCell("기관", i.flows.institution) : "", "", true)).join("");  // 지수는 사고팔 수 없어 종목 화면을 열지 않는다
     ov.indices.forEach((i) => sparkChart($("#spark-" + i.symbol), i.spark || [], i.change >= 0));
   } else {
     if ((ov.us_index || []).length) { // 실제 지수 (야후 파이낸스 공개 차트)
@@ -85,6 +86,22 @@ async function renderIndices() {
   $$("#idx-group button").forEach((b) => b.classList.toggle("on", b.dataset.v === mkt.group));
 }
 
+// 달러 환율 칸: 원 보기면 '1달러 = 1,338.9원', 달러 보기면 '1,000원 = $0.75' (스트림으로 2초마다 새로)
+function drawFxCard() {
+  const box = $("#fx-card");
+  if (!box) return;
+  const r = fxView.rate, ch = fxView.change || 0;
+  const dir = ch > 0 ? "up" : ch < 0 ? "down" : "";
+  const arrow = ch ? (ch > 0 ? "▲ " : "▼ ") : "";
+  if (!r) { box.innerHTML = `<div class="k">달러 환율</div><div class="v">-</div>`; return; }
+  box.innerHTML = fxView.krw
+    ? `<div class="k">달러 환율 <small class="note">1달러</small></div><div class="v">${r.toLocaleString("ko-KR", { maximumFractionDigits: 1 })}<small>원</small></div>
+       <div class="${dir} s">${ch ? arrow + Math.abs(ch).toLocaleString("ko-KR", { maximumFractionDigits: 2 }) + "원" : ""}</div>`
+    : `<div class="k">원화 → 달러 <small class="note">1,000원</small></div><div class="v">$${(1000 / r).toFixed(4)}</div>
+       <div class="note s">1달러 = ${r.toLocaleString("ko-KR", { maximumFractionDigits: 1 })}원${ch ? ` · <span class="${dir}">${arrow}${Math.abs(ch)}원</span>` : ""}</div>`;
+}
+window.drawFxCard = drawFxCard;
+
 function renderOverview(ov) {
   mkt.ov = ov;
   if (!mkt.group) mkt.group = liveGroup();
@@ -93,9 +110,8 @@ function renderOverview(ov) {
   $("#mkt-demo").classList.toggle("hidden", !ov.demo || (mkt.group === "US" && (ov.us_index || []).length));
   renderIndices();
   const fx = ov.fx || {};
-  if (fx.rate) { fxView.rate = fx.rate; drawFxToggle(); }
-  $("#fx-card").innerHTML = `<div class="k">달러 환율</div><div class="v">${fx.rate ? fx.rate.toLocaleString("ko-KR", { maximumFractionDigits: 1 }) : "-"}<small>원</small></div>
-    <div class="${fx.change > 0 ? "up" : fx.change < 0 ? "down" : ""} s">${fx.change ? (fx.change > 0 ? "▲ " : "▼ ") + Math.abs(fx.change) : ""}</div>`;
+  if (fx.rate) { fxView.rate = fx.rate; fxView.change = fx.change; drawFxToggle(); }
+  drawFxCard();
   $("#bond-card").innerHTML = `<div class="k">국고채 금리 <small class="note">만기별</small></div>` + bondCurve(ov.bonds || []);
   $("#us-card").innerHTML = `<div class="k">${mkt.group === "KR" ? "미국 지수 ETF" : "국내 지수"}</div>` + (mkt.group === "KR"
     ? (ov.us || []).map((u) => `<div class="row clickable" data-open="${esc(u.symbol)}"><span>${esc(u.name)}</span><b class="${cls(u.change_rate)}">${pct(u.change_rate)}</b></div>`).join("")
@@ -132,8 +148,8 @@ function flyHeart(from) {
     scale: [1.6, 0.8], duration: 680, complete: () => { h.remove(); to.classList.add("pop"); setTimeout(() => to.classList.remove("pop"), 400); } });
 }
 
-function rateCell(r) {
-  return `<span class="rate ${cls(r)}">${pct(r)}</span>`;
+function rateCell(r, sym) {
+  return `<span class="rate ${cls(r)}" ${sym ? `data-key="r:${esc(sym)}" data-val="${r}"` : ""}>${pct(r)}</span>`;
 }
 
 async function loadWatchTable() {
@@ -145,7 +161,7 @@ async function loadWatchTable() {
       <td><button class="heart on" data-heart="${esc(x.symbol)}" title="관심 종목에서 빼기">♥</button></td>
       <td class="clickable" data-open="${esc(x.symbol)}"><div class="namecell">${logo(x.symbol, x.name)}<div><div class="nm">${esc(x.name)}</div><div class="sym">${esc(x.symbol)}</div></div></div></td>
       <td class="r px"><span data-key="p:${esc(x.symbol)}" data-val="${x.price}">${money(x.price, cur)}</span></td>
-      <td class="r">${rateCell(x.change_rate)}</td><td class="r note">-</td>
+      <td class="r">${rateCell(x.change_rate, x.symbol)}</td><td class="r note">-</td>
       <td class="r"><button class="ai-btn" data-ai="${esc(x.symbol)}">AI 분석</button></td></tr>`;
   }).join("") || `<tr><td colspan="7"><div class="empty"><i data-lucide="heart"></i><p>아직 관심 종목이 없어요</p>
     <span class="note">다른 순위 탭에서 종목 옆 ♥ 를 누르면 여기에 모입니다.</span></div></td></tr>`;
@@ -165,7 +181,7 @@ async function loadRankings() {
       <td><button class="heart ${watch.has(x.symbol) ? "on" : ""}" data-heart="${esc(x.symbol)}" title="관심 종목">♥</button></td>
       <td class="clickable" data-open="${esc(x.symbol)}"><div class="namecell">${logo(x.symbol, x.name)}<div><div class="nm">${esc(x.name)}</div><div class="sym">${esc(x.symbol)}</div></div></div></td>
       <td class="r px"><span data-key="p:${esc(x.symbol)}" data-val="${x.price}">${money(x.price, x.currency)}</span></td>
-      <td class="r">${rateCell(x.change_rate)}</td>
+      <td class="r">${rateCell(x.change_rate, x.symbol)}</td>
       <td class="r">${x.amount ? bigKRW(x.amount) + "원" : "-"}</td>
       <td class="r"><button class="ai-btn" data-ai="${esc(x.symbol)}">AI 분석</button></td></tr>`).join("")
       || `<tr><td colspan="7" class="note">순위 데이터가 없습니다.</td></tr>`;

@@ -38,13 +38,15 @@ async function loadMySum() {
     const cash = krw("KR", k?.cash) + krw("US", u?.cash), stock = total - cash;
     const top = pos.slice().sort((a, b) => krw(b.market, b.value) - krw(a.market, a.value)).slice(0, 3);
     const seg = (v, c, n) => total && v > 0 ? `<i style="width:${(v / total * 100).toFixed(1)}%;background:${c}" title="${n} ${(v / total * 100).toFixed(0)}%"></i>` : "";
+    // 위쪽 원/$ 버튼을 따라 내 자산도 원화 또는 달러로
+    const hv = (v) => fxView.krw ? money(v, "KR") : "$" + (v / fx).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     box.innerHTML = `<div class="my-hero">
-      <div class="mh-main"><span class="mh-k">내 자산 <small>원화 환산 · 환율 ${Math.round(fx).toLocaleString()}원</small></span>
-        <b class="mh-total" id="mh-total">${money(total, "KR")}</b>
-        <div class="mh-rows"><span>오늘 <b class="${cls(today)}">${today > 0 ? "+" : ""}${money(today, "KR")} (${pct(todayRate)})</b></span>
-          <span>평가 손익 <b class="${cls(unreal)}">${unreal > 0 ? "+" : ""}${money(unreal, "KR")}${cost ? ` (${pct(unreal / cost)})` : ""}</b></span></div>
+      <div class="mh-main"><span class="mh-k">내 자산 <small>${fxView.krw ? "원화" : "달러"} 환산 · 환율 ${Math.round(fx).toLocaleString()}원</small></span>
+        <b class="mh-total" id="mh-total">${hv(total)}</b>
+        <div class="mh-rows"><span>오늘 <b class="${cls(today)}">${today > 0 ? "+" : ""}${hv(today)} (${pct(todayRate)})</b></span>
+          <span>평가 손익 <b class="${cls(unreal)}">${unreal > 0 ? "+" : ""}${hv(unreal)}${cost ? ` (${pct(unreal / cost)})` : ""}</b></span></div>
         <div class="mh-bar">${seg(stock, "#3182f6", "주식")}${seg(cash, "#3a4656", "현금")}</div>
-        <div class="mh-legend"><span><i style="background:#3182f6"></i>주식 ${money(stock, "KR")}</span><span><i style="background:#3a4656"></i>현금 ${money(cash, "KR")}</span>
+        <div class="mh-legend"><span><i style="background:#3182f6"></i>주식 ${hv(stock)}</span><span><i style="background:#3a4656"></i>현금 ${hv(cash)}</span>
           <span>국내 ${k ? money(k.equity, "KR") : "-"} · 미국 ${u ? money(u.equity, "US") : "꺼짐"}</span></div></div>
       <div class="mh-hold"><span class="mh-k">가진 주식 ${pos.length ? `<small>${pos.length}종목</small>` : ""}</span>
         ${top.map((p) => `<button class="mh-stock" data-open="${esc(p.symbol)}">${logo(p.symbol, p.name || p.symbol, 28)}<span>${esc(p.name || p.symbol)}</span>
@@ -55,7 +57,7 @@ async function loadMySum() {
           <b><i class="ms-dot"></i>${s.kill_switch ? "긴급 정지 중" : s.auto_trading ? "켜짐 · 일하는 중" : "꺼짐"}</b><em>${MODE_NAME[s.mode]} · AI 사무실 ›</em></button>
         <button class="primary mh-go" data-goto="dash"><i data-lucide="wallet"></i> 내 계좌 자세히</button></div></div>`;
     box.querySelectorAll("[data-goto]").forEach((b) => b.onclick = () => openTab(b.dataset.goto));
-    if (ms.first) { ms.first = false; countTo($("#mh-total"), total, { format: (v) => money(v, "KR") }); animateIn("#my-sum .mh-main, #my-sum .mh-hold, #my-sum .mh-side", { step: 80 }); }
+    if (ms.first) { ms.first = false; countTo($("#mh-total"), total, { format: hv }); animateIn("#my-sum .mh-main, #my-sum .mh-hold, #my-sum .mh-side", { step: 80 }); }
     icons();
   } catch { box.innerHTML = ""; }
 }
@@ -116,7 +118,7 @@ async function loadInvestors() {
       $("#inv-note").textContent = r.demo ? "체험용 데이터" : `국내 · 거래대금 상위 40종목 기준 · ${r.updated ? String(r.updated).slice(5, 16).replace("T", " ") + " 기준" : ""}`;
       const col = (k, title) => `<section><header><b>${title}</b><span class="note">거래액</span></header>
         ${(r[k] || []).map((x, i) => `<div class="inv-row" data-open="${esc(x.symbol)}"><span class="rk">${i + 1}</span>${logo(x.symbol, x.name, 28)}
-          <div><b>${esc(x.name)}</b><span>${money(x.price, "KR")} <em class="${cls(x.change_rate)}">${pct(x.change_rate)}</em></span></div>
+          <div><b>${esc(x.name)}</b><span><span data-key="p:${esc(x.symbol)}" data-val="${x.price}">${money(x.price, "KR")}</span> <em class="${cls(x.change_rate)}" data-key="r:${esc(x.symbol)}" data-val="${x.change_rate}">${pct(x.change_rate)}</em></span></div>
           <strong class="${tr.side === "buy" ? "up" : "down"}">${bigKRW(Math.abs(x[k]))}원</strong></div>`).join("") || `<p class="note">아직 자료가 없어요 (토스가 이 값을 비워 보냈어요).</p>`}</section>`;
       box.innerHTML = col("foreigner", "외국인") + col("institution", "기관") + col("individual", "개인");
       if (!fromCache) animateIn("#inv-cols .inv-row", { step: 15 });

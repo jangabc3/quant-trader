@@ -133,3 +133,36 @@ def test_install_record_also_next_to_program(tmp_path):
     (home / "source.json").unlink()  # 데이터 폴더 기록이 없어져도
     info = updater.source_info(home, app_dir=app)
     assert info and info["src"] == str(src.resolve()) and len(info["rev"]) == 40
+
+
+def test_patch_notes_group_commits_in_plain_words():
+    from qtrader import updater
+    log = ("- fix(principles): 팩트체크에서 '확인 불가'를 틀림처럼 세던 것 (#31)\n- feat(desktop): X 를 눌러도 계속 (#29)\n"
+           "- docs: README 손보기\n- Merge branch 'main'\n- perf(market): 순위 빨리")
+    rows = updater.patch_notes(log)
+    assert rows == [{"kind": "새 기능", "text": "X 를 눌러도 계속"},
+                    {"kind": "고친 것", "text": "팩트체크에서 '확인 불가'를 틀림처럼 세던 것"},
+                    {"kind": "빨라진 것", "text": "순위 빨리"}]
+    assert updater.patch_notes("- docs: README 손보기") == [{"kind": "손본 것", "text": "README 손보기"}]
+
+
+def test_just_updated_shows_changes_once(isolated_home, monkeypatch):
+    """업데이트로 설치 기록이 바뀌면 이전 커밋을 남기고, 다시 켰을 때 그 사이 바뀐 것을 한 번 보여 준다."""
+    import json
+    from qtrader import updater
+    from qtrader.storage import Store
+    home = isolated_home
+    (home / "source.json").write_text(json.dumps({"src": str(home), "rev": "aaa"}), encoding="utf-8")
+    calls = []
+
+    def run(args, **kw):
+        calls.append(args)
+        out = "bbb\n" if "rev-parse" in args else "- feat(x): 패치노트 (#32)\n"
+        return type("R", (), {"returncode": 0, "stdout": out, "stderr": ""})()
+    d = updater.mark_installed(home, home, run=run)
+    assert d["rev"] == "bbb" and d["prev_rev"] == "aaa"
+    store = Store(home / "t.db")
+    r = updater.just_updated(d, store, run=run)
+    assert r["changes"] == [{"kind": "새 기능", "text": "패치노트"}] and "aaa..bbb" in calls[-1]
+    store.set("update_seen", "bbb")
+    assert updater.just_updated(d, store, run=run) is None

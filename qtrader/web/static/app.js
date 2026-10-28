@@ -339,6 +339,7 @@ document.addEventListener("click", (e) => {
   fxView.krw = !fxView.krw;
   try { localStorage.setItem("qtrader.fxview", fxView.krw ? "krw" : "usd"); } catch {}
   drawFxToggle();
+  window.drawFxCard && drawFxCard();
   toast(fxView.krw ? "미국 주식 가격을 지금 환율로 바꾼 원화로 보여 줘요" : "미국 주식 가격을 달러로 보여 줘요", "repeat");
   document.dispatchEvent(new CustomEvent("tab", { detail: state.tab }));  // 지금 화면을 다시 그린다
 });
