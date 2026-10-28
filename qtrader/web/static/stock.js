@@ -245,7 +245,12 @@ $("#st-watch").onclick = async () => {
   c.watchlist = [...list];
   try { state.config = await api("/api/config", { method: "PUT", body: c }); $("#st-watch").classList.toggle("on"); } catch (e) { toast(e.message); }
 };
-document.addEventListener("tab", (e) => { if (e.detail === "stock" && st.symbol) { loadSummary(); loadCandles(true); } });
+document.addEventListener("tab", (e) => {
+  if (e.detail !== "stock") return;
+  if (st.symbol) { loadSummary(); loadCandles(true); return; }
+  // 빈 화면 대신 최근 본 종목(없으면 삼성전자)을 연다. 검색·순위에서 누른 종목이 있으면 그쪽이 먼저 정해진다
+  setTimeout(() => { if (!st.symbol) window.openStock(((typeof recentStocks === "function" && recentStocks()[0]) || {}).symbol || "005930"); }, 0);
+});
 
 
 // 수급 상세: 프로그램매매·공매도·신용거래 (국내)
