@@ -77,7 +77,7 @@ function liveRun(d) {
 function liveHud(d) {
   const hud = $("#office-hud");
   hud.className = "office-hud " + (d.schedule.open ? "running" : "");
-  hud.innerHTML = `<span class="hud-dot"></span><div><b>실시간 사무실</b> <small>${d.market === "KR" ? "국내" : "미국"}</small>
+  hud.innerHTML = `<span class="hud-dot"></span><div><b>지금 상황</b> <small>${d.market === "KR" ? "국내" : "미국"}</small>
     <div>${!d.auto ? "<b>자동매매 꺼짐</b> · 켜면 장이 열린 동안 알아서 회의하고 사고팔아요"
       : d.schedule.open ? `<b class='blink'>● ${esc(d.schedule.session || "장중")}</b> 가진 종목 손절·익절을 2분마다 지키고, 후보를 ${d.intraday?.every || 15}분마다 하나씩 AI 회의해요`
       : "장이 닫혀 있어요 · 다음 장을 기다리는 중"}</div>
@@ -179,9 +179,9 @@ window.liveOn = liveOn;
 window.liveHudRefresh = () => lv.data && liveHud(lv.data);
 
 // 화면 요소
-$(".office-bar").insertAdjacentHTML("afterbegin", `<div class="seg" id="office-mode"><button data-v="live"><span class="live-dot"></span> 실시간</button><button data-v="meeting" class="on">회의 보기</button></div>`);
+$(".office-bar").insertAdjacentHTML("afterbegin", `<div class="seg" id="office-mode"><button data-v="live" title="자동매매가 지금 하는 일: 손절·익절 감시, 후보 찾기, 오늘 주문 (AI 비용 없음)"><span class="live-dot"></span> 지금 상황</button><button data-v="meeting" class="on" title="AI 회의 내용: 참석자별 보고서·토론·결론 (진행 중인 회의나 지난 회의)">AI 회의</button></div>`);
 $("#office-wrap").insertAdjacentHTML("afterend", `<div class="panel hidden" id="live-panel">
-  <div class="rank-bar"><h3 style="margin:0"><i data-lucide="activity"></i> 실시간 현황판 <small>10초마다 새로 고침 · AI 호출 없음</small></h3>
+  <div class="rank-bar"><h3 style="margin:0"><i data-lucide="activity"></i> 지금 상황판 <small>10초마다 새로 고침 · AI 비용 없음</small></h3>
     <div class="seg" id="live-mkt"><button data-v="KR" class="on">국내</button><button data-v="US">미국</button></div></div>
   <div id="live-board" class="live-board"></div></div>`);
 $("#office-mode").addEventListener("click", (e) => {
