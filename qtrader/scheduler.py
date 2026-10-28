@@ -142,6 +142,13 @@ class Scheduler:
                     except Exception:
                         pass
         auto = ctx.store.get("auto_trading", "0") == "1"
+        mk = cfg["markets"]["KR"]
+        if mk.get("enabled") and mk.get("strategy") == "ai" and cfg["ai"].get("auto_pick", True):
+            from . import scan  # 국내 전체 종목을 하루 한 번 뒤에서 훑는다 (자동매매가 꺼져 있어도 후보는 준비)
+            try:
+                scan.maybe_start(ctx, Market.KR, trade_date(Market.KR))
+            except Exception as e:
+                ctx.store.log("warn", "picks.KR", f"전체 종목 훑기 시작 실패: {e}")
         self._heartbeat(ctx, cfg, auto)
         extras.keep_awake(auto)
         if not auto:
@@ -272,7 +279,8 @@ class Scheduler:
         picks = _json.loads(ctx.store.get(pk) or "[]")
         have = {p["symbol"] for p in picks}
         fresh = [c for c in live.next_candidates(ctx, m, ttl=every) if not c["missing"] and c["symbol"] not in have]
-        cap = config_mod.meetings_cap(ctx.cfg, m)
+        from .screener import CANDIDATES_SHOWN
+        cap = max(config_mod.meetings_cap(ctx.cfg, m), CANDIDATES_SHOWN)  # 후보 목록 길이 (회의 수 한도는 _intraday 가 본다)
         if fresh and len(picks) < cap:
             add = fresh[: cap - len(picks)]
             picks += [{"symbol": c["symbol"], "score": c["score"], "reason": "장중 새로 규칙 통과", "held": False, "fails": []} for c in add]

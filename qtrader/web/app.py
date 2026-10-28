@@ -745,6 +745,9 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         met = {r["symbol"]: r for r in c.store.ai_runs(200) if r["trade_date"] == today}
         items = [p | {"name": name_of(p["symbol"]), "met": bool(met.get(p["symbol"])),
                       "rating": (met.get(p["symbol"]) or {}).get("rating")} for p in rows]
+        if stats and m == Market.KR:
+            from .. import scan
+            st = (st or {}) | {"scan": scan.status(c.store, m, today)}  # 국내 전체 종목 훑기: 끝났는지, 몇 종목째인지
         return {"items": items, "excluded": st or None} if stats else items
 
     # 가상 계좌 처음부터 다시 (가상매매일 때만)
