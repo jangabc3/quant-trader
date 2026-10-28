@@ -213,13 +213,17 @@ function renderPicksWhy(st) {
     ["momentum", "모멘텀 음수", "최근 1년 수익률이 마이너스"],
     ["rsi", "과열 (RSI)", "짧은 기간에 너무 많이 올라 되돌림이 걱정되는 종목"],
     ["vol", "변동성", "하루하루 오르내림이 너무 큰 종목"],
+    ["illiquid", "거래가 너무 적음", "하루 거래대금이 너무 작아 원하는 값에 사고팔기 어려운 종목"],
     ["disclosure", "공시·재무", "유상증자·전환사채·횡령 같은 나쁜 공시가 있는 종목"],
     ["basic", "종목 기본 정보", "거래정지·레버리지·인버스·우선주·새로 상장한 종목"],
   ];
   const out = st.rules_out + (st.basic || 0) + (st.disclosure || 0);
   const passed = st.passed ?? Math.max(0, st.pool - out - (st.no_data || 0));
-  line.innerHTML = `<p class="note pk-why">오늘 살펴본 ${st.pool}종목 중 <b>${passed}종목</b>만 '사도 되는 조건'(오르는 추세 · 과열 아님 · 출렁임 적당 · 나쁜 공시 없음)을 통과해 회의 후보가 됐어요.
-    ${st.no_data ? `상장한 지 얼마 안 되는 등 자료가 부족한 ${st.no_data}종목은 뺐어요. ` : ""}<button class="link" id="picks-why-btn">어떤 조건에 걸렸는지 보기</button></p>`;
+  const sc = st.scan;
+  const scanLine = sc?.running && sc.total ? ` <span class="pk-scan"><i class="spin"></i>국내 전체 ${Number(sc.total).toLocaleString()}종목을 훑는 중 (${Number(sc.done).toLocaleString()}종목째) · 끝나면 후보가 늘어나요</span>`
+    : sc?.running ? ` <span class="pk-scan"><i class="spin"></i>국내 전체 종목 목록을 받는 중</span>` : "";
+  line.innerHTML = `<p class="note pk-why">${st.full_scan ? `국내 전체 ${Number(st.full_scan).toLocaleString()}종목과 순위·관심 종목까지` : "오늘"} 살펴본 ${st.pool}종목 중 <b>${passed}종목</b>만 '사도 되는 조건'(오르는 추세 · 과열 아님 · 출렁임 적당 · 나쁜 공시 없음)을 통과해 회의 후보가 됐어요.
+    ${st.no_data ? `상장한 지 얼마 안 되는 등 자료가 부족한 ${st.no_data}종목은 뺐어요. ` : ""}<button class="link" id="picks-why-btn">어떤 조건에 걸렸는지 보기</button>${scanLine}</p>`;
   detail.innerHTML = `<div class="pk-why-box"><b>오늘 빠진 종목 (규칙별)</b>
     <ul>${rules.map(([k, n, d]) => `<li class="${st[k] ? "" : "zero"}"><span>${n}<em>${d}</em></span><strong>${st[k] || 0}종목</strong></li>`).join("")}</ul>
     <p class="note">모은 ${st.pool}종목 → 차트 자료로 본 ${st.checked}종목 → 규칙 통과 ${st.passed}종목 → 오늘 회의 후보 ${st.picked}종목.

@@ -134,8 +134,8 @@ def test_candidate_exclusion_counts(tmp_path, monkeypatch):
     st = {}
     picks = screener.candidates(ctx, Market.KR, 10, st)
     assert [p["symbol"] for p in picks] == ["111110", "111130"]
-    assert st == {"pool": 9, "no_data": 1, "checked": 8, "trend": 2, "momentum": 1, "rsi": 1, "vol": 1, "rules_out": 4,
-                  "basic": 1, "disclosure": 1, "weak_finance": 1, "passed": 3, "picked": 2}
+    assert st == {"pool": 9, "no_data": 1, "checked": 8, "trend": 2, "momentum": 1, "rsi": 1, "vol": 1, "illiquid": 0,
+                  "rules_out": 4, "basic": 1, "disclosure": 1, "weak_finance": 1, "passed": 3, "picked": 2, "full_scan": 0}
     # 예전처럼 stats 없이 불러도 목록은 같다
     assert screener.candidates(ctx, Market.KR, 10) == picks
     # 하루 한 번 저장한 뒤에도 같은 숫자를 돌려준다
@@ -153,3 +153,34 @@ def test_picks_api_stats_with_demo_data(client):
     assert [p["symbol"] for p in r["items"]] == [p["symbol"] for p in old]
     assert st["pool"] == st["no_data"] + st["checked"] > 0
     assert st["passed"] <= st["checked"] - st["rules_out"] and st["picked"] == sum(not p["held"] for p in r["items"])
+
+
+def test_full_market_scan_feeds_candidates(tmp_path, monkeypatch):
+    """국내 전체를 훑어 둔 결과가 있으면 순위 목록 밖 종목도 후보가 되고, 일봉을 다시 받지 않는다. 거래가 너무 적은 종목은 뺀다."""
+    from qtrader import scan
+    from qtrader.engine import trade_date
+    cfg = config.load()
+    cfg["watchlist"], cfg["markets"]["KR"]["universe"] = [], []
+    monkeypatch.setattr(screener, "GROWTH", {"KR": [], "US": []})
+    monkeypatch.setattr(screener, "ORIGIN", {})  # 앞 시험이 남긴 '어디서 왔는지' 기록이 섞이지 않게
+    monkeypatch.setattr(screener, "disclosures", lambda s, home: {})
+    monkeypatch.setattr(screener, "quality", lambda ctx, s: {})
+    monkeypatch.setattr(screener, "factors", lambda bars: F[bars.attrs["s"]] | {"amt20": 5e8 if bars.attrs["s"] != "111180" else 1e7})
+    broker = SimpleNamespace(name="paper", account=lambda m: SimpleNamespace(positions={}))
+    data = FakeData()
+    ctx = SimpleNamespace(cfg=cfg, store=Store(tmp_path / "s.db"), data=data, broker=broker)
+    master = [{"symbol": s, "name": f"회사{s}", "market": "KOSPI", "type": "STOCK"} for s in F] + \
+             [{"symbol": "111190", "name": "어느스팩1호", "market": "KOSDAQ", "type": "STOCK"},
+              {"symbol": "111200", "name": "어느회사우", "market": "KOSPI", "type": "STOCK"},
+              {"symbol": "069500", "name": "KODEX 200", "market": "KOSPI", "type": "ETF"}]
+    syms = scan.universe(master)
+    assert syms == list(F)  # 스팩·우선주·ETF 는 뺀다
+    today = trade_date(Market.KR)
+    scan.run(ctx, Market.KR, today, syms + ["999990"])
+    assert scan.usable(ctx.store, Market.KR, today)["total"] == 9
+    data.bars = lambda *a: (_ for _ in ()).throw(AssertionError("다시 받으면 안 됨"))
+    st = {}
+    picks = screener.candidates(ctx, Market.KR, 10, st)
+    assert {p["symbol"] for p in picks} == {"111110", "111120", "111130"} and st["full_scan"] == 9 and st["no_data"] == 1
+    assert "국내 전체 훑기" in picks[0]["reason"]
+    assert scan.maybe_start(ctx, Market.KR, today) is False  # 오늘 이미 훑음
