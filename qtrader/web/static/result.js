@@ -145,9 +145,10 @@ function planBlock(run) {
           <span class="g-m" style="left:${pos(p.stop)}%">손절 ${fmtPx(p.stop, m)}</span><span class="g-m mid" style="left:${pos(p.entry)}%">매수 ${fmtPx(p.entry, m)}</span><span class="g-m" style="left:${pos(p.take)}%">익절 ${fmtPx(p.take, m)}</span>`;
       })()}</div>
       <p class="note">수량은 운용 한도 × 종목당 최대 비중 × (절반 켈리·변동성 목표 중 작은 값)으로 정했습니다.</p></div>
-    <div class="panel"><h3>매수 체크리스트 <small>${cl ? `${ok}/${cl.rules.length} 통과 · ${cl.passed ? "<b class='up'>매수 가능</b>" : "<b class='down'>매수 보류</b>"}` : ""} · 뇌동매매 방지</small></h3>
-      ${cl ? `<table class="cl"><tbody>${cl.rules.map((r) => `<tr><td>${r.ok ? "<span class='chipst ok'>통과</span>" : "<span class='chipst bad'>미통과</span>"}</td>
-        <td><b>${esc(r.name)}</b><div class="note">${esc(r.ref)}</div></td><td class="r">${esc(r.value)}</td><td class="note">${esc(r.need)}</td></tr>`).join("")}</tbody></table>` : ""}
+    <div class="panel"><h3>매수 체크리스트 <small>${cl ? `${clSummary(cl, ok)} · ${cl.passed ? "<b class='up'>매수 가능</b>" : "<b class='down'>매수 보류</b>"}` : ""} · 뇌동매매 방지</small></h3>
+      ${cl ? `<p class="note cl-how">필수는 모두 넘어야 하고, 추가 기준은 ${cl.soft?.allowed ?? 0}개까지 못 넘어도 사요 (하나마다 사는 양을 절반으로 줄여요).</p>
+        <table class="cl"><tbody>${cl.rules.map((r) => `<tr><td>${r.ok ? "<span class='chipst ok'>통과</span>" : `<span class='chipst ${r.core === false ? "warn" : "bad"}'>미통과</span>`}</td>
+        <td><b>${esc(r.name)}</b> <span class="cl-kind ${r.core === false ? "soft" : ""}">${r.core === false ? "추가" : "필수"}</span><div class="note">${esc(r.ref)}</div></td><td class="r">${esc(r.value)}</td><td class="note">${esc(r.need)}</td></tr>`).join("")}</tbody></table>` : ""}
     </div></div>`;
 }
 
@@ -170,7 +171,7 @@ function simplify(box, run, f, last, m) {
       <div><span>이 가격에 사요</span><b>${fmtPx(P.entry, m)}</b><em>${P.qty.toLocaleString()}주 · ${fmtPx(P.amount, m)}</em></div>
       <div class="down"><span>여기까지 내리면 팔아요 (손절)</span><b>${fmtPx(P.stop, m)}</b><em>최대 손실 ${fmtPx(P.max_loss, m)} (-${P.stop_pct}%)</em></div>
       <div class="up"><span>여기까지 오르면 팔아요 (익절)</span><b>${fmtPx(P.take, m)}</b><em>예상 이익 ${fmtPx(P.max_gain, m)} (+${P.take_pct}%)</em></div>
-      <div class="${cl?.passed ? "ok" : "bad"}"><span>안전 점검</span><b>${total ? `${ok} / ${total} 통과` : "-"}</b><em>${cl?.passed ? "모두 통과해야 실제로 삽니다" : "하나라도 못 넘으면 사지 않아요"}</em></div>
+      <div class="${cl?.passed ? "ok" : "bad"}"><span>안전 점검</span><b>${total ? clSummary(cl, ok) : "-"}</b><em>${clVerdict(cl)}</em></div>
     </div>` : ""}
     <div class="easy-why"><div><h4>왜 이렇게 판단했나요?</h4><ol>${list((f.reasons || f.summary || []).slice(0, 3))}</ol></div>
       ${(f.worry || []).length ? `<div class="worry"><h4>조심할 점</h4><ul>${list(f.worry.slice(0, 2))}</ul></div>` : ""}</div>`;
@@ -192,6 +193,19 @@ function simplify(box, run, f, last, m) {
   rest.forEach((el) => det.appendChild(el));
   (planGrid || box.lastElementChild).after(det);
   icons();
+}
+
+// 안전 점검 요약: 필수(모두 넘어야) · 추가(몇 개까지 봐줌). 예전 회의 기록(필수·추가 구분 없음)은 통과 수만
+function clSummary(cl, ok) {
+  if (!cl?.core) return `${ok} / ${cl?.rules?.length || 0} 통과`;
+  return `필수 ${cl.core.ok}/${cl.core.total} · 추가 ${cl.soft.ok}/${cl.soft.total}`;
+}
+function clVerdict(cl) {
+  if (!cl) return "";
+  if (!cl.core) return cl.passed ? "모두 통과해 살 수 있어요" : "기준을 못 넘어 사지 않아요";
+  if (cl.passed) return cl.soft.missed ? `추가 기준 ${cl.soft.missed}개를 못 넘어 사는 양을 줄여서 사요` : "모두 통과해 살 수 있어요";
+  if (cl.core.ok < cl.core.total) return "필수 기준을 못 넘어 사지 않아요";
+  return `추가 기준을 ${cl.soft.missed}개 못 넘어 사지 않아요 (${cl.soft.allowed}개까지 괜찮아요)`;
 }
 
 function list(arr) { return (arr || []).map((x) => `<li>${esc(x)}</li>`).join(""); }

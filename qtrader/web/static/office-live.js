@@ -120,7 +120,7 @@ function flowBoard(d) {
   if (!it.on) return `<section class="lb-flow off"><h4><i data-lucide="shopping-cart"></i> 장중 회의 → 매수 <small>꺼짐</small></h4>
     <p class="lb-desc">장중 회의가 꺼져 있어 정기 실행 때만 사요.</p></section>`;
   const steps = [["sparkles", "새 후보", `${it.every}분마다 규칙 통과 종목`], ["users", "AI 회의", "한 번에 하나, 같은 종목은 하루 한 번"],
-    ["list-checks", "체크리스트", "하나라도 못 넘으면 안 사요"], ["shopping-cart", "바로 매수", "안전장치 한도 안에서"]];
+    ["list-checks", "안전 점검", "필수는 모두, 추가는 1개까지"], ["shopping-cart", "바로 매수", "안전장치 한도 안에서"]];
   return `<section class="lb-flow"><h4><i data-lucide="shopping-cart"></i> 장중 회의 → 매수 <small>오늘 회의 ${it.met}/${it.cap}종목${d.kill ? " · 긴급 정지 중이라 사지 않아요" : ""}</small></h4>
     <div class="lb-steps">${steps.map(([ic, t, s]) => `<div><i data-lucide="${ic}"></i><b>${t}</b><span>${s}</span></div>`).join('<i data-lucide="chevron-right" class="lb-arrow"></i>')}</div>
     <div class="lb-items">${it.items.map((x) => { const [label, ic] = IN_STATE[x.state] || [x.state, "dot"];
