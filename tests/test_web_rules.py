@@ -114,3 +114,23 @@ def test_update_endpoint_uses_git_mode_after_install(client, isolated_home, tmp_
     assert r["mode"] == "git" and r["current_rev"] == "aaaaaaa" and r["available"] is False  # 시험 중에는 밖으로 안 나감
     bad = client.post("/api/update/apply", headers=client.h)
     assert bad.status_code == 400 and "개발 버전" in bad.json()["detail"]
+
+
+def test_checklist_core_rules_and_one_soft_miss():
+    """필수 기준은 모두, 추가 기준(12개월·12-1 모멘텀·과열·팩트체크)은 1개까지 못 넘어도 비중 절반으로 산다."""
+    final = {"rating": "Buy", "confidence": 0.8, "stop_loss_pct": 5, "take_profit_pct": 15}
+    good = {"fact_checks": [{"status": "확인됨"}] * 3}
+    up = bars(0.002)
+    base = principles.checklist(final, good, up, rules={"max_rsi": 101})
+    assert base["passed"] and base["soft"]["missed"] == 0 and base["core"]["ok"] == base["core"]["total"]
+    one = principles.checklist(final, {"fact_checks": [{"status": "틀림"}]}, up, rules={"max_rsi": 101})  # 팩트체크만 못 넘음
+    assert one["passed"] and one["soft"]["missed"] == 1
+    assert one["size"]["weight_factor"] == pytest.approx(base["size"]["weight_factor"] / 2, abs=1e-3)
+    two = principles.checklist(final, {"fact_checks": []}, up, rules={"max_rsi": 10})  # 팩트체크 + 과열
+    assert not two["passed"] and two["soft"]["missed"] == 2
+    strict = principles.checklist(final, {"fact_checks": []}, up, rules={"max_rsi": 101, "soft_miss_allowed": 0})  # 안정형
+    assert not strict["passed"]
+    core_fail = principles.checklist(final | {"take_profit_pct": 5}, good, up, rules={"max_rsi": 101})  # 손익비 1:1 은 필수
+    assert not core_fail["passed"] and core_fail["soft"]["missed"] == 0
+    keys = {r["key"]: r["core"] for r in base["rules"]}
+    assert keys["facts"] is False and keys["reward_risk"] is True and keys["stop"] is True
