@@ -32,15 +32,15 @@ TYPES = [  # (이름, 점수 하한, 설명)
 # 유형별 자동매매 기준
 PRESETS = {
     "안정형": {"max_weight": 0.10, "daily_loss_limit": 0.015, "rules": {"min_confidence": 0.75, "min_reward_risk": 2.5,
-             "max_vol": 0.30, "max_new_buys_per_day": 1, "max_rsi": 70, "require_trend": True, "require_momentum": True, "market_filter": "block"}},
+             "max_vol": 0.30, "max_new_buys_per_day": 1, "max_rsi": 70, "require_trend": True, "require_momentum": True, "market_filter": "block", "soft_miss_allowed": 0}},
     "안정추구형": {"max_weight": 0.12, "daily_loss_limit": 0.02, "rules": {"min_confidence": 0.70, "min_reward_risk": 2.2,
-               "max_vol": 0.40, "max_new_buys_per_day": 2, "max_rsi": 72, "require_trend": True, "require_momentum": True, "market_filter": "block"}},
+               "max_vol": 0.40, "max_new_buys_per_day": 2, "max_rsi": 72, "require_trend": True, "require_momentum": True, "market_filter": "block", "soft_miss_allowed": 1}},
     "위험중립형": {"max_weight": 0.15, "daily_loss_limit": 0.025, "rules": {"min_confidence": 0.65, "min_reward_risk": 2.0,
-               "max_vol": 0.50, "max_new_buys_per_day": 2, "max_rsi": 75, "require_trend": True, "require_momentum": True, "market_filter": "half"}},
+               "max_vol": 0.50, "max_new_buys_per_day": 2, "max_rsi": 75, "require_trend": True, "require_momentum": True, "market_filter": "half", "soft_miss_allowed": 1}},
     "적극투자형": {"max_weight": 0.20, "daily_loss_limit": 0.03, "rules": {"min_confidence": 0.60, "min_reward_risk": 1.8,
-               "max_vol": 0.60, "max_new_buys_per_day": 3, "max_rsi": 78, "require_trend": True, "require_momentum": True, "market_filter": "half"}},
+               "max_vol": 0.60, "max_new_buys_per_day": 3, "max_rsi": 78, "require_trend": True, "require_momentum": True, "market_filter": "half", "soft_miss_allowed": 1}},
     "공격투자형": {"max_weight": 0.25, "daily_loss_limit": 0.04, "rules": {"min_confidence": 0.55, "min_reward_risk": 1.6,
-               "max_vol": 0.75, "max_new_buys_per_day": 4, "max_rsi": 80, "require_trend": False, "require_momentum": True, "market_filter": "half"}},
+               "max_vol": 0.75, "max_new_buys_per_day": 4, "max_rsi": 80, "require_trend": False, "require_momentum": True, "market_filter": "half", "soft_miss_allowed": 2}},
 }
 LOSS_TEXT = {1: "-5%", 2: "-10%", 3: "-20%", 4: "-30%", 5: "-40% 이상"}
 

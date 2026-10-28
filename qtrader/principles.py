@@ -111,10 +111,21 @@ class Rule:
     need: str
     ref: str
 
+    @property
+    def core(self) -> bool:
+        return self.key not in SOFT_RULES
+
     def to_dict(self) -> dict:
         r = REF.get(self.ref)
         return {"key": self.key, "name": self.name, "ok": self.ok, "value": self.value, "need": self.need,
-                "ref": f"{r[1]} 「{r[2]}」" if r else ""}
+                "ref": f"{r[1]} 「{r[2]}」" if r else "", "core": self.core}
+
+
+# 추가 기준: 하나쯤 못 넘어도 비중을 절반으로 줄여 살 수 있는 것 (soft_miss_allowed 개까지).
+# 모두 '조금 더 확실하게' 쪽 신호라 하나만으로 손실이 커지지 않는다. 손실을 막는 핵심(손절·손익비·장기 추세·
+# 변동성·투자유의·매수 한도·재매수 대기·시장 국면)은 필수로 둔다.
+# 여러 신호를 점수로 보는 방식: Piotroski(2000) F-Score 처럼 '몇 개 이상 통과'로 판단한다.
+SOFT_RULES = {"tsmom", "mom", "rsi", "facts"}
 
 
 DEFAULT_RULES = {
@@ -129,6 +140,7 @@ DEFAULT_RULES = {
     "require_trend": True,
     "require_momentum": True,
     "market_filter": "half",  # 지수가 200일선 아래면: half=비중 절반, block=신규 매수 중단, off=보지 않음
+    "soft_miss_allowed": 1,  # 추가 기준(SOFT_RULES)을 이만큼까지 못 넘어도 산다. 하나마다 비중을 절반으로
 }
 # 매매 기간. 단기일수록 손절·익절을 좁히고 오래 들고 있지 않는다 (기한이 지나면 판다)
 HOLDING = {
@@ -230,15 +242,21 @@ def checklist(final: dict | None, check: dict | None, bars: pd.DataFrame, warnin
                         "하락 국면이면 매수 중단" if mf == "block" else "하락 국면이면 비중 절반", "states"))
         if down:
             regime_cut = 0.5
-    passed = all(r.ok for r in out)
+    core, soft = [r for r in out if r.core], [r for r in out if not r.core]
+    missed = sum(not r.ok for r in soft)
+    allowed = int(R.get("soft_miss_allowed", 1))
+    passed = all(r.ok for r in core) and missed <= allowed
     # 포지션 크기: 절반 켈리와 변동성 목표 중 작은 값
     p = conf
     kelly = max(0.0, p - (1 - p) / rr) if rr > 0 else 0.0
     vol_w = min(1.0, R["target_vol"] / s["vol"]) if s["vol"] > 0 else 1.0
-    size = min(kelly / 2, vol_w) * regime_cut
+    soft_cut = 0.5 ** missed  # 추가 기준을 하나 못 넘을 때마다 비중 절반
+    size = min(kelly / 2, vol_w) * regime_cut * soft_cut
     return {"passed": passed, "rules": [r.to_dict() for r in out], "signals": {k: round(v, 4) for k, v in s.items()},
+            "core": {"ok": sum(r.ok for r in core), "total": len(core)},
+            "soft": {"ok": len(soft) - missed, "total": len(soft), "missed": missed, "allowed": allowed},
             "size": {"half_kelly": round(kelly / 2, 4), "vol_target": round(vol_w, 4), "regime": regime_cut,
-                     "weight_factor": round(size, 4)}}
+                     "soft": soft_cut, "weight_factor": round(size, 4)}}
 
 
 def trade_plan(final: dict | None, last: float, budget: float, max_weight: float, size_factor: float,
