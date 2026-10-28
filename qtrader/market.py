@@ -25,19 +25,56 @@ NAMES = {"KOSPI": "코스피", "KOSDAQ": "코스닥", "KR_BOND_2Y": "국고채 2
          "SPY": "S&P500 (SPY)", "QQQ": "나스닥100 (QQQ)", "DIA": "다우 (DIA)"}
 
 _cache: dict[str, tuple[float, object]] = {}
+_inflight: dict[str, threading.Event] = {}
 _names: dict[str, str] = {}
 _lock = threading.Lock()
 
 
-def cached(key: str, ttl: float, fn):
+def _store(key: str, fn) -> object:
+    try:
+        val = fn()
+        with _lock:
+            _cache[key] = (time.monotonic(), val)
+        return val
+    finally:
+        with _lock:
+            ev = _inflight.pop(key, None)
+        if ev:
+            ev.set()
+
+
+def cached(key: str, ttl: float, fn, stale: float | None = None):
+    """받아 둔 값을 ttl 초 동안 그대로 쓴다. 그 뒤 stale 초(기본 ttl 의 10배)까지는 받아 둔 값을 바로 돌려주고
+    새 값은 뒤에서 받는다 (토스 앱처럼 화면이 기다리지 않게). 같은 값을 여러 곳에서 동시에 찾으면 한 번만 받는다."""
+    stale = ttl * 10 if stale is None else stale
     with _lock:
         hit = _cache.get(key)
-        if hit and time.monotonic() - hit[0] < ttl:
+        age = time.monotonic() - hit[0] if hit else None
+        if hit and age < ttl:
             return hit[1]
-    val = fn()
-    with _lock:
-        _cache[key] = (time.monotonic(), val)
-    return val
+        busy = _inflight.get(key)
+        if busy is None:
+            _inflight[key] = threading.Event()
+        if hit and age < ttl + stale:
+            if busy is None:  # 뒤에서 새로 받기 (실패하면 다음에 다시)
+                threading.Thread(target=lambda: _quiet(_store, key, fn), name=f"refresh-{key[:30]}", daemon=True).start()
+            return hit[1]
+    if busy is not None:  # 다른 요청이 받는 중: 그 결과를 기다린다
+        busy.wait(30)
+        with _lock:
+            hit = _cache.get(key)
+        if hit:
+            return hit[1]
+        with _lock:
+            _inflight.setdefault(key, threading.Event())
+    return _store(key, fn)
+
+
+def _quiet(f, *a):
+    try:
+        f(*a)
+    except Exception:
+        pass
 
 
 def names(t: Toss, symbols: list[str]) -> dict[str, str]:

@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import json
-import threading
 import time
 from pathlib import Path
 
@@ -23,19 +22,11 @@ INTERVALS = {  # 화면 주기 -> (원천, 묶을 단위, 기본 봉 수)
 INDEX_SYMBOLS = {"KOSPI", "KOSDAQ"}
 MARKETS = ["KOSPI", "KOSDAQ", "NASDAQ", "NYSE", "AMEX"]
 
-_lock = threading.Lock()
-_cache: dict[str, tuple[float, object]] = {}
-
 
 def cached(key, ttl, fn):
-    with _lock:
-        hit = _cache.get(key)
-        if hit and time.monotonic() - hit[0] < ttl:
-            return hit[1]
-    v = fn()
-    with _lock:
-        _cache[key] = (time.monotonic(), v)
-    return v
+    """market.cached 와 같은 규칙 (받아 둔 값을 바로 보여 주고 뒤에서 새로 받기). 짧은 차트는 오래 묵히지 않는다."""
+    from .market import cached as _cached
+    return _cached("sd:" + key, ttl, fn, stale=ttl * 3)
 
 
 # 종목 검색
