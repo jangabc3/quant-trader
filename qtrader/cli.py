@@ -1,4 +1,4 @@
-"""명령줄: qtrader serve | backtest | run | demo-data | set-keys | kill"""
+"""명령줄: qtrader app | serve | supervise | backtest | run | demo-data | set-keys | kill"""
 from __future__ import annotations
 
 import argparse
@@ -29,6 +29,12 @@ def cmd_serve(a):
     if not a.no_browser:
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()
     uvicorn.run(create_app(sched), host="127.0.0.1", port=a.port, log_level="warning")
+
+
+def cmd_app(a):
+    """프로그램 창으로 열기 (설치본 QTrader.exe 를 누르면 이것). 창 엔진이 없으면 브라우저로."""
+    from . import desktop
+    desktop.run(a.port)
 
 
 def cmd_supervise(a):
@@ -124,6 +130,10 @@ def cmd_kill(a):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="qtrader", description="국내·미국 주식 퀀트 자동매매")
     sub = ap.add_subparsers(dest="cmd", required=True)
+
+    s = sub.add_parser("app", help="프로그램 창으로 열기 (서버는 따로 돌리고, 꺼지면 다시 켠다)")
+    s.add_argument("--port", type=int, default=8765)
+    s.set_defaults(fn=cmd_app)
 
     s = sub.add_parser("serve", help="대시보드와 자동매매 스케줄러 실행")
     s.add_argument("--port", type=int, default=8765)
