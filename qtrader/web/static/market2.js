@@ -117,7 +117,7 @@ async function loadInvestors() {
       const col = (k, title) => `<section><header><b>${title}</b><span class="note">거래액</span></header>
         ${(r[k] || []).map((x, i) => `<div class="inv-row" data-open="${esc(x.symbol)}"><span class="rk">${i + 1}</span>${logo(x.symbol, x.name, 28)}
           <div><b>${esc(x.name)}</b><span>${money(x.price, "KR")} <em class="${cls(x.change_rate)}">${pct(x.change_rate)}</em></span></div>
-          <strong class="${tr.side === "buy" ? "up" : "down"}">${bigKRW(Math.abs(x[k]))}원</strong></div>`).join("") || `<p class="note">자료가 없습니다.</p>`}</section>`;
+          <strong class="${tr.side === "buy" ? "up" : "down"}">${bigKRW(Math.abs(x[k]))}원</strong></div>`).join("") || `<p class="note">아직 자료가 없어요 (토스가 이 값을 비워 보냈어요).</p>`}</section>`;
       box.innerHTML = col("foreigner", "외국인") + col("institution", "기관") + col("individual", "개인");
       if (!fromCache) animateIn("#inv-cols .inv-row", { step: 15 });
     });
