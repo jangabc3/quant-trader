@@ -195,3 +195,22 @@ def test_old_config_moves_to_all_sessions_once(isolated_home):
     cfg["markets"]["KR"]["extended"] = False  # 사용자가 넥스트레이드를 끄고 저장
     config.save(cfg)
     assert config.load()["markets"]["KR"]["extended"] is False
+
+def test_recheck_sell_outside_regular_hours_is_limit(ctx, monkeypatch):
+    """넥스트레이드 시간에는 국내 시장가가 안 되므로 AI 재점검 매도도 지정가로."""
+    from qtrader import live, scheduler
+    from qtrader.agents.llm import Reply
+    px = ctx.data.price(Market.KR, "000660")
+    ctx.broker.order(OrderRequest(Market.KR, "000660", Side.BUY, 5, px, "manual"))
+    monkeypatch.setattr(scheduler, "is_open", lambda m, now=None: False)
+    monkeypatch.setattr(live, "triggers", lambda c, m, w: [("000660", "장중 -5% 급락")])
+
+    class Sell:
+        def run(self, *a, **k):
+            d = {"action": "sell", "reason": "악재 확인", "watch": "-"}
+            return Reply(json.dumps(d), data=d, input_tokens=1, output_tokens=1)
+    out = live.run_rechecks(ctx, Market.KR, llm=Sell())
+    assert out and out[0]["action"] == "sell"
+    o = ctx.store.rows("select * from orders where side='sell'")[0]
+    assert o["status"] == "filled" and 0 < o["price"] < px
+    assert "000660" not in ctx.broker.account(Market.KR).positions

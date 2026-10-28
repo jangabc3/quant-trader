@@ -213,7 +213,10 @@ def run_rechecks(ctx, market: Market, llm=None) -> list[dict]:
         if d["action"] == "sell" and w["qty"] > 0:
             from .guard import release
             release(ctx, market, sym)
-            px = round(w["price"] * 0.997, 2) if market == Market.US else 0
+            from .engine import kr_tick
+            from .scheduler import is_open
+            # 미국은 지정가만, 국내는 정규장이면 시장가·넥스트레이드(시간외)면 지정가만 되므로 현재가보다 1% 낮게 호가 단위로
+            px = round(w["price"] * 0.997, 2) if market == Market.US else 0 if is_open(market) else kr_tick(w["price"] * 0.99)
             res = ctx.broker.order(OrderRequest(market, sym, Side.SELL, int(w["qty"]), px, "ai-exit", f"AI 재점검 매도: {d['reason']}"))
             status = ("filled" if res.filled_qty else "submitted") if res.ok else "rejected"
             ctx.store.add_order(trade_date=today, account=ctx.broker.name, market=market.value, symbol=sym, side="sell",
