@@ -436,7 +436,18 @@ def create_app(scheduler: Scheduler | None = None, llm=None, assistant_client=No
         if not (c.cfg.get("update") or {}).get("check", True) and not force:
             return {"current": __version__, "available": False}
         src = updater.source_info(config_mod.home())  # A: 내 PC 소스 폴더로 설치했으면 git 으로 확인
-        return updater.check_git(src, c.store, force) if src else updater.check(c.cfg, c.store, force)
+        out = updater.check_git(src, c.store, force) if src else updater.check(c.cfg, c.store, force)
+        recent = updater.just_updated(src, c.store) if src else None
+        return out | ({"recent": recent} if recent else {})
+
+    @app.post("/api/update/seen", dependencies=[Depends(need_token)])
+    def update_seen():
+        """'이번 업데이트로 바뀐 것'을 봤다고 표시 (다시 안 보이게)."""
+        from .. import updater
+        src = updater.source_info(config_mod.home())
+        if src and src.get("rev"):
+            ctx().store.set("update_seen", src["rev"])
+        return {"ok": True}
 
     @app.post("/api/update/apply", dependencies=[Depends(need_token)])
     def update_apply():
