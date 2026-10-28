@@ -137,22 +137,32 @@ def finish_pending(home: Path) -> bool:
 INSTALLER = "QTrader 설치.cmd"
 
 
-def source_info(home: Path) -> dict | None:
-    """설치할 때 적어 둔 소스 폴더와 커밋. 폴더가 git 저장소가 아니면 None."""
-    p = home / "source.json"
-    try:
-        d = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    src = Path(d.get("src") or "")
-    return d | {"src": str(src)} if (src / ".git").exists() else None
+def source_info(home: Path, app_dir: Path | None = None) -> dict | None:
+    """설치할 때 적어 둔 소스 폴더와 커밋. 데이터 폴더에 없으면 프로그램 폴더(QTrader.exe 옆)의 기록을 본다.
+    폴더가 git 저장소가 아니면 None."""
+    if app_dir is None and frozen():
+        app_dir = Path(sys.executable).resolve().parent
+    for p in [home / "source.json"] + ([app_dir / "source.json"] if app_dir else []):
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        src = Path(d.get("src") or "")
+        if (src / ".git").exists():
+            return d | {"src": str(src)}
+    return None
 
 
-def mark_installed(home: Path, src: Path, run=None) -> dict:
-    """설치 스크립트가 부른다: 어느 폴더의 어느 커밋으로 만들었는지 적어 둔다."""
+def mark_installed(home: Path, src: Path, run=None, app_dir: Path | None = None) -> dict:
+    """설치 스크립트가 부른다: 어느 폴더의 어느 커밋으로 만들었는지 적어 둔다.
+    데이터 폴더와 프로그램 폴더(QTrader.exe 옆) 두 곳에 남긴다 (한쪽이 없어져도 업데이트 버튼이 나오게)."""
     rev = _git(src, "rev-parse", "HEAD", run=run)
     d = {"src": str(src.resolve()), "rev": rev, "at": time.strftime("%Y-%m-%d %H:%M")}
-    (home / "source.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+    for folder in [home] + ([app_dir] if app_dir else []):
+        try:
+            (Path(folder) / "source.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
     return d
 
 
