@@ -243,6 +243,15 @@ def trades(t: Toss | None, symbol: str) -> dict:
                                      for x in t.trades(symbol, 30)]}
 
 
+def limit_base(limits: dict, last: float, rate: float | None) -> float | None:
+    """상·하한가 가운데 = 오늘 기준가 (국내 ±30%). 토스 등락률과 맞을 때만 쓴다 (호가 단위로 깎여 한 칸 안쪽 오차)."""
+    up, lo = num(limits.get("upperLimitPrice")), num(limits.get("lowerLimitPrice"))
+    if not (up and lo and last and rate is not None):
+        return None
+    mid = (up + lo) / 2
+    return mid if abs(last / mid - 1 - rate) < 0.003 else None
+
+
 def summary(t: Toss | None, symbol: str) -> dict:
     """종목 머리말: 이름, 현재가, 전일 대비, 52주 범위, 시가총액, 상·하한가, 유의사항."""
     sym = symbol.upper()
@@ -262,14 +271,15 @@ def summary(t: Toss | None, symbol: str) -> dict:
             limits = t.price_limits(sym)
         except Exception:
             limits = {}
-        base = None
+        base, rate = None, None
         try:
             q = t.quotes([sym]).get(toss_symbol(sym)) or {}
-            last, base = q.get("price") or daily[-1]["close"], q.get("base")
+            last, base, rate = q.get("price") or daily[-1]["close"], q.get("base"), q.get("change_rate")
         except Exception:
             last = daily[-1]["close"]
+        base = limit_base(limits, last, rate) or base
     else:
-        base = None
+        base, rate = None, None
         demo = {s: n for s, n, _ in DEMO_KR + DEMO_US}
         info = {"symbol": sym, "name": demo.get(sym, sym), "market": "KOSPI" if sym[:1].isdigit() else "NASDAQ",
                 "currency": "KRW" if sym[:1].isdigit() else "USD"}
@@ -281,7 +291,8 @@ def summary(t: Toss | None, symbol: str) -> dict:
     return {
         "symbol": sym, "name": info.get("name") or sym, "market": info.get("market"), "currency": info.get("currency")
         or ("KRW" if sym[:1].isdigit() else "USD"), "type": info.get("securityType"), "demo": t is None,
-        "price": last, "prev_close": prev, "change": last - prev, "change_rate": (last / prev - 1) if prev else 0,
+        "price": last, "prev_close": prev, "change": last - prev,
+        "change_rate": rate if rate is not None else ((last / prev - 1) if prev else 0),
         "high52": max(closes) if closes else None, "low52": min(closes) if closes else None,
         "shares": shares, "market_cap": last * shares if shares else None,
         "upper_limit": num(limits.get("upperLimitPrice")) or None, "lower_limit": num(limits.get("lowerLimitPrice")) or None,

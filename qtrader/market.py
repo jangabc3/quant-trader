@@ -12,7 +12,7 @@ from datetime import datetime
 import numpy as np
 
 from .models import Market
-from .toss import INDICATORS, KST, Toss, num
+from .toss import INDICATORS, KST, Toss, num, toss_symbol
 
 RANK_TYPES = {
     "amount": "MARKET_TRADING_AMOUNT", "volume": "MARKET_TRADING_VOLUME",
@@ -91,6 +91,7 @@ def names(t: Toss, symbols: list[str]) -> dict[str, str]:
 def _change(t: Toss, symbol: str, indicator: bool) -> dict:
     df = t.candles(symbol, "1d", 2, indicator=indicator)
     last, prev = float(df["close"].iloc[-1]), float(df["close"].iloc[-2]) if len(df) > 1 else float(df["close"].iloc[-1])
+    rate = None
     if not indicator:  # 종목은 토스가 준 현재가·기준가로 (순위표·종목 화면과 같은 숫자)
         try:
             from .toss import toss_symbol
@@ -99,11 +100,12 @@ def _change(t: Toss, symbol: str, indicator: bool) -> dict:
                 last = q["price"]
                 if q.get("base"):
                     prev = q["base"]
+                rate = q.get("change_rate")
         except Exception:
             pass
     row = df.iloc[-1]
     return {"symbol": symbol, "name": NAMES.get(symbol, symbol), "price": last,
-            "change": last - prev, "change_rate": (last / prev - 1) if prev else 0.0,
+            "change": last - prev, "change_rate": rate if rate is not None else ((last / prev - 1) if prev else 0.0),
             "prev": prev, "high": float(row.get("high", last)), "low": float(row.get("low", last)),
             "volume": float(row.get("volume", 0) or 0)}
 
@@ -180,6 +182,10 @@ def overview(t: Toss | None) -> dict:
     return cached("overview", 20, build)
 
 
+def _rate(v) -> float | None:
+    return None if v in (None, "") else num(v)
+
+
 def rankings(t: Toss | None, kind: str = "amount", market: str = "KR", duration: str = "realtime",
              count: int = 30, exclude_caution: bool = False) -> dict:
     if kind not in RANK_TYPES:
@@ -193,11 +199,23 @@ def rankings(t: Toss | None, kind: str = "amount", market: str = "KR", duration:
         r = t.rankings(RANK_TYPES[kind], market, duration, count, exclude_caution)
         items = r.get("rankings", [])
         nm = names(t, [x["symbol"] for x in items])
-        return {"demo": False, "rankedAt": r.get("rankedAt"), "kind": kind, "market": market, "duration": duration,
-                "items": [{"rank": x["rank"], "symbol": x["symbol"], "name": nm.get(x["symbol"], x["symbol"]),
-                           "price": num(x["price"].get("lastPrice")), "change_rate": num(x["price"].get("changeRate")),
-                           "volume": num(x.get("tradingVolume")), "amount": num(x.get("tradingAmount")),
-                           "currency": x.get("currency")} for x in items]}
+        out = [{"rank": x["rank"], "symbol": x["symbol"], "name": nm.get(x["symbol"], x["symbol"]),
+                "price": num((x.get("price") or {}).get("lastPrice")), "change_rate": _rate((x.get("price") or {}).get("changeRate")),
+                "volume": num(x.get("tradingVolume")), "amount": num(x.get("tradingAmount")),
+                "currency": x.get("currency")} for x in items]
+        gaps = [o["symbol"] for o in out if o["change_rate"] is None or not o["price"]]
+        if gaps:  # 순위 응답에 등락률·현재가가 빠진 줄은 현재가 API 로 채운다 (예전엔 0.00% 로 보였다)
+            try:
+                q = t.quotes(gaps)
+                for o in out:
+                    got = q.get(toss_symbol(o["symbol"])) or q.get(o["symbol"]) or {}
+                    if not o["price"] and got.get("price"):
+                        o["price"] = got["price"]
+                    if o["change_rate"] is None:
+                        o["change_rate"] = got.get("change_rate")
+            except Exception:
+                pass
+        return {"demo": False, "rankedAt": r.get("rankedAt"), "kind": kind, "market": market, "duration": duration, "items": out}
 
     return cached(f"rank:{kind}:{market}:{duration}:{count}:{int(exclude_caution)}", 3, build)
 
@@ -439,10 +457,29 @@ def industry_detail(t: Toss | None, sector_id: str, market: str = "KR") -> dict:
     return cached(f"industry:{sector_id}:{market}", 300, build)
 
 
+FLOW_KEYS = {"individual": ("individual", "individuals", "personal", "retail"),
+             "foreigner": ("foreigner", "foreigners", "foreign"), "institution": ("institution", "institutions")}
+
+
+def _net_volume(rec: dict, kind: str) -> float | None:
+    """투자자별 순매수 수량. 순매수 칸이 없으면 매수-매도로, 그것도 없으면 None (0 으로 두면 '0원' 1위가 생긴다)."""
+    for k in FLOW_KEYS[kind]:
+        d = rec.get(k)
+        if not isinstance(d, dict):
+            continue
+        if d.get("netBuyVolume") not in (None, ""):
+            return num(d["netBuyVolume"])
+        if d.get("buyVolume") not in (None, "") and d.get("sellVolume") not in (None, ""):
+            return num(d["buyVolume"]) - num(d["sellVolume"])
+    return None
+
+
 # 외국인·기관·개인 순매수 상위 (토스는 종목별 투자자 동향만 줘서, 거래대금 상위 종목을 모아 금액으로 줄 세운다)
 def investor_flows(t: Toss | None, side: str = "buy") -> dict:
     sgn = 1 if side == "buy" else -1
-    pick = lambda rows: {k: sorted(rows, key=lambda r: -sgn * r[k])[:8] for k in ("foreigner", "institution", "individual")}
+    # 사는 쪽엔 순매수(+)만, 파는 쪽엔 순매도(-)만. 자료가 없는(None) 종목은 빼서 '0원' 줄이 생기지 않게
+    pick = lambda rows: {k: sorted([r for r in rows if r.get(k) is not None and sgn * r[k] > 0], key=lambda r: -sgn * r[k])[:8]
+                         for k in ("foreigner", "institution", "individual")}
     if t is None:
         rng = _rng("flows")
         rows = [{"symbol": s, "name": n, "price": p, "change_rate": float(rng.normal(0.01, 0.03)),
@@ -461,7 +498,7 @@ def investor_flows(t: Toss | None, side: str = "buy") -> dict:
                 rec = None
             if not rec:
                 return None
-            net = lambda k: num((rec.get(k) or {}).get("netBuyVolume")) * (x["price"] or 0)
+            net = lambda k: (lambda v: None if v is None else v * (x["price"] or 0))(_net_volume(rec, k))
             return {"symbol": x["symbol"], "name": x["name"], "price": x["price"], "change_rate": x["change_rate"],
                     "foreigner": net("foreigner"), "institution": net("institution"), "individual": net("individual"),
                     "updated": rec.get("updatedAt") or rec.get("date")}
