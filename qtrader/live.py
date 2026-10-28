@@ -244,9 +244,10 @@ def intraday_board(ctx, market: Market, name_of=lambda s: s) -> dict:
             run = meeting.get_run(e.get("run_id", ""))
             row["stage"] = (run or {}).get("stage", "")
         items.append(row)
-    met = len({r["symbol"] for r in ctx.store.ai_runs(200) if r["trade_date"] == today})
-    return {"on": bool(ai.get("intraday", True)), "every": int(ai.get("intraday_every_min", 15)), "met": met,
-            "cap": int(ai["max_symbols_per_day"]), "items": items[::-1]}
+    from .config import meetings_cap, met_today
+    cap = meetings_cap(ctx.cfg, market)
+    return {"on": bool(ai.get("intraday", True)) and cap > 0, "every": int(ai.get("intraday_every_min", 15)),
+            "met": len(met_today(ctx.store, market, today)), "cap": cap, "items": items[::-1]}
 
 
 def snapshot(ctx, market: Market, name_of=lambda s: s) -> dict:
