@@ -1,5 +1,5 @@
 "use strict";
-// 종목 화면의 주문창: 구매·판매, 지정가·시장가, 호가 단위 ±, 수량 비율 버튼, 확인 시트. 실전 계좌면 PIN 을 묻는다.
+// 종목 화면의 주문창: 구매·판매, 지정가·시장가, 호가 단위 ±, 수량 비율 버튼, 확인 시트.
 
 const tk = { side: "buy", type: "limit", how: "now", info: null, price: 0, qty: 0, sym: null };
 
@@ -174,7 +174,7 @@ async function confirmOrder() {
       <div class="tot"><dt>총 ${buy ? "주문" : "판매"} 금액</dt><dd>${tkMoney(gross)}</dd></div>
       <div><dt>계좌</dt><dd>${i.live ? "<b class='up'>실전</b> " : "가상 "}${esc(MODE_NAME[i.mode] || i.mode)}</dd></div>
       ${buy ? `<div><dt>손절 · 익절</dt><dd>${tk.stop ? `<span class="down">${tkMoney(tk.stop)}</span> · <span class="up">${tkMoney(tk.take)}</span>` : "정하지 않음 (자동으로 팔지 않아요)"}</dd></div>` : ""}</dl>
-    ${i.live ? `<p class="note">실제 돈이 움직입니다. 확인을 누르면 PIN 을 물을 수 있어요.</p>` : ""}
+    ${i.live ? `<p class="note">실제 돈이 움직입니다. 가격과 수량을 한 번 더 확인하세요.</p>` : ""}
     <div class="tk-c-btns"><button id="tk-cancel">취소</button><button class="tk-go ${buy ? "buy" : "sell"}" id="tk-ok">${buy ? "구매" : "판매"} 확인</button></div></div>`);
   $("#tk-cancel").onclick = () => $("#modal").classList.add("hidden");
   $("#tk-ok").onclick = async (e) => {
