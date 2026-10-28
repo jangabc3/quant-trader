@@ -184,7 +184,7 @@ async function loadPicks(refresh = false) {
       : p.run_id ? `<button class="pk-go ghost" data-run="${esc(p.run_id)}" title="회의 내용 보기">결과</button>` : "";
     return `<div class="pk-row" data-open="${esc(p.symbol)}" title="${esc(tip)}">
       <span class="pk-n">${i + 1}</span>${logo(p.symbol, p.name, 26)}
-      <span class="pk-nm"><b>${esc(p.name)}</b><em>${esc(p.note && p.state !== "wait" ? p.note : origin(p))}</em></span>
+      <span class="pk-nm"><b>${esc(p.name)}</b><em title="${esc(p.note || "")}">${esc(["nobuy", "error", "approval"].includes(p.state) && p.note ? p.note : origin(p))}</em></span>
       <span class="pk-sc"><i><b style="width:${Math.max(4, sc)}%"></b></i><strong>${sc}</strong></span>
       <span class="pk-st st-${esc(p.state)}"><i data-lucide="${ic}"></i>${label}</span>${act}</div>`;
   }).join("")}</div>`
