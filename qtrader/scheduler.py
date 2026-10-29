@@ -147,8 +147,9 @@ class Scheduler:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.last_error = ""
-        self._last_exit = 0.0
-        self._last_alert = 0.0
+        # '마지막 점검 시각'은 아주 옛날로 시작한다 (0 이면 PC 를 켠 지 2분 안에는 monotonic 이 120 보다 작아 첫 점검을 건너뛰었다)
+        self._last_exit = float("-inf")
+        self._last_alert = float("-inf")
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -195,7 +196,7 @@ class Scheduler:
             except Exception as e:
                 ctx.store.log("warn", "alert", f"가격 알림 확인 실패: {e}")
         # 자산 기록은 자동매매가 꺼져 있어도 장 마감 뒤 하루 한 번 남긴다 (자산 추이 그래프용)
-        if ctx.store.get("auto_trading", "0") != "1" and time.monotonic() - getattr(self, "_last_snap", 0) > 600:
+        if ctx.store.get("auto_trading", "0") != "1" and time.monotonic() - getattr(self, "_last_snap", float("-inf")) > 600:
             self._last_snap = time.monotonic()
             from .engine import snapshot_equity
             for m in (Market.KR, Market.US):
@@ -329,7 +330,7 @@ class Scheduler:
             return
         loc = lambda t: t.astimezone().strftime("%m-%d %H:%M")
         if planned and planned.get("why") in ("update", "quit"):  # 일부러 끈 것: 경고 대신 (업데이트면) 안내만
-            self._last_exit = 0.0  # 그래도 곧바로 체결 확인·손절 점검
+            self._last_exit = float("-inf")  # 그래도 곧바로 체결 확인·손절 점검
             if planned["why"] == "update":
                 extras.notify(ctx.store, cfg, f"🔄 업데이트를 마치고 다시 켜졌어요 ({int(gap // 60)}분 걸렸어요). "
                                               f"지금 바로 체결과 손절·익절을 다시 확인해요.", "live")
@@ -338,7 +339,7 @@ class Scheduler:
             return
         extras.notify(ctx.store, cfg, f"⚠️ 프로그램이 {int(gap // 60)}분 동안 꺼져 있었어요 ({loc(prev)} ~ {loc(now)}). "
                                       f"그동안 손절·익절 감시가 멈췄습니다. 지금 바로 다시 확인합니다.", "live")
-        self._last_exit = 0.0  # 곧바로 체결 확인·손절 점검
+        self._last_exit = float("-inf")  # 곧바로 체결 확인·손절 점검
 
     def _new_candidates(self, ctx, m: Market) -> None:
         """N분마다(ai.intraday_every_min, 기본 15) 숫자 규칙을 다시 돌려, 새로 통과한 종목을 오늘 회의 후보에 올린다.

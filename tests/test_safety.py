@@ -207,7 +207,7 @@ def test_heartbeat_gap_notice(ctx, monkeypatch):
     s = scheduler.Scheduler()
     s._last_exit = 999.0
     s._heartbeat(ctx, ctx.cfg, True)
-    assert s._last_exit == 0.0
+    assert s._last_exit == float("-inf")
     assert any("꺼져 있었어요" in r["message"] for r in ctx.store.rows("select * from events where level='notice'"))
 
 
@@ -223,7 +223,7 @@ def test_planned_stop_does_not_warn(ctx, monkeypatch):
     s = scheduler.Scheduler()
     s._last_exit = 999.0
     s._heartbeat(ctx, ctx.cfg, True)
-    assert warns() == [] and s._last_exit == 0.0
+    assert warns() == [] and s._last_exit == float("-inf")
     assert any("업데이트를 마치고" in r["message"] for r in ctx.store.rows("select * from events"))
     assert ctx.store.get("planned_stop") is None
     ctx.store.set("heartbeat", old.isoformat(timespec="seconds"))  # 다음에 진짜로 꺼지면 경고
@@ -264,3 +264,16 @@ def test_us_buy_skipped_when_dollars_short(ctx, monkeypatch):
     r = engine.run_market(ctx, Market.US, force=True)
     assert r["orders"][0]["status"] == "skipped_fx" and not ctx.broker.sent
     assert any("환전 우대" in e["message"] for e in ctx.store.rows("select * from events where level='notice'"))
+
+
+def test_first_tick_checks_right_after_boot(ctx, monkeypatch):
+    """PC 를 켠 지 2분 안(monotonic 이 작을 때)에도 첫 점검에서 바로 체결·손절을 본다."""
+    from qtrader import scheduler
+    monkeypatch.setattr(scheduler.time, "monotonic", lambda: 30.0)
+    ctx.store.set("auto_trading", "1")
+    monkeypatch.setattr(scheduler, "build_context", lambda cfg=None: ctx)
+    seen = []
+    monkeypatch.setattr(__import__("qtrader.engine", fromlist=["x"]), "sync_orders", lambda c: seen.append(1) or [])
+    s = scheduler.Scheduler()
+    s.tick()
+    assert seen == [1]
