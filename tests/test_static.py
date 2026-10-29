@@ -86,7 +86,7 @@ def test_html_ids_unique():
 _KNOWN = set("""if for while switch catch function return typeof fetch setTimeout setInterval clearInterval clearTimeout Number String
 Boolean Array Date parseInt parseFloat isNaN isFinite alert confirm prompt encodeURIComponent decodeURIComponent requestAnimationFrame
 cancelAnimationFrame structuredClone Promise Set Map Error anime getComputedStyle new await async super import RegExp Symbol Intl URL
-URLSearchParams EventSource Notification CustomEvent Event Audio Image FormData Blob AbortController queueMicrotask btoa atob matchMedia
+URLSearchParams EventSource Notification CustomEvent Event Audio Image FormData Blob AbortController queueMicrotask btoa atob matchMedia MutationObserver
 PointerEvent TextDecoder TextEncoder rgba rgb hsl var url translate translateX translateY scale rotate minmax repeat bezier not calc Claude""".split())
 
 

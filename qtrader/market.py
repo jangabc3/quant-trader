@@ -186,6 +186,40 @@ def _rate(v) -> float | None:
     return None if v in (None, "") else num(v)
 
 
+def live_snapshot(t: Toss | None, symbols: list[str]) -> dict:
+    """실시간 스트림(2초) 한 번 분량: 종목 현재가·토스 등락률 + 지수(IDX:KOSPI) + 환율(FX).
+    토스 키가 없으면(체험용) 아무것도 보내지 않는다 (화면마다 합성 시세가 달라 섞이면 헷갈림)."""
+    out: dict = {"prices": {}, "rates": {}, "idx": {}, "fx": None}
+    if t is None:
+        return out
+    stocks = [s for s in symbols if not s.startswith(("IDX:", "FX"))]
+    idx = [s[4:] for s in symbols if s.startswith("IDX:")]
+    try:
+        got = t.quotes(stocks) if stocks else {}
+        for s in stocks:
+            q = got.get(s) or got.get(s.split(":")[-1]) or {}
+            if q.get("price"):
+                out["prices"][s] = q["price"]
+                if q.get("change_rate") is not None:
+                    out["rates"][s] = round(q["change_rate"], 5)
+    except Exception:
+        pass
+    if idx:
+        try:
+            for x in t.indicator_prices(idx):
+                if num(x.get("lastPrice")):
+                    out["idx"][x["symbol"]] = num(x["lastPrice"])
+        except Exception:
+            pass
+    if "FX" in symbols:
+        try:
+            f = cached("fx_live", 5, t.exchange_rate) or {}
+            out["fx"] = {"rate": num(f.get("rate")) or None, "change": num(f.get("basisPoint"))}
+        except Exception:
+            pass
+    return out
+
+
 def rankings(t: Toss | None, kind: str = "amount", market: str = "KR", duration: str = "realtime",
              count: int = 30, exclude_caution: bool = False) -> dict:
     if kind not in RANK_TYPES:
