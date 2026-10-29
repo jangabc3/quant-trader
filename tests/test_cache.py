@@ -52,3 +52,24 @@ def test_error_is_not_cached_and_does_not_block():
     except RuntimeError:
         pass
     assert market.cached(k, 5, lambda: "ok") == "ok"
+
+
+def test_live_snapshot_sends_index_rates_and_fx(monkeypatch):
+    """실시간 스트림 한 번 분량: 종목 현재가·토스 등락률, 지수(IDX:KOSPI), 환율. 키가 없으면 아무것도 보내지 않는다."""
+    monkeypatch.setattr(market, "_cache", {})
+
+    class T:
+        def quotes(self, syms):
+            assert syms == ["005930", "SPY"]
+            return {"005930": {"price": 241500.0, "change_rate": 0.0878}, "SPY": {"price": 600.5, "change_rate": 0.0008}}
+
+        def indicator_prices(self, syms):
+            assert syms == ["KOSPI", "KOSDAQ"]
+            return [{"symbol": "KOSPI", "lastPrice": "6001.2"}, {"symbol": "KOSDAQ", "lastPrice": ""}]
+
+        def exchange_rate(self):
+            return {"rate": "1338.9", "basisPoint": "1.0"}
+    d = market.live_snapshot(T(), ["005930", "SPY", "IDX:KOSPI", "IDX:KOSDAQ", "FX"])
+    assert d["prices"] == {"005930": 241500.0, "SPY": 600.5} and d["rates"]["005930"] == 0.0878
+    assert d["idx"] == {"KOSPI": 6001.2} and d["fx"] == {"rate": 1338.9, "change": 1.0}
+    assert market.live_snapshot(None, ["005930"]) == {"prices": {}, "rates": {}, "idx": {}, "fx": None}

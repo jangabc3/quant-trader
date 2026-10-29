@@ -37,8 +37,9 @@ function flowCell(label, v) {
 
 function idxCard(id, name, tag, price, change, rate, flows, sym, live) {
   const up = change >= 0;
-  // live: 국내 지수는 2초 스트림으로 값이 바로 바뀐다 (data-prev 로 등락 다시 계산)
-  return `<div class="idx-card" ${sym ? `data-open="${esc(sym)}"` : ""} ${live ? `data-key="i:${esc(id)}" data-prev="${price - change}" data-val="${price}"` : ""}>
+  // live: 2초 스트림으로 값이 바로 바뀐다 (data-prev 로 등락 다시 계산). "i" = 국내 지수, "q" = 미국 지수 ETF, 종목 시세로
+  const k = live === true ? "i" : live;
+  return `<div class="idx-card" ${sym ? `data-open="${esc(sym)}"` : ""} ${k && price ? `data-key="${k}:${esc(id)}" data-prev="${price - change}" data-val="${price}"` : ""}>
     <div class="idx-top"><span class="idx-name">${esc(name)} <small class="note">${esc(tag)}</small></span>
       <span class="idx-tag ${up ? "up-bg" : "down-bg"}">${up ? "▲ 상승" : "▼ 하락"}</span></div>
     <div class="idx-val">${Number(price).toLocaleString("ko-KR", { maximumFractionDigits: 2 })}</div>
@@ -73,7 +74,7 @@ async function renderIndices() {
     box.innerHTML = US_IDX.map(([s, n, t]) => {
       const u = us[s] || { price: 0, change: 0, change_rate: 0 };
       return idxCard(s, n, t, u.price, u.change, u.change_rate,
-        stat("전일 종가", usd(u.prev)) + stat("고가", `<span class="up">${usd(u.high)}</span>`) + stat("저가", `<span class="down">${usd(u.low)}</span>`), s);
+        stat("전일 종가", usd(u.prev)) + stat("고가", `<span class="up">${usd(u.high)}</span>`) + stat("저가", `<span class="down">${usd(u.low)}</span>`), s, "q");
     }).join("");
     for (const [s] of US_IDX) {
       let pts = us[s]?.spark || [];
@@ -114,7 +115,7 @@ function renderOverview(ov) {
   drawFxCard();
   $("#bond-card").innerHTML = `<div class="k">국고채 금리 <small class="note">만기별</small></div>` + bondCurve(ov.bonds || []);
   $("#us-card").innerHTML = `<div class="k">${mkt.group === "KR" ? "미국 지수 ETF" : "국내 지수"}</div>` + (mkt.group === "KR"
-    ? (ov.us || []).map((u) => `<div class="row clickable" data-open="${esc(u.symbol)}"><span>${esc(u.name)}</span><b class="${cls(u.change_rate)}">${pct(u.change_rate)}</b></div>`).join("")
+    ? (ov.us || []).map((u) => `<div class="row clickable" data-open="${esc(u.symbol)}"><span>${esc(u.name)}</span><b class="${cls(u.change_rate)}" data-key="r:${esc(u.symbol)}" data-val="${u.change_rate}">${pct(u.change_rate)}</b></div>`).join("")
     : (ov.indices || []).map((i) => `<div class="row"><span>${esc(i.name)}</span><b class="${cls(i.change_rate)}">${pct(i.change_rate)}</b></div>`).join(""));
 }
 
