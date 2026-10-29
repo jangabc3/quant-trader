@@ -177,7 +177,9 @@ def _git(src, *args, run=None, timeout: float = 60) -> str:
     """git 을 창 없이, 비밀번호를 묻지 않게 (묻는 창이 뜨면 업데이트 확인이 멈춘다) 부른다."""
     run = run or subprocess.run
     env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
-    r = run(["git", "-C", str(src), *args], capture_output=True, text=True, timeout=timeout, env=env,
+    # 한국어 커밋 제목이 윈도우(cp949)에서 깨져 패치노트가 비던 문제: git 출력을 UTF-8 로 받는다
+    r = run(["git", "-c", "i18n.logOutputEncoding=utf-8", "-c", "core.quotepath=false", "-C", str(src), *args],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, env=env,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     if r.returncode != 0:
         raise RuntimeError((r.stderr or r.stdout or "git 실패").strip().splitlines()[-1][:200])
