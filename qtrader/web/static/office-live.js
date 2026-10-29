@@ -18,12 +18,13 @@ function liveAgents(d) {
   const t = lv.tick;
   const pick = (arr) => arr.length ? arr[t % arr.length] : null;
   const set = (id, status, bubble, report) => { if (A[id]) Object.assign(A[id], { status, bubble, report }); };
-  // 차트봇: 감시 중 종목 (가격을 2분마다 본다)
-  const w = pick(d.watch);
-  set("chart", d.watch.length ? "working" : "idle",
-    w ? (w.stop ? `${nm(w)} 손절까지 ${pct(w.to_stop)} · 익절까지 ${pct(w.to_take)}` : `${nm(w)} ${pct(w.pnl)} · 손절 계획 없음`) : "감시할 종목이 없어요",
-    "### 감시 중인 종목\n\n" + (d.watch.map((x) => `- **${nm(x)}** ${x.qty}주 · 손익 ${pct(x.pnl)}` + (x.stop ? ` · 손절 ${x.stop.toLocaleString()} / 익절 ${x.take.toLocaleString()}` : " · 손절 계획 없음 (직접 산 종목)")).join("\n") || "- 없음")
-    + "\n\n장중 2분마다 가격을 확인하고, 손절가·익절가에 닿으면 바로 팝니다.");
+  // 차트봇: 신호가 뜬 종목의 차트 확인 (손절·익절 감시는 지킴봇이 맡는다)
+  const sig = (d.intraday?.items || []).filter((x) => x.signal);
+  const sc = pick(sig);
+  set("chart", sc && d.schedule.open ? "working" : sc ? "done" : "idle",
+    sc ? `${nm(sc)} ${sc.signal} 차트 확인` : "신호가 뜨면 차트를 봐요",
+    "### 오늘 사는 신호가 뜬 종목\n\n" + (sig.map((x) => `- ${x.at || ""} **${nm(x)}** ${x.signal}`).join("\n") || "- 아직 없음")
+    + "\n\n눌림목 반등·거래량 돌파 신호와 손절 폭(ATR)을 차트로 확인해요.");
   // 밸류·검증관: 다음 후보
   const ok = d.candidates.filter((c) => !c.missing.length), no = d.candidates.filter((c) => c.missing.length);
   const c1 = pick(ok), c2 = pick(no);
