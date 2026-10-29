@@ -4,7 +4,7 @@
 - 자동매매 서버(serve)는 따로 자식 프로세스로 돌리고, 오류로 꺼지면 다시 켠다 (cli.supervise 와 같은 규칙).
 - 이미 다른 QTrader 가 그 포트에서 돌고 있으면 서버를 또 켜지 않고 창만 연다 (자동매매가 두 번 돌지 않게).
 - 창의 X 를 누르면 끄지 않고 작업 표시줄 오른쪽 '숨겨진 아이콘'(^) 으로 숨는다. 자동매매는 계속 돈다.
-  그 아이콘을 두 번 누르면 창이 다시 뜨고, 오른쪽 클릭 → '끄기' 로만 완전히 끈다 (확인을 받는다).
+  그 아이콘을 두 번 누르면 창이 다시 뜨고, 오른쪽 클릭 → '끄기' 로만 완전히 끈다 (윈도우 메시지 상자로 확인, 6초 안에 안 꺼지면 강제로).
 - 켜져 있는 동안 PC 가 알아서 절전 모드로 들어가지 않게 한다 (화면은 꺼져도 된다).
 - 아이콘 기능(pystray)을 못 쓰면 예전처럼 X 로 끄되 확인을 받는다.
 - pywebview 를 쓸 수 없는 PC 면 예전처럼 브라우저로 연다.
@@ -53,11 +53,29 @@ def make_tray(on_open, on_quit):
     return pystray.Icon("QTrader", img, "QTrader · 자동매매 켜짐", menu)
 
 
+def confirm_quit(win) -> bool:
+    """끌지 묻는다. 윈도우 기본 메시지 상자(맨 앞에 뜸)를 쓴다.
+    창이 숨겨진 채 아이콘 메뉴에서 누르면 pywebview 확인 창이 안 뜨거나 바로 '아니요'가 돼서 안 꺼지던 문제가 있었다."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            MB_YESNO, MB_ICONQUESTION, MB_TOPMOST, MB_SETFOREGROUND, IDYES = 0x4, 0x20, 0x40000, 0x10000, 6
+            return ctypes.windll.user32.MessageBoxW(0, QUIT_ASK, "QTrader 끄기", MB_YESNO | MB_ICONQUESTION | MB_TOPMOST | MB_SETFOREGROUND) == IDYES
+        except Exception:
+            pass
+    try:
+        return bool(win.create_confirmation_dialog("QTrader 끄기", QUIT_ASK)) if win else True
+    except Exception:
+        return True
+
+
 class Tray:
     """X 를 누르면 창을 숨기고 아이콘으로. '끄기' 를 눌렀을 때만 창을 닫는다."""
 
-    def __init__(self, maker=make_tray):
+    def __init__(self, maker=make_tray, confirm=confirm_quit):
         self.win, self.quitting, self.told = None, False, False
+        self.confirm = confirm
+        self.force_exit = None  # run() 이 정한다: 창이 끝내 안 닫히면 몇 초 뒤 강제로 정리하고 끝낸다
         self.icon = maker(self.open, self.quit)
 
     @property
@@ -90,23 +108,25 @@ class Tray:
                 pass
 
     def quit(self, ask=True) -> None:
-        if ask and self.win:
-            self.open()
-            try:
-                if not self.win.create_confirmation_dialog("QTrader 끄기", QUIT_ASK):
-                    return
-            except Exception:
-                pass
+        if ask and not self.confirm(self.win):
+            return
         self.close()
 
     def close(self) -> None:
+        if self.quitting:
+            return
         self.quitting = True
+        if self.force_exit:
+            threading.Timer(6.0, self.force_exit).start()  # 6초 안에 정상으로 안 끝나면 강제로
         try:
             self.icon.stop()
         except Exception:
             pass
         if self.win:
-            self.win.destroy()
+            try:
+                self.win.destroy()
+            except Exception:
+                pass
 
 
 def server_up(port: int, timeout: float = 1.0) -> bool:
@@ -171,9 +191,26 @@ def run(port: int = 8765, webview=None, supervisor_cls=Supervisor, up=server_up,
     """창을 띄우고, 창이 닫힐 때까지 기다린다. 돌려주는 값은 시험용: 'window' / 'browser' / 'error'."""
     from . import config as config_mod
     url = f"http://127.0.0.1:{port}"
+    real = webview is None  # 시험에서는 강제 종료를 걸지 않는다
     owner = not up(port)  # 이미 돌고 있으면 그 서버를 쓴다
     win = {}
     sup, tray = None, None
+    done = threading.Event()
+
+    def cleanup():
+        """사용자가 끈 것으로 적고 서버를 멈춘다 (한 번만). 업데이트로 닫혔으면 이미 'update' 로 적혀 있어 덮어쓰지 않는다."""
+        if done.is_set() or not sup:
+            return
+        done.set()
+        try:
+            from .scheduler import mark_planned_stop
+            from .storage import Store
+            st = Store(config_mod.home() / "qtrader.db")
+            if '"update"' not in (st.get("planned_stop") or ""):
+                mark_planned_stop(st, "quit")
+        except Exception:
+            pass
+        sup.stop()
     if owner:
         keep_awake(True)
         tray = tray_cls()
@@ -199,6 +236,13 @@ def run(port: int = 8765, webview=None, supervisor_cls=Supervisor, up=server_up,
                                   confirm_close=owner and tray is None, background_color="#0b0f14", text_select=True)
         win["w"] = w
         if tray:
+            if real:
+                import os
+
+                def force():  # 창이 안 닫혀도 서버를 끄고 프로그램을 끝낸다
+                    cleanup()
+                    os._exit(0)
+                tray.force_exit = force
             tray.start(w)
         store = config_mod.home() / "webview"  # 화면 설정(원/달러 보기 등)이 다음에 켤 때도 남게
         webview.start(localization={"global.quitConfirmation": QUIT_ASK}, private_mode=False, storage_path=str(store))
@@ -211,14 +255,5 @@ def run(port: int = 8765, webview=None, supervisor_cls=Supervisor, up=server_up,
         return "error"
     if tray:
         tray.close()
-    if sup:
-        try:  # 사용자가 끈 것 (업데이트로 닫혔으면 이미 'update' 로 적혀 있어 덮어쓰지 않는다)
-            from .scheduler import mark_planned_stop
-            from .storage import Store
-            st = Store(config_mod.home() / "qtrader.db")
-            if '"update"' not in (st.get("planned_stop") or ""):
-                mark_planned_stop(st, "quit")
-        except Exception:
-            pass
-        sup.stop()
+    cleanup()
     return "window"
