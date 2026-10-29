@@ -181,3 +181,23 @@ def test_schedule_times():
     ny = TZ[Market.US]
     after = pd.Timestamp("2026-11-02 15:46", tz=ny).to_pydatetime()
     assert due(Market.US, "15:45", after)
+
+
+def test_add_column_survives_another_opener_adding_it_first(tmp_path):
+    """화면·스케줄러가 예전 DB 를 동시에 열어 한쪽이 먼저 열을 추가해도 다른 쪽이 죽지 않는다."""
+    import sqlite3
+
+    import pytest
+
+    from qtrader.storage import Store
+    a = Store(tmp_path / "q.db")
+    real = a.db
+
+    class Racy:  # 열 목록을 비워 '아직 없다'고 본 뒤 추가하는 쪽을 흉내
+        def execute(self, sql, *args):
+            return iter(()) if sql.startswith("pragma") else real.execute(sql, *args)
+    a.db = Racy()
+    a._add_column("plans", "style", "text")  # 이미 있다는 오류는 넘긴다
+    with pytest.raises(sqlite3.OperationalError):
+        a._add_column("nosuch", "x", "text")  # 다른 오류는 그대로
+    a.db = real

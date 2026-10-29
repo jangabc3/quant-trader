@@ -151,14 +151,20 @@ class Store:
             pass
         self.db.executescript(SCHEMA)
         # 예전 DB 에 없는 열 추가 (보유 기한)
-        cols = {r[1] for r in self.db.execute("pragma table_info(plans)")}
-        if "horizon" not in cols:
-            self.db.execute("alter table plans add column horizon integer")
         # 팔기 규칙 (style='trail'): 처음 위험 폭(risk = 진입가-손절가), 산 뒤 최고가(high), 절반 익절 했는지(half)
-        for col, typ in (("style", "text"), ("risk", "real"), ("high", "real"), ("half", "integer")):
-            if col not in cols:
-                self.db.execute(f"alter table plans add column {col} {typ}")
+        for col, typ in (("horizon", "integer"), ("style", "text"), ("risk", "real"), ("high", "real"), ("half", "integer")):
+            self._add_column("plans", col, typ)
         self.db.commit()
+
+    def _add_column(self, table: str, col: str, typ: str) -> None:
+        """없으면 열 추가. 화면·스케줄러가 예전 DB 를 동시에 열면 둘 다 '없다'고 보고 추가할 수 있어 이미 있다는 오류는 넘긴다."""
+        if col in {r[1] for r in self.db.execute(f"pragma table_info({table})")}:
+            return
+        try:
+            self.db.execute(f"alter table {table} add column {col} {typ}")
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e):
+                raise
 
     def exec(self, sql: str, args: tuple = ()) -> sqlite3.Cursor:
         with self._lock:
