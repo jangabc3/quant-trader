@@ -151,7 +151,7 @@ def test_x_hides_to_tray_and_keeps_running():
     """X 를 누르면 닫지 않고 숨긴다 (자동매매 계속). 안내는 한 번만. '끄기' 를 확인해야만 닫힌다."""
     import time
     icon = FakeIcon()
-    tray = desktop.Tray(maker=lambda o, q: icon)
+    tray = desktop.Tray(maker=lambda o, q: icon, confirm=lambda w: w.answer)
     w = TrayWin()
     tray.start(w)
     assert icon.ran and w.events.closing == [tray.on_closing]
@@ -178,5 +178,29 @@ def test_run_uses_tray_instead_of_close_confirm():
     wv, ups = WV(), iter([False, True])
     icon = FakeIcon()
     r = desktop.run(8765, webview=wv, supervisor_cls=FakeSup, up=lambda p: next(ups, True), wait_s=5,
-                    tray_cls=lambda: desktop.Tray(maker=lambda o, q: icon))
+                    tray_cls=lambda: desktop.Tray(maker=lambda o, q: icon, confirm=lambda w: True))
     assert r == "window" and wv.created[2]["confirm_close"] is False and icon.ran and icon.stopped
+
+
+def test_tray_quit_does_not_need_hidden_window_dialog():
+    """창이 숨겨진 채 아이콘에서 '끄기': 창 확인 창이 실패해도 꺼지고, 두 번 눌러도 한 번만 정리한다."""
+    icon = FakeIcon()
+    tray = desktop.Tray(maker=lambda o, q: icon, confirm=lambda w: True)
+
+    class Broken(TrayWin):
+        def create_confirmation_dialog(self, *a):
+            raise RuntimeError("hidden")
+    w = Broken()
+    tray.start(w)
+    tray.on_closing()
+    tray.quit()
+    tray.quit()
+    assert w.destroyed and icon.stopped
+
+
+def test_confirm_quit_falls_back_without_windows(monkeypatch):
+    monkeypatch.setattr(desktop.sys, "platform", "linux")
+    w = TrayWin()
+    w.answer = False
+    assert desktop.confirm_quit(w) is False
+    assert desktop.confirm_quit(None) is True
