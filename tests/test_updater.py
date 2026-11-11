@@ -166,3 +166,42 @@ def test_just_updated_shows_changes_once(isolated_home, monkeypatch):
     assert r["changes"] == [{"kind": "새 기능", "text": "패치노트"}] and "aaa..bbb" in calls[-1]
     store.set("update_seen", "bbb")
     assert updater.just_updated(d, store, run=run) is None
+
+def test_publish_bumps_both_version_files(tmp_path, monkeypatch):
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location("publish", Path(__file__).resolve().parents[1] / "packaging" / "publish.py")
+    pub = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pub)
+    assert pub.bump("0.1.9", "patch") == "0.1.10" and pub.bump("0.1.9", "minor") == "0.2.0" and pub.bump("1.2.3", "major") == "2.0.0"
+    init, pp = tmp_path / "__init__.py", tmp_path / "pyproject.toml"
+    init.write_text('"""x"""\n\n__version__ = "0.1.0"\n', encoding="utf-8")
+    pp.write_text('[project]\nname = "qtrader"\nversion = "0.1.0"\n\n[tool.x]\nversion = "9.9.9"\n', encoding="utf-8")
+    monkeypatch.setattr(pub, "INIT", init)
+    monkeypatch.setattr(pub, "PYPROJECT", pp)
+    pub.set_version("0.2.0")
+    assert pub.current() == "0.2.0" and 'version = "0.2.0"' in pp.read_text() and 'version = "9.9.9"' in pp.read_text()
+
+
+def test_publish_uses_annotated_tag_for_follow_tags(tmp_path, monkeypatch):
+    import importlib.util
+    import subprocess
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location("publish", Path(__file__).resolve().parents[1] / "packaging" / "publish.py")
+    pub = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pub)
+    monkeypatch.setattr(pub, "ROOT", tmp_path)
+    monkeypatch.setattr(pub.shutil, "which", lambda name: "gh")
+    monkeypatch.setattr(pub, "current", lambda: "0.1.0")
+    versions, calls = [], []
+    monkeypatch.setattr(pub, "set_version", versions.append)
+
+    def run(*args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(pub, "run", run)
+    assert pub.main(["배포 시험", "--repo", "owner/releases"]) == 0
+    assert versions == ["0.1.1"]
+    assert ("git", "tag", "-a", "v0.1.1", "-m", "QTrader 0.1.1") in calls
+    assert ("git", "push", "--follow-tags") in calls

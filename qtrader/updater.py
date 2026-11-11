@@ -7,7 +7,7 @@ A. 내 PC 에서 다시 만들기 (지금 쓰는 방식, 혼자 쓸 때)
   -> 설치 -> 다시 켜기를 한다. 공개 저장소나 버전 번호 올리기가 필요 없다 (main 에 합치면 새 버전).
 
 B. GitHub Releases (다른 사람에게 나눠 줄 때). source.json 이 없고 update.repo 가 있으면 이 방식.
-배포하는 쪽 (개발자):
+배포하는 쪽 (개발자): packaging\\publish.cmd "바뀐 점" 한 번이면 아래 1~3 을 모두 한다. 손으로 할 때는
   1. qtrader/__init__.py 의 __version__ 을 올린다 (예: 0.2.0)
   2. packaging\\release.cmd 실행 -> dist\\QTrader-0.2.0-win.zip 과 .sha256 이 생긴다
   3. GitHub 저장소 Releases 에 태그 v0.2.0 으로 두 파일을 올리고, 본문에 바뀐 점을 적는다
