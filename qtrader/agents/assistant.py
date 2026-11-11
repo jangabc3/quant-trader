@@ -11,7 +11,7 @@ import anthropic
 from .. import market as market_mod
 from . import context as ctxmod
 from . import meeting
-from .llm import BETAS, WEB_SEARCH, LLMError, make_client
+from .llm import BETAS, WEB_SEARCH, LLMError, make_client, usage_cost
 from .roles import PROFILE_DEFAULT
 
 SYSTEM = """너는 QTrader 의 AI 애널리스트 '큐비'다. 한국어로, 증권사 리서치 애널리스트처럼 숫자와 근거로 말한다.
@@ -51,7 +51,7 @@ APP_HELP = """QTrader 화면 안내
 - 종목: 차트·호가·체결·재무·투자자 매매·뉴스, 오른쪽 주문창에서 직접 구매·판매 (손절·익절도 함께 정할 수 있음, 정정·조건 주문)
 - AI 사무실: 실시간(장중 감시·후보 계산을 캐릭터로) / 회의 보기, 오늘 AI가 고른 회의 후보와 고른 기준, 회의 시연
 - 내 계좌: 보유 종목 · 수익(수익 리포트, 지수 대비) · 거래 기록(왜 사고팔았나요, 내보내기) · 하루 리포트 · 알림
-- 설정: 운용 모드(가상매매/토스 실전), 실전 주문 PIN, API 키와 연결 테스트, 매매 기간(AI에게 맡기기/장기/스윙/단기), 쓸 돈, 알림·비용 상한
+- 설정: 운용 모드(가상매매/토스 실전), API 키와 연결 테스트, 매매 기간(AI에게 맡기기/장기/스윙/단기), 쓸 돈, 알림·비용 상한
 - 자동매매 순서: 실행 40분 전 AI 회의 후보 선정 → 회의 → 체크리스트 통과 종목만 주문 → 장중 2분마다 손절·익절 감시 → 장 마감 요약
 - 긴급 정지: 새로 사는 것만 멈춤 (손절·익절 매도는 계속). 하루 손실 한도를 넘으면 자동으로 켜짐"""
 
@@ -170,7 +170,8 @@ class Assistant:
             ctx = self.get_ctx()
             m = ctxmod.Market(args["market"])
             if name == "today_picks":
-                return json.dumps({"기준": screener.__doc__, "후보": screener.todays(ctx, m, trade_date(m), int(ctx.cfg["ai"]["max_symbols_per_day"]))},
+                from ..config import meetings_cap
+                return json.dumps({"기준": screener.__doc__, "후보": screener.todays(ctx, m, trade_date(m), max(meetings_cap(ctx.cfg, m), 1))},
                                   ensure_ascii=False)[:15000]
             if name == "performance":
                 r = extras.performance(ctx.store, ctx.broker.name, m.value)
@@ -231,7 +232,21 @@ class Assistant:
 
     def chat_stream(self, thread_id: str | None, text: str, page: str = ""):
         """답을 쓰는 대로 내보낸다: start → (tool → text …) → done | error.
-        글자가 생기는 즉시 화면에 보여서 기다리는 느낌이 줄고, 여러 도구는 동시에 실행한다."""
+        글자가 생기는 즉시 화면에 보여서 기다리는 느낌이 줄고, 여러 도구는 동시에 실행한다.
+        쓴 비용(토큰·웹 검색)은 이번 달 AI 비용에 더한다 (월 비용 상한이 큐비 대화도 센다)."""
+        spent = [0.0]
+        try:
+            yield from self._chat_stream(thread_id, text, page, spent)
+        finally:
+            if spent[0]:
+                try:
+                    from .. import config as config_mod, extras
+                    from ..storage import Store
+                    extras.add_month_cost(Store(config_mod.home() / "qtrader.db"), "chat", spent[0])
+                except Exception:
+                    pass
+
+    def _chat_stream(self, thread_id: str | None, text: str, page: str, spent: list[float]):
         from concurrent.futures import ThreadPoolExecutor
         cfg = self.cfg_loader()
         ai = cfg["ai"]
@@ -262,6 +277,7 @@ class Assistant:
                             answer += ev.text
                             yield {"type": "text", "text": ev.text}
                     resp = st.get_final_message()
+                spent[0] += usage_cost(req["model"], getattr(resp, "usage", None))
             except Exception as e:
                 if len(msgs) and msgs[-1].get("role") == "user" and isinstance(msgs[-1]["content"], str):
                     with self.lock:

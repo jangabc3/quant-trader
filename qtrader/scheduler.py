@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from types import SimpleNamespace
 from datetime import datetime, time as dtime, timedelta
 
 from . import config as config_mod
@@ -59,6 +60,22 @@ def trading_now(cfg: dict, market: Market, now: datetime | None = None) -> bool:
     return False
 
 
+def session_name(cfg: dict, market: Market, now: datetime | None = None) -> str | None:
+    """지금 감시·주문하는 세션 이름 (화면용). 쉬는 시간이면 None."""
+    if is_open(market, now):
+        return "정규장"
+    if not trading_now(cfg, market, now):
+        return None
+    if market == Market.KR:
+        return "넥스트레이드"
+    ny = (now or datetime.now(TZ[Market.US])).astimezone(TZ[Market.US])
+    if ny.weekday() < 5 and dtime(4, 0) <= ny.time() < dtime(9, 30) and "pre" in (cfg["markets"]["US"].get("extended_sessions") or []):
+        return "프리마켓"
+    if ny.weekday() < 5 and dtime(16, 0) <= ny.time() < dtime(20, 0) and "after" in (cfg["markets"]["US"].get("extended_sessions") or []):
+        return "애프터마켓"
+    return "주간거래"
+
+
 def run_clock(cfg: dict, market: Market):
     """정기 실행 시각을 어느 시계로 볼지: 미국을 '주간거래'로 고르면 한국 시각, 아니면 그 나라 시각."""
     mc = cfg["markets"][market.value]
@@ -85,14 +102,54 @@ def next_run(market: Market, run_time: str, now: datetime | None = None) -> date
     return cand
 
 
+_picking: set[str] = set()
+_picking_lock = threading.Lock()
+
+
+def todays_later(ctx, m: Market, today: str, n: int) -> list[dict]:
+    """오늘 후보가 이미 있으면 바로, 없으면 뒤에서 고르기 시작하고 빈 목록 (몇십 초~몇 분 걸리는 일이라
+    점검이 그동안 손절·익절 감시를 멈추지 않게). 다음 점검 때 다 골라져 있으면 그걸 쓴다."""
+    import json as _json
+    from .screener import todays
+    saved = ctx.store.get(f"picks_{m.value}_{today}")
+    if saved:
+        return _json.loads(saved)
+    with _picking_lock:
+        if m.value in _picking:
+            return []
+        _picking.add(m.value)
+
+    def work():
+        try:
+            from .engine import build_context
+            todays(build_context(), m, today, n)  # 이 스레드 전용 연결
+        except Exception as e:
+            try:
+                ctx.store.log("warn", f"picks.{m.value}", f"오늘 후보 고르기 실패: {e}")
+            except Exception:
+                pass
+        finally:
+            with _picking_lock:
+                _picking.discard(m.value)
+    threading.Thread(target=work, name=f"picks-{m.value}", daemon=True).start()
+    return []
+
+
+def mark_planned_stop(store, why: str, at: str | None = None) -> None:
+    """일부러 끈다고 적어 둔다 (why: update = 업데이트, quit = 사용자가 끄기). 다시 켰을 때 '꺼져 있었어요' 경고를 띄우지 않는다."""
+    from datetime import timezone as _tz
+    store.set("planned_stop", json.dumps({"why": why, "at": at or datetime.now(_tz.utc).isoformat(timespec="seconds")}))
+
+
 class Scheduler:
     def __init__(self, interval: float = 20.0):
         self.interval = interval
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.last_error = ""
-        self._last_exit = 0.0
-        self._last_alert = 0.0
+        # '마지막 점검 시각'은 아주 옛날로 시작한다 (0 이면 PC 를 켠 지 2분 안에는 monotonic 이 120 보다 작아 첫 점검을 건너뛰었다)
+        self._last_exit = float("-inf")
+        self._last_alert = float("-inf")
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -100,6 +157,29 @@ class Scheduler:
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, name="qtrader-scheduler", daemon=True)
         self._thread.start()
+        # '살아 있음' 표시는 점검과 따로 20초마다 (점검 한 번이 오래 걸려도 꺼진 것으로 잘못 알리지 않게)
+        threading.Thread(target=self._beat_loop, name="qtrader-heartbeat", daemon=True).start()
+
+    def _beat_loop(self) -> None:
+        from .storage import Store
+        store = Store(config_mod.home() / "qtrader.db")
+        try:  # 설치된 버전이 지난번과 다르면 그 사이 꺼져 있던 건 업데이트 때문 (설치.cmd 를 직접 눌러 다시 깐 경우도)
+            from . import updater
+            rev = (updater.source_info(config_mod.home()) or {}).get("rev") or ""
+            seen = store.get("seen_rev") or ""
+            if rev and seen and rev != seen:
+                mark_planned_stop(store, "update", at="1970-01-01T00:00:00+00:00")
+            if rev:
+                store.set("seen_rev", rev)
+        except Exception:
+            pass
+        while not self._stop.is_set():
+            try:
+                cfg = config_mod.load()
+                self._heartbeat(SimpleNamespace(store=store), cfg, store.get("auto_trading", "0") == "1")
+            except Exception:
+                pass
+            self._stop.wait(20)
 
     def stop(self) -> None:
         self._stop.set()
@@ -116,7 +196,7 @@ class Scheduler:
             except Exception as e:
                 ctx.store.log("warn", "alert", f"가격 알림 확인 실패: {e}")
         # 자산 기록은 자동매매가 꺼져 있어도 장 마감 뒤 하루 한 번 남긴다 (자산 추이 그래프용)
-        if ctx.store.get("auto_trading", "0") != "1" and time.monotonic() - getattr(self, "_last_snap", 0) > 600:
+        if ctx.store.get("auto_trading", "0") != "1" and time.monotonic() - getattr(self, "_last_snap", float("-inf")) > 600:
             self._last_snap = time.monotonic()
             from .engine import snapshot_equity
             for m in (Market.KR, Market.US):
@@ -126,7 +206,13 @@ class Scheduler:
                     except Exception:
                         pass
         auto = ctx.store.get("auto_trading", "0") == "1"
-        self._heartbeat(ctx, cfg, auto)
+        mk = cfg["markets"]["KR"]
+        if mk.get("enabled") and mk.get("strategy") == "ai" and cfg["ai"].get("auto_pick", True):
+            from . import scan  # 국내 전체 종목을 하루 한 번 뒤에서 훑는다 (자동매매가 꺼져 있어도 후보는 준비)
+            try:
+                scan.maybe_start(ctx, Market.KR, trade_date(Market.KR))
+            except Exception as e:
+                ctx.store.log("warn", "picks.KR", f"전체 종목 훑기 시작 실패: {e}")
         extras.keep_awake(auto)
         if not auto:
             return []
@@ -169,8 +255,8 @@ class Scheduler:
                             from . import compare
                             compare.watch(ctx, m)
                         for x in check_exits(ctx, m):
-                            extras.notify(ctx.store, cfg, f"{'🛑 손절' if x['reason'] == 'stop' else '🎯 익절'} "
-                                                          f"{x['symbol']} @ {x['price']:,} ({x['status']})", "exit")
+                            head = {"stop": "🛑 손절", "take": "🎯 익절", "half": "🎯 절반 익절", "time": "⏱ 기간 정리"}.get(x["reason"], "💸 매도")
+                            extras.notify(ctx.store, cfg, f"{head} {x['symbol']} @ {x['price']:,} ({x['status']})", "exit")
                         if cfg["markets"][m.value].get("strategy") == "ai":
                             from . import live
                             rk = f"_recheck_{m.value}"
@@ -192,8 +278,8 @@ class Scheduler:
                     ctx.store.log("error", f"exit.{m.value}", f"장중 점검 실패: {e}")
         for m in (Market.KR, Market.US):
             mc = cfg["markets"].get(m.value, {})
-            if mc.get("enabled") and mc.get("strategy") == "ai":
-                self._ai_meetings(ctx, m, mc)
+            if mc.get("enabled") and mc.get("strategy") == "ai" and cfg["ai"].get("auto_meetings", False):
+                self._ai_meetings(ctx, m, mc)  # 정기 실행 전 7명 회의 (기본 꺼짐: 사는 신호 + 거부권이 대신한다)
             if not mc.get("enabled") or not due(m, mc["run_time"], cfg=cfg):
                 continue
             if not (m == Market.US and mc.get("run_session") == "day") and not self._session_open(ctx, m):
@@ -221,25 +307,39 @@ class Scheduler:
         return out
 
     def _heartbeat(self, ctx, cfg, auto: bool) -> None:
-        """20초마다 살아 있다고 적어 둔다. 장중에 10분 넘게 비어 있었으면 (PC·프로그램이 꺼졌던 것) 알리고 바로 다시 점검한다."""
+        """20초마다(_beat_loop) 살아 있다고 적어 둔다. 장중에 10분 넘게 비어 있었으면 (PC·프로그램이 꺼졌거나 PC 가 잠들었던 것)
+        알리고 바로 다시 점검한다. 점검(tick)이 오래 걸리는 것과는 상관없다 (따로 돈다)."""
         from datetime import timezone as _tz
         from . import extras
         now = datetime.now(_tz.utc)
         last = ctx.store.get("heartbeat")
         ctx.store.set("heartbeat", now.isoformat(timespec="seconds"))
+        planned = json.loads(ctx.store.get("planned_stop") or "null")
+        if planned:  # 켜진 뒤 첫 심장박동에서만 쓰고 지운다 (남아 있으면 나중의 진짜 꺼짐을 가릴 수 있다)
+            ctx.store.exec("delete from state where key='planned_stop'")
         if not last or not auto:
             return
         prev = datetime.fromisoformat(last)
         gap = (now - prev).total_seconds()
         if gap < 600:
             return
+        if planned and planned.get("at", "") >= "1970-01-02" and planned["at"] < (prev - timedelta(minutes=2)).isoformat():
+            planned = None  # 이번 꺼짐보다 한참 전에 적힌 것
         hit = [m for m in (Market.KR, Market.US) if cfg["markets"][m.value].get("enabled") and (is_open(m, prev) or is_open(m, now))]
         if not hit:
             return
         loc = lambda t: t.astimezone().strftime("%m-%d %H:%M")
+        if planned and planned.get("why") in ("update", "quit"):  # 일부러 끈 것: 경고 대신 (업데이트면) 안내만
+            self._last_exit = float("-inf")  # 그래도 곧바로 체결 확인·손절 점검
+            if planned["why"] == "update":
+                extras.notify(ctx.store, cfg, f"🔄 업데이트를 마치고 다시 켜졌어요 ({int(gap // 60)}분 걸렸어요). "
+                                              f"지금 바로 체결과 손절·익절을 다시 확인해요.", "live")
+            else:
+                ctx.store.log("info", "live", f"직접 끈 뒤 다시 켜졌어요 ({loc(prev)} ~ {loc(now)})")
+            return
         extras.notify(ctx.store, cfg, f"⚠️ 프로그램이 {int(gap // 60)}분 동안 꺼져 있었어요 ({loc(prev)} ~ {loc(now)}). "
                                       f"그동안 손절·익절 감시가 멈췄습니다. 지금 바로 다시 확인합니다.", "live")
-        self._last_exit = 0.0  # 곧바로 체결 확인·손절 점검
+        self._last_exit = float("-inf")  # 곧바로 체결 확인·손절 점검
 
     def _new_candidates(self, ctx, m: Market) -> None:
         """N분마다(ai.intraday_every_min, 기본 15) 숫자 규칙을 다시 돌려, 새로 통과한 종목을 오늘 회의 후보에 올린다.
@@ -255,21 +355,27 @@ class Scheduler:
         pk = f"picks_{m.value}_{today}"
         picks = _json.loads(ctx.store.get(pk) or "[]")
         have = {p["symbol"] for p in picks}
-        fresh = [c for c in live.next_candidates(ctx, m, ttl=every) if not c["missing"] and c["symbol"] not in have]
-        if fresh and len(picks) < int(ctx.cfg["ai"]["max_symbols_per_day"]):
-            add = fresh[: int(ctx.cfg["ai"]["max_symbols_per_day"]) - len(picks)]
+        from . import principles, screener
+        allowed = int((principles.DEFAULT_RULES | principles.rules_for(ctx.cfg)).get("soft_miss_allowed", 1))
+        fresh = [c for c in live.next_candidates(ctx, m, ttl=every)
+                 if screener.passes(c["missing"], allowed) and c["symbol"] not in have]  # 후보 거르기와 같은 필수 + 추가 규칙
+        from .screener import CANDIDATES_SHOWN
+        cap = max(config_mod.meetings_cap(ctx.cfg, m), CANDIDATES_SHOWN)  # 후보 목록 길이 (회의 수 한도는 _intraday 가 본다)
+        if fresh and len(picks) < cap:
+            add = fresh[: cap - len(picks)]
             picks += [{"symbol": c["symbol"], "score": c["score"], "reason": "장중 새로 규칙 통과", "held": False, "fails": []} for c in add]
             ctx.store.set(pk, _json.dumps(picks, ensure_ascii=False))
-            when = "곧 장중 회의" if ctx.cfg["ai"].get("intraday", True) else "다음 정기 회의·실행 때 검토"
+            when = "2분마다 사는 신호 확인" if ctx.cfg["ai"].get("intraday", True) else "장중 매수가 꺼져 있어 지켜보기만"
             ctx.store.log("info", f"live.{m.value}", "새 후보: " + ", ".join(c["symbol"] for c in add) + f" ({when})")
 
     def _intraday(self, ctx, m: Market) -> list[dict]:
-        """장중 계속 사기 (ai.intraday): 끝난 장중 회의는 그 종목만 바로 사고(engine.buy_one), N분마다 새 후보 하나로 회의를 연다.
-        비용 한도: 하루 회의 수(ai.max_symbols_per_day, 정기 회의와 합산)·월 비용 상한, 같은 종목은 하루 한 번, 회의는 한 번에 하나."""
+        """장중 계속 사기 (ai.intraday): 2분마다 오늘 후보의 실시간 가격으로 사는 신호(signals.check)를 보고,
+        신호가 뜬 종목만 AI 거부권(베어리, Claude 1번)을 거쳐 그 종목만 산다 (engine.buy_one: 숫자 안전 점검·리스크 검사).
+        비용 한도: 시장별 하루 거부권 확인 수(markets.*.meetings_per_day)·월 비용 상한, 같은 종목은 하루 한 번, 한 틱에 한 종목.
+        7명 회의는 사용자가 직접 열 때만 (자동 매수하지 않는다)."""
         import json as _json
-        from . import extras
-        from .agents import meeting
-        from .engine import buy_one
+        from . import extras, signals
+        from .engine import buy_blocked, buy_one
 
         ai = ctx.cfg["ai"]
         if not ai.get("intraday", True):
@@ -277,46 +383,32 @@ class Scheduler:
         today = trade_date(m)
         key = f"intraday_{m.value}_{today}"
         state = _json.loads(ctx.store.get(key) or "{}")
-        out = []
-        # 1) 결론이 난 회의 -> 그 종목만 매수
-        for sym, e in state.items():
-            if e.get("state") != "meeting":
-                continue
-            run = meeting.get_run(e["run_id"]) or next((r for r in ctx.store.ai_runs(50, sym) if r["id"] == e["run_id"]), None)
-            if run and run["status"] == "running":
-                continue
-            if not run or run["status"] != "done":
-                e.update(state="error", note=(run or {}).get("error") or "회의가 끝나지 못함 (프로그램이 다시 시작됨)")
-                continue
-            try:
-                res = buy_one(ctx, m, sym)
-            except Exception as ex:
-                res = {"status": "error", "message": str(ex), "qty": 0}
-                ctx.store.log("error", f"intraday.{m.value}", f"{sym} 장중 매수 실패: {ex}")
-            e.update(state={"filled": "bought", "submitted": "bought", "pending_approval": "approval"}.get(res["status"], "skipped"),
-                     note=res.get("message", ""), qty=res.get("qty", 0))
-            out.append(res | {"symbol": sym})
-            if res["status"] in ("filled", "submitted", "pending_approval"):
-                f = (run.get("final") or {})
-                head = "🛒 장중 매수" if res["status"] != "pending_approval" else "📝 장중 매수 승인 대기"
-                extras.notify(ctx.store, ctx.cfg, f"{head} {sym} {res['qty']}주 — AI 회의 {f.get('rating')} "
-                              f"(확신 {float(f.get('confidence') or 0):.0%}) · {f.get('headline', '')}", "order")
-        ctx.store.set(key, _json.dumps(state, ensure_ascii=False))
-        # 2) 새 회의 열기: N분에 하나, 회의는 한 번에 하나
-        ik = f"_intraday_{m.value}"
-        if time.monotonic() - getattr(self, ik, float("-inf")) < 60 * int(ai.get("intraday_every_min", 15)) - 5:
+        for e in state.values():  # 예전 방식(장중 회의)으로 남은 기록: 결과는 회의 보기로, 자동으로 사지 않는다
+            if e.get("state") == "meeting":
+                e.update(state="skipped", note="예전 방식 회의 기록 (자동 매수 안 함)")
+        out: list[dict] = []
+        if ctx.kill:
             return out
-        if ctx.kill or any(r["status"] == "running" for r in meeting.live_runs()):
+        why = buy_blocked(ctx, m)
+        if why:  # 오늘은 더 못 사므로 신호도 보지 않는다 (기록은 하루 한 번)
+            if ctx.store.get(f"intraday_skip_{m.value}_{today}") != why:
+                ctx.store.set(f"intraday_skip_{m.value}_{today}", why)
+                ctx.store.log("info", f"intraday.{m.value}", f"장중 매수 쉼: {why}")
+            ctx.store.set(key, _json.dumps(state, ensure_ascii=False))
             return out
-        met = {r["symbol"] for r in ctx.store.ai_runs(200) if r["trade_date"] == today}
-        if len(met) >= int(ai["max_symbols_per_day"]):
+        cap = config_mod.meetings_cap(ctx.cfg, m)  # 하루 AI 거부권 확인 수 (0 = 이 시장 AI 확인 꺼짐 → 사지 않음)
+        if cap <= 0 or signals.veto_today(ctx.store, m, today) >= cap:
             return out
-        cap = float(ai.get("monthly_cost_cap_krw") or 0)
-        if cap and extras.month_cost_krw(ctx.store) >= cap:
+        if not signals.ai_ready():  # Claude 키가 없으면 신호가 떠도 확인할 수 없어 사지 않는다 (화면에 알린다)
+            if ctx.store.get(f"intraday_skip_{m.value}_{today}") != "no_key":
+                ctx.store.set(f"intraday_skip_{m.value}_{today}", "no_key")
+                ctx.store.log("warn", f"intraday.{m.value}", "Claude API 키가 없어 사는 신호를 확인하지 못해요. 설정 → 2. 연결에서 키를 저장하세요")
             return out
-        from .screener import todays
+        cost_cap = float(ai.get("monthly_cost_cap_krw") or 0)
+        if cost_cap and extras.month_cost_krw(ctx.store) >= cost_cap:
+            return out
         try:
-            picks = todays(ctx, m, today, int(ai["max_symbols_per_day"])) if ai.get("auto_pick", True) else \
+            picks = todays_later(ctx, m, today, cap) if ai.get("auto_pick", True) else \
                 [{"symbol": s} for s in ctx.cfg["markets"][m.value]["universe"]]
         except Exception as ex:
             ctx.store.log("warn", f"intraday.{m.value}", f"후보 고르기 실패: {ex}")
@@ -326,20 +418,50 @@ class Scheduler:
         except Exception:
             held = set()
         bought = ctx.store.ordered_today(ctx.broker.name, m.value, today)
-        sym = next((p["symbol"] for p in picks if p["symbol"] not in (met | set(state) | held | bought) and not p.get("held")), None)
-        if not sym:
+        watch = [p["symbol"] for p in picks if p["symbol"] not in (set(state) | held | bought) and not p.get("held")][:30]
+        from datetime import timezone as _tz
+        ctx.store.set(f"intraday_last_{m.value}", datetime.now(_tz.utc).isoformat(timespec="seconds"))  # 화면의 '마지막 확인'
+        ctx.store.set(f"signal_watch_{m.value}", _json.dumps({"at": datetime.now(TZ[m]).strftime("%H:%M"), "n": len(watch)}))
+        if not watch:
+            ctx.store.set(key, _json.dumps(state, ensure_ascii=False))
             return out
-        setattr(self, ik, time.monotonic())
-        ctx.store.log("info", f"ai.{m.value}", f"{sym} 장중 AI 회의 시작 (결론이 매수이고 체크리스트를 통과하면 바로 삽니다)")
-        try:
-            run = meeting.start(sym, ctx.data, ctx.store, ctx.cfg, toss=getattr(ctx.data, "client", None)
-                                if getattr(ctx.data, "name", "") == "toss" else None)
-        except ValueError as ex:  # 월 비용 상한 등
-            ctx.store.log("warn", f"ai.{m.value}", str(ex))
-            return out
-        state[sym] = {"run_id": run["id"], "state": "meeting", "at": datetime.now(TZ[m]).strftime("%H:%M")}
+        hits = signals.scan(ctx, m, watch, today)
+        for sig in hits[:1]:  # 한 틱에 한 종목만 (거부권 비용·주문을 천천히)
+            sym = sig["symbol"]
+            name = self._name(ctx, sym)
+            now_s = datetime.now(TZ[m]).strftime("%H:%M")
+            ctx.store.log("info", f"intraday.{m.value}", f"{name} 사는 신호: {sig['name']} — {sig['why']}. AI 거부권 확인")
+            v = signals.veto(ctx, m, sym, name, sig)
+            run = signals.save_decision(ctx, m, sym, name, sig, v, today)
+            e = {"state": "veto", "at": now_s, "signal": sig["name"], "why": sig["why"], "run_id": run["id"]}
+            if v.get("veto"):
+                e.update(state="vetoed", note=v.get("reason", ""))
+                ctx.store.log("info", f"intraday.{m.value}", f"{name} 사지 않음 (거부권): {v.get('reason', '')}")
+            else:
+                try:
+                    res = buy_one(ctx, m, sym)
+                except Exception as ex:
+                    res = {"status": "error", "message": str(ex), "qty": 0}
+                    ctx.store.log("error", f"intraday.{m.value}", f"{sym} 장중 매수 실패: {ex}")
+                e.update(state={"filled": "bought", "submitted": "bought", "pending_approval": "approval"}.get(res["status"], "skipped"),
+                         note=res.get("message", ""), qty=res.get("qty", 0))
+                out.append(res | {"symbol": sym})
+                if res["status"] in ("filled", "submitted", "pending_approval"):
+                    head = "🛒 장중 매수" if res["status"] != "pending_approval" else "📝 장중 매수 승인 대기"
+                    extras.notify(ctx.store, ctx.cfg, f"{head} {name} {res['qty']}주 — {sig['name']} 신호 · AI 거부권 통과 "
+                                  f"(손절 -{sig['stop_pct']}% · 익절 +{sig['take_pct']}%)", "order")
+            state[sym] = e
         ctx.store.set(key, _json.dumps(state, ensure_ascii=False))
         return out
+
+    @staticmethod
+    def _name(ctx, symbol: str) -> str:
+        client = getattr(ctx.data, "client", None)
+        try:
+            got = client.stocks([symbol]) if client is not None and hasattr(client, "stocks") else []
+            return (got[0].get("name") if got else None) or symbol
+        except Exception:
+            return symbol
 
     @staticmethod
     def _session_open(ctx, m: Market) -> bool:
@@ -365,12 +487,11 @@ class Scheduler:
         if any(r["status"] == "running" for r in meeting.live_runs()):
             return
         today = trade_date(m)
-        done = {r["symbol"] for r in ctx.store.ai_runs(200) if r["trade_date"] == today}
-        if len(done) >= int(ai["max_symbols_per_day"]):
+        done, cap = config_mod.met_today(ctx.store, m, today), config_mod.meetings_cap(ctx.cfg, m)
+        if len(config_mod.met_today(ctx.store, m, today, auto_only=True)) >= cap:
             return
         if ai.get("auto_pick", True):  # 종목을 정하지 않아도 AI 가 후보를 고른다
-            from .screener import todays
-            symbols = [p["symbol"] for p in todays(ctx, m, today, int(ai["max_symbols_per_day"]))]
+            symbols = [p["symbol"] for p in todays_later(ctx, m, today, cap)]
         else:
             symbols = mc["universe"]
         for s in symbols:
@@ -378,7 +499,7 @@ class Scheduler:
                 ctx.store.log("info", f"ai.{m.value}", f"{s} AI 회의 시작")
                 try:
                     meeting.start(s, ctx.data, ctx.store, ctx.cfg, toss=getattr(ctx.data, "client", None)
-                                  if getattr(ctx.data, "name", "") == "toss" else None)
+                                  if getattr(ctx.data, "name", "") == "toss" else None, origin="auto")
                 except ValueError as e:  # 월 비용 상한 등
                     ctx.store.log("warn", f"ai.{m.value}", str(e))
                 return

@@ -182,3 +182,138 @@ def test_investor_profile(client):
     assert cfg["risk"]["max_weight"] == 0.30 and cfg["risk"]["daily_loss_limit"] == 0.04
     assert any(c["k"] == "손절·익절" for c in r["criteria"])
     assert client.post("/api/profile", json={"answers": {"age": 1}}, headers=client.h).status_code == 400
+
+
+def test_search_understands_partial_names_initials_and_aliases():
+    """'하이닉'·'sk 하이'·'하닉'·초성·영어 이름으로도 찾는다."""
+    from qtrader import stockdata as sd
+    rows = [{"symbol": "000660", "name": "SK하이닉스", "type": "STOCK"}, {"symbol": "005930", "name": "삼성전자", "type": "STOCK"},
+            {"symbol": "005935", "name": "삼성전자우", "type": "STOCK"}, {"symbol": "034730", "name": "SK", "type": "STOCK"},
+            {"symbol": "091160", "name": "KODEX 반도체", "type": "ETF"}, {"symbol": "AAPL", "name": "애플", "type": "STOCK"},
+            {"symbol": "NVDA", "name": "엔비디아", "type": "STOCK"}]
+    top = lambda q: (sd.search(rows, q, 3) or [{}])[0].get("name")
+    for q in ("하이닉", "sk 하이", "SK하이", "하닉"):
+        assert top(q) == "SK하이닉스", q
+    assert top("ㅅㅅㅈㅈ") == top("삼전") == top("삼성") == "삼성전자"
+    assert top("apple") == top("aapl") == "애플" and top("nvidia") == top("엔비") == "엔비디아"
+    assert top("sk") == "SK" and top("반도체") == "KODEX 반도체" and sd.search(rows, "없는회사") == []
+    assert sd.resolve(rows, "SK하이닉") == "000660" and sd.resolve(rows, "005930") == "005930" and sd.resolve(rows, "없는회사") is None
+
+
+def test_meeting_by_name_uses_stock_code(isolated_home):
+    """회의 입력칸에 이름을 써도 종목 코드로 바꿔 회의한다 (이름 그대로 토스에 보내던 400 오류)."""
+    from qtrader import config
+    from qtrader.data import write_demo_csv
+    from test_toss_ai import FakeLLM
+    write_demo_csv(isolated_home / "data", config.load())
+    app = create_app(llm=FakeLLM())
+    client = TestClient(app)
+    client.h = {"x-qtrader-token": app.state.token}
+    r = client.post("/api/ai/meeting", json={"symbol": "SK하이닉"}, headers=client.h)
+    assert r.status_code == 200 and r.json()["symbol"] == "000660"
+    bad = client.post("/api/ai/meeting", json={"symbol": "없는회사이름"}, headers=client.h)
+    assert bad.status_code == 400 and "찾지 못했어요" in bad.json()["detail"]
+
+
+def test_change_rate_uses_toss_base_price_everywhere():
+    """등락률은 토스가 준 기준가(전일 정규장 종가)로. 일봉 두 개로 계산하면 시간외가 섞인 날 순위표와 어긋났다."""
+    import pandas as pd
+    from qtrader import market as market_mod, stockdata
+    from qtrader.toss import Toss
+
+    class T(Toss):
+        def __init__(self):
+            pass
+
+        def _call(self, method, path, group, params=None, **kw):
+            assert path == "/api/v1/prices"
+            return [{"symbol": "005930", "lastPrice": "239250", "changeRate": "0.0788"}]
+
+        def candles(self, symbol, interval="1d", count=200, indicator=False):  # 어제 일봉 종가는 시간외까지 섞인 224,500
+            idx = pd.to_datetime(["2026-10-27", "2026-10-28"])
+            return pd.DataFrame({"open": [1, 1], "high": [240000, 240000], "low": [1, 1], "close": [224500.0, 239250.0],
+                                 "volume": [1, 1]}, index=idx)
+    t = T()
+    q = t.quotes(["005930"])["005930"]
+    assert q["change_rate"] == pytest.approx(0.0788) and q["base"] == pytest.approx(239250 / 1.0788)
+    d = market_mod._change(t, "005930", False)
+    assert d["change_rate"] == pytest.approx(0.0788, abs=1e-6)  # 관심 종목·시장 요약
+    t.stocks = lambda s: [{"symbol": "005930", "name": "삼성전자"}]
+    t.warnings = lambda s: []
+    t.price_limits = lambda s: {}
+    monkey = stockdata.candles
+    stockdata.candles = lambda tt, sym, iv, n: {"candles": [{"close": 224500.0, "volume": 1}, {"close": 239250.0, "volume": 1}]}
+    try:
+        s = stockdata.summary(t, "005930")
+    finally:
+        stockdata.candles = monkey
+    assert s["change_rate"] == pytest.approx(0.0788, abs=1e-6)  # 종목 화면
+
+
+def test_nxt_close_in_prev_field_does_not_change_rate():
+    """토스 응답의 전일 종가 칸에 시간외(NXT) 종가가 오면 무시하고 토스 등락률·상하한가 기준가를 쓴다.
+    (SK하이닉스: 순위표 +8.35% 인데 종목 화면 +5.68% 로 보였다. 상한 1,743,000·하한 939,000 → 기준가 1,341,000)"""
+    from qtrader import stockdata
+    from qtrader.toss import Toss
+
+    class T(Toss):
+        def __init__(self):
+            pass
+
+        def _call(self, method, path, group, params=None, **kw):
+            return [{"symbol": "000660", "lastPrice": "1452000", "changeRate": "0.0828", "previousClosePrice": "1374000"},
+                    {"symbol": "005930", "lastPrice": "240000", "changeRate": "0.0811", "basePrice": "222000"}]
+    t = T()
+    q = t.quotes(["000660", "005930"])
+    assert q["000660"]["change_rate"] == pytest.approx(0.0828) and q["000660"]["base"] == pytest.approx(1452000 / 1.0828)
+    assert q["005930"]["base"] == 222000  # 등락률과 맞으면 토스 기준가를 그대로
+    t.stocks = lambda s: [{"symbol": "000660", "name": "SK하이닉스"}]
+    t.warnings = lambda s: []
+    t.price_limits = lambda s: {"upperLimitPrice": "1743000", "lowerLimitPrice": "939000"}
+    monkey = stockdata.candles
+    stockdata.candles = lambda tt, sym, iv, n: {"candles": [{"close": 1374000.0, "volume": 1}, {"close": 1452000.0, "volume": 1}]}
+    try:
+        s = stockdata.summary(t, "000660")
+    finally:
+        stockdata.candles = monkey
+    assert s["prev_close"] == 1341000 and s["change"] == 111000 and s["change_rate"] == pytest.approx(0.0828)
+    assert stockdata.limit_base({"upperLimitPrice": "1743000", "lowerLimitPrice": "939000"}, 1452000, 0.0568) is None
+
+
+def test_ranking_rows_without_rate_are_filled_not_zero(monkeypatch):
+    from qtrader import market as market_mod
+
+    class T:
+        def rankings(self, *a, **k):
+            return {"rankings": [{"rank": 1, "symbol": "005930", "price": {"lastPrice": "240000", "changeRate": "0.0811"}},
+                                 {"rank": 2, "symbol": "069500", "price": {"lastPrice": "94830"}}]}
+
+        def stocks(self, syms):
+            return [{"symbol": s, "name": s} for s in syms]
+
+        def quotes(self, syms):
+            assert syms == ["069500"]
+            return {"069500": {"price": 94830, "change_rate": 0.0666, "base": 88908}}
+    monkeypatch.setattr(market_mod, "cached", lambda key, ttl, fn: fn())
+    items = market_mod.rankings(T(), "amount", "KR", "1d", 2)["items"]
+    assert [i["change_rate"] for i in items] == [pytest.approx(0.0811), pytest.approx(0.0666)]
+
+
+def test_investor_flows_skip_missing_individual(monkeypatch):
+    """개인 자료가 비어 있으면 '0원' 1위를 만들지 않는다. 순매수 칸이 없으면 매수-매도로."""
+    from qtrader import market as market_mod
+    rows = [{"symbol": "005930", "name": "삼성전자", "price": 240000.0, "change_rate": 0.08},
+            {"symbol": "000660", "name": "SK하이닉스", "price": 1453000.0, "change_rate": 0.08}]
+    recs = {"005930": {"foreigner": {"netBuyVolume": "1000"}, "institution": {"netBuyVolume": "-50"}},
+            "000660": {"foreigner": {"netBuyVolume": "-10"}, "individual": {"buyVolume": "300", "sellVolume": "100"}}}
+
+    class T:
+        def stock_investor_trading(self, s, n):
+            return {"records": [recs[s] | {"date": "2026-10-28"}]}
+    monkeypatch.setattr(market_mod, "rankings", lambda *a, **k: {"items": rows})
+    monkeypatch.setattr(market_mod, "cached", lambda key, ttl, fn: fn())
+    buy = market_mod.investor_flows(T(), "buy")
+    assert [r["symbol"] for r in buy["individual"]] == ["000660"] and buy["individual"][0]["individual"] == 200 * 1453000
+    assert [r["symbol"] for r in buy["foreigner"]] == ["005930"] and buy["institution"] == []
+    sell = market_mod.investor_flows(T(), "sell")
+    assert [r["symbol"] for r in sell["foreigner"]] == ["000660"] and sell["individual"] == []

@@ -111,10 +111,21 @@ class Rule:
     need: str
     ref: str
 
+    @property
+    def core(self) -> bool:
+        return self.key not in SOFT_RULES
+
     def to_dict(self) -> dict:
         r = REF.get(self.ref)
         return {"key": self.key, "name": self.name, "ok": self.ok, "value": self.value, "need": self.need,
-                "ref": f"{r[1]} 「{r[2]}」" if r else ""}
+                "ref": f"{r[1]} 「{r[2]}」" if r else "", "core": self.core}
+
+
+# 추가 기준: 하나쯤 못 넘어도 비중을 절반으로 줄여 살 수 있는 것 (soft_miss_allowed 개까지).
+# 모두 '조금 더 확실하게' 쪽 신호라 하나만으로 손실이 커지지 않는다. 손실을 막는 핵심(손절·손익비·장기 추세·
+# 변동성·투자유의·매수 한도·재매수 대기·시장 국면)은 필수로 둔다.
+# 여러 신호를 점수로 보는 방식: Piotroski(2000) F-Score 처럼 '몇 개 이상 통과'로 판단한다.
+SOFT_RULES = {"tsmom", "mom", "rsi", "facts"}
 
 
 DEFAULT_RULES = {
@@ -129,7 +140,28 @@ DEFAULT_RULES = {
     "require_trend": True,
     "require_momentum": True,
     "market_filter": "half",  # 지수가 200일선 아래면: half=비중 절반, block=신규 매수 중단, off=보지 않음
+    "soft_miss_allowed": 1,  # 추가 기준(SOFT_RULES)을 이만큼까지 못 넘어도 산다. 하나마다 비중을 절반으로
 }
+# 가상매매 연습 기준: 실제 돈이 아닐 때만, 매수·매도·손절·익절 흐름을 시험해 볼 수 있게 몇 가지를 조금 낮춘다.
+# 손절가·장기 추세·변동성·투자유의·재매수 대기 같은 손실을 막는 기준과 'AI 의견이 매수'는 그대로다. 실전에는 절대 쓰지 않는다.
+PRACTICE = {"min_confidence": ("min", 0.5), "min_reward_risk": ("min", 1.5), "soft_miss_allowed": ("max", 2),
+            "max_new_buys_per_day": ("max", 5)}
+
+
+def practice_on(cfg: dict) -> bool:
+    return cfg.get("mode") == "paper" and bool((cfg.get("ai") or {}).get("practice", True))
+
+
+def rules_for(cfg: dict) -> dict:
+    """매수 체크리스트에 실제로 쓰는 규칙 (설정 + 가상매매면 연습 기준)."""
+    r = dict(cfg["ai"].get("rules") or {})
+    if practice_on(cfg):
+        full = DEFAULT_RULES | r
+        for k, (how, v) in PRACTICE.items():
+            r[k] = min(full[k], v) if how == "min" else max(full[k], v)
+    return r
+
+
 # 매매 기간. 단기일수록 손절·익절을 좁히고 오래 들고 있지 않는다 (기한이 지나면 판다)
 HOLDING = {
     "auto": {"name": "AI에게 맡기기 (종목마다 알맞게)", "stop": None, "take": None, "days": None, "buys": 1},
@@ -182,15 +214,21 @@ def market_signals(bars: pd.DataFrame) -> dict:
 
 def checklist(final: dict | None, check: dict | None, bars: pd.DataFrame, warnings: list[dict] | None = None,
               rules: dict | None = None, new_buys_today: int = 0, recent_stop: bool = False,
-              market_bars: pd.DataFrame | None = None) -> dict:
-    """매수 전 체크리스트. 모두 통과해야 매수 가능."""
+              market_bars: pd.DataFrame | None = None, kind: str = "meeting") -> dict:
+    """매수 전 체크리스트. 필수는 모두, 추가 기준은 soft_miss_allowed 개까지 못 넘어도 산다.
+    kind="signal": 사는 신호 + AI 거부권으로 산 경우 (회의가 없어서 'AI 의견 매수' 대신 '거부권 통과', 팩트체크는 빼고
+    공시·뉴스 확인은 거부권이 맡는다). 손실을 막는 숫자 기준은 회의와 똑같다."""
     R = DEFAULT_RULES | (rules or {})
     s = market_signals(bars)
     f = final or {}
     out: list[Rule] = []
     rating = f.get("rating")
-    out.append(Rule("rating", "AI 최종 의견이 매수 계열", rating in ("Buy", "Overweight"), rating or "없음",
-                    "Buy 또는 Overweight", "afml"))
+    if kind == "signal":
+        out.append(Rule("rating", "AI 거부권 통과 (사면 안 되는 위험 신호 없음)", rating in ("Buy", "Overweight"),
+                        "통과" if rating in ("Buy", "Overweight") else "거부", "거부 없음", "afml"))
+    else:
+        out.append(Rule("rating", "AI 최종 의견이 매수 계열", rating in ("Buy", "Overweight"), rating or "없음",
+                        "Buy 또는 Overweight", "afml"))
     conf = float(f.get("confidence") or 0)
     out.append(Rule("confidence", "AI 확신도", conf >= R["min_confidence"], f"{conf:.0%}", f"{R['min_confidence']:.0%} 이상", "grinold"))
     sl, tp = float(f.get("stop_loss_pct") or 0), float(f.get("take_profit_pct") or 0)
@@ -208,10 +246,16 @@ def checklist(final: dict | None, check: dict | None, bars: pd.DataFrame, warnin
     out.append(Rule("vol", "변동성 과다 아님", s["vol"] <= R["max_vol"], f"{s['vol']:.0%}", f"연 {R['max_vol']:.0%} 이하", "bab"))
     fc = (check or {}).get("fact_checks") or []
     ok = sum(1 for x in fc if x.get("status") == "확인됨")
+    facts_rule = kind != "signal"
     wrong = sum(1 for x in fc if x.get("status") == "틀림")
-    ratio = ok / len(fc) if fc else 0
-    out.append(Rule("facts", "팩트체크 통과 (틀린 주장 없음)", bool(fc) and ratio >= R["min_fact_ok"] and wrong == 0,
-                    f"확인 {ok}/{len(fc)}, 틀림 {wrong}", f"확인 {R['min_fact_ok']:.0%} 이상, 틀림 0", "hlz"))
+    unsure = sum(1 for x in fc if x.get("status") == "확인 불가")
+    # '확인 불가'(전망·아직 공시 전 등)는 틀린 게 아니라 확인을 못 한 것: 반만 센다. 틀린 주장은 하나라도 있으면 통과 못 함.
+    # (예전엔 확인 불가를 실패로 세서 확인 5·확인 불가 4 = 56% 로 거의 다 걸렸다)
+    ratio = (ok + 0.5 * unsure) / len(fc) if fc else 0
+    if facts_rule:
+        out.append(Rule("facts", "팩트체크 통과 (틀린 주장 없음)", bool(fc) and ratio >= R["min_fact_ok"] and wrong == 0,
+                        f"확인 {ok} · 확인 불가 {unsure} · 틀림 {wrong} (점수 {ratio:.0%})",
+                        f"점수 {R['min_fact_ok']:.0%} 이상(확인 불가는 반만), 틀림 0", "hlz"))
     bad = [w.get("warningType") for w in (warnings or []) if not w.get("endDate")
            or str(w.get("endDate")) >= pd.Timestamp.today().strftime("%Y-%m-%d")]
     out.append(Rule("warnings", "투자 유의·과열 지정 없음", not bad, ", ".join(bad) or "없음", "없음", "odean"))
@@ -230,15 +274,21 @@ def checklist(final: dict | None, check: dict | None, bars: pd.DataFrame, warnin
                         "하락 국면이면 매수 중단" if mf == "block" else "하락 국면이면 비중 절반", "states"))
         if down:
             regime_cut = 0.5
-    passed = all(r.ok for r in out)
+    core, soft = [r for r in out if r.core], [r for r in out if not r.core]
+    missed = sum(not r.ok for r in soft)
+    allowed = int(R.get("soft_miss_allowed", 1))
+    passed = all(r.ok for r in core) and missed <= allowed
     # 포지션 크기: 절반 켈리와 변동성 목표 중 작은 값
     p = conf
     kelly = max(0.0, p - (1 - p) / rr) if rr > 0 else 0.0
     vol_w = min(1.0, R["target_vol"] / s["vol"]) if s["vol"] > 0 else 1.0
-    size = min(kelly / 2, vol_w) * regime_cut
+    soft_cut = 0.5 ** missed  # 추가 기준을 하나 못 넘을 때마다 비중 절반
+    size = min(kelly / 2, vol_w) * regime_cut * soft_cut
     return {"passed": passed, "rules": [r.to_dict() for r in out], "signals": {k: round(v, 4) for k, v in s.items()},
+            "core": {"ok": sum(r.ok for r in core), "total": len(core)},
+            "soft": {"ok": len(soft) - missed, "total": len(soft), "missed": missed, "allowed": allowed},
             "size": {"half_kelly": round(kelly / 2, 4), "vol_target": round(vol_w, 4), "regime": regime_cut,
-                     "weight_factor": round(size, 4)}}
+                     "soft": soft_cut, "weight_factor": round(size, 4)}}
 
 
 def trade_plan(final: dict | None, last: float, budget: float, max_weight: float, size_factor: float,
@@ -256,7 +306,7 @@ def trade_plan(final: dict | None, last: float, budget: float, max_weight: float
     stop, take = rnd(entry * (1 - sl)), rnd(entry * (1 + tp))
     amount = budget * max_weight * max(0.0, min(1.0, size_factor * 4))  # 절반 켈리 0.25 를 비중 상한 100% 로 본다
     qty = int(amount // entry) if entry else 0
-    return {"entry_low": rnd(lo), "entry_high": rnd(hi), "entry": rnd(entry), "stop": stop, "take": take,
+    return {"price": rnd(last), "entry_low": rnd(lo), "entry_high": rnd(hi), "entry": rnd(entry), "stop": stop, "take": take,
             "stop_pct": round(sl * 100, 2), "take_pct": round(tp * 100, 2), "qty": qty,
             "amount": rnd(qty * entry), "max_loss": rnd(qty * (entry - stop)), "max_gain": rnd(qty * (take - entry)),
             "horizon_days": int(final.get("horizon_days") or 20), "currency": "KRW" if market == "KR" else "USD"}

@@ -88,19 +88,41 @@ def build_context(cfg: dict | None = None, store: Store | None = None) -> Contex
     return Context(cfg, store, KISData(client, store), KISBroker(client))
 
 
+def max_new_buys(cfg: dict) -> int:
+    """하루 신규 매수 종목 수 상한 (체크리스트 규칙). 단기일수록 하루에 조금 더 여러 종목을 작게 산다."""
+    from . import principles
+    ai = cfg["ai"]
+    base = int(principles.rules_for(cfg).get("max_new_buys_per_day", principles.DEFAULT_RULES["max_new_buys_per_day"]))
+    return base + principles.HOLDING.get(ai.get("holding", "long"), principles.HOLDING["long"])["buys"]
+
+
+def buy_blocked(ctx: "Context", market: Market) -> str | None:
+    """오늘 이 시장에서 새로 살 수 없는 이유 (없으면 None). 장중 회의를 열기 전에 봐서, 사지도 못할 회의에 비용을 쓰지 않는다.
+    체크리스트와 같은 규칙: 하루 신규 매수 한도, 시장 국면 '매수 중단'(지수가 200일선 아래)."""
+    from . import indicators as ind, principles
+    today = trade_date(market)
+    n, cap = ctx.store.new_buys_today(ctx.broker.name, market.value, today), max_new_buys(ctx.cfg)
+    if n >= cap:
+        return f"오늘 새로 산 종목이 하루 한도({cap}종목)에 닿음"
+    rules = principles.DEFAULT_RULES | principles.rules_for(ctx.cfg)
+    if rules.get("market_filter") == "block":
+        b = principles.index_bars(ctx.data, market)
+        if b is not None and float(b["close"].iloc[-1]) < float(ind.sma(b["close"], 200).iloc[-1]):
+            return "지수가 200일선 아래라 매수 중단 (시장 국면 규칙)"
+    return None
+
+
 def ai_targets(store: Store, cfg: dict, panel_: dict, today: str, account: str = "", market: str = "KR",
                warnings_for=None, market_bars=None) -> tuple[dict, set, list]:
     """오늘 AI 회의 결정으로 목표 비중을 만든다.
-    - 결정이 없거나 Hold·확신 부족: 보유 유지(keep)
-    - 매수 계열인데 체크리스트(뇌동매매 방지 규칙)를 하나라도 못 넘으면: 신규 매수 없이 보유 유지
+    - 결정이 없거나 Hold(보류)·확신 부족: 새로 사지 않고, 가진 종목은 그대로(keep)
+    - 매수 계열인데 체크리스트(뇌동매매 방지 규칙)를 하나라도 못 넘으면: 신규 매수 없이 그대로
     - 매도 계열: 위험을 줄이는 쪽이라 그대로 반영"""
     from . import principles
     ai = cfg["ai"]
     mult = ai["rating_weights"]
-    rules = dict(ai.get("rules") or {})
-    h = principles.HOLDING.get(ai.get("holding", "long"), principles.HOLDING["long"])
-    if h["buys"]:  # 단기일수록 하루에 조금 더 여러 종목을 작게 산다
-        rules["max_new_buys_per_day"] = int(rules.get("max_new_buys_per_day", principles.DEFAULT_RULES["max_new_buys_per_day"])) + h["buys"]
+    rules = principles.rules_for(cfg)
+    rules["max_new_buys_per_day"] = max_new_buys(cfg)
     cooldown = int(rules.get("cooldown_days", principles.DEFAULT_RULES["cooldown_days"]))
     universe = list(panel_)
     base = 1.0 / max(len(universe), 1)
@@ -113,14 +135,15 @@ def ai_targets(store: Store, cfg: dict, panel_: dict, today: str, account: str =
         m = mult.get(rating) if rating else None
         note = {"symbol": s, "rating": rating, "confidence": conf, "run_id": (d or {}).get("id"),
                 "headline": f.get("headline", ""), "checklist": None}
-        if not d or m is None or conf < ai.get("min_confidence", 0.5):
+        if not d or m is None or conf < min(ai.get("min_confidence", 0.5), rules.get("min_confidence", 1)):
             keep.add(s)
-            note["action"] = "회의 결과 없음" if not d else ("보유 유지" if m is None else f"확신 부족 {conf:.0%}")
+            note["action"] = "회의 결과 없음" if not d else ("보류: 사지 않음 (가진 종목은 그대로)" if m is None else f"확신 부족 {conf:.0%}")
         elif rating in ("Buy", "Overweight"):
             check = d.get("check") if isinstance(d.get("check"), dict) else None
             warns = warnings_for(s) if warnings_for else []
             stopped = store.recent_stop(account, market, s, cooldown) if account else False
-            cl = principles.checklist(f, check, panel_[s], warns, rules, new_buys, stopped, market_bars)
+            cl = principles.checklist(f, check, panel_[s], warns, rules, new_buys, stopped, market_bars,
+                                      kind="signal" if d.get("origin") == "signal" else "meeting")
             note["checklist"] = cl
             if cl["passed"]:
                 target[s] = base * float(m) * min(1.0, cl["size"]["weight_factor"] * 4)
@@ -139,7 +162,8 @@ def ai_targets(store: Store, cfg: dict, panel_: dict, today: str, account: str =
 
 def order_reason(note: dict, plan: dict | None, base_reason: str) -> str:
     """주문 근거 문장: 왜 사는지/파는지 사람이 읽을 수 있게."""
-    parts = [f"AI 회의 {note.get('rating')} (확신도 {note.get('confidence', 0):.0%})"]
+    who = "AI 거부권 통과" if "거부권" in base_reason else f"AI 회의 {note.get('rating')}"
+    parts = [f"{who} (확신도 {note.get('confidence', 0):.0%})"]
     if note.get("headline"):
         parts.append(note["headline"])
     cl = note.get("checklist")
@@ -187,8 +211,12 @@ def plan_orders(target: dict[str, float], prices: dict[str, float], holdings: di
     return sells + buys
 
 
-def remember_plan(store: Store, account: str, market: str, o: OrderRequest, today: str) -> None:
-    """AI 매수가 나가면 그 회의의 손절·익절 가격을 포지션 계획으로 저장한다. 매도면 계획을 닫는다."""
+TRAIL_DAYS = 10  # 'trail' 팔기: 이만큼 거래일이 지나도 +1R 에 못 닿으면 정리 (오래 안 움직이는 돈을 다른 기회에)
+
+
+def remember_plan(store: Store, account: str, market: str, o: OrderRequest, today: str, style: str = "trail") -> None:
+    """AI 매수가 나가면 그 판단의 손절·익절 가격을 포지션 계획으로 저장한다. 매도면 계획을 닫는다.
+    style='trail' (기본, 설정 ai.exit_style): +1R 에서 절반 익절 → 손절을 본전으로 → 나머지는 따라 올라가는 손절."""
     if o.side == Side.SELL:
         store.close_plan(account, market, o.symbol, "sold")
         return
@@ -196,7 +224,10 @@ def remember_plan(store: Store, account: str, market: str, o: OrderRequest, toda
     plan = d.get("plan")
     if plan:
         h = int(plan.get("horizon_days") or 0)
-        store.save_plan(account, market, o.symbol, d.get("id"), plan["entry"], plan["stop"], plan["take"], h if 0 < h <= 10 else None)
+        trail = style == "trail" and plan["entry"] > plan["stop"] > 0
+        horizon = TRAIL_DAYS if trail else (h if 0 < h <= 10 else None)
+        store.save_plan(account, market, o.symbol, d.get("id"), plan["entry"], plan["stop"], plan["take"], horizon,
+                        "trail" if trail else None, plan["entry"] - plan["stop"] if trail else None, plan["entry"])
 
 
 TOSS_DONE = {"FILLED": "filled", "CANCELED": "rejected", "REJECTED": "rejected", "EXPIRED": "rejected",
@@ -210,7 +241,7 @@ def _plan_after_fill(ctx: Context, o: dict, price: float) -> None:
         return
     if o.get("strategy") == "ai":
         req = OrderRequest(Market(o["market"]), o["symbol"], Side.BUY, int(o["qty"]), float(o["price"]), "ai")
-        remember_plan(ctx.store, ctx.broker.name, o["market"], req, o["trade_date"])
+        remember_plan(ctx.store, ctx.broker.name, o["market"], req, o["trade_date"], ctx.cfg["ai"].get("exit_style", "trail"))
     elif o.get("strategy") == "manual":
         mp = _json.loads(ctx.store.get(f"manual_plan_{o['id']}") or "null")
         if mp:
@@ -296,7 +327,12 @@ def snapshot_equity(ctx: Context, market: Market) -> bool:
 
 
 def check_exits(ctx: Context, market: Market) -> list[dict]:
-    """손절가·익절가에 닿은 AI 포지션을 판다. 장중에 스케줄러가 몇 분마다 부른다."""
+    """손절가·익절가에 닿은 AI 포지션을 판다. 장중에 스케줄러가 몇 분마다 부른다.
+    style='trail' 계획 (R = 진입가 - 처음 손절가):
+      1) +1R 에 닿으면 절반을 판다 (익절) → 남은 절반의 손절을 본전(진입가)으로 올린다
+      2) 그 뒤에는 산 뒤 최고가 - 1.5R 로 손절을 따라 올린다 (0.25R 넘게 오를 때만 고쳐 토스 보호를 덜 바꾼다)
+      3) 10거래일이 지나도 +1R 에 못 닿으면 정리한다 (기간 정리)
+    PC 가 꺼져 있을 때는 토스 서버 보호(OCO)가 손절가와 +2R(절반 익절 뒤에는 +6R) 에서 전부 판다."""
     store, out = ctx.store, []
     plans = store.active_plans(ctx.broker.name, market.value)
     if not plans:
@@ -309,9 +345,27 @@ def check_exits(ctx: Context, market: Market) -> list[dict]:
             store.close_plan(ctx.broker.name, market.value, pl["symbol"], "no_position")
             continue
         px = pos.last_price or ctx.data.price(market, pl["symbol"])
-        why = "stop" if px <= pl["stop"] else "take" if px >= pl["take"] else None
+        why = None
+        trail = pl.get("style") == "trail" and (pl.get("risk") or 0) > 0
+        if trail:
+            R = float(pl["risk"])
+            high = max(float(pl.get("high") or pl["entry"]), px)
+            if high > float(pl.get("high") or 0) + 1e-9:
+                store.update_plan(ctx.broker.name, market.value, pl["symbol"], high=high)
+            if not pl.get("half") and px >= pl["entry"] + R:
+                why = "half"
+            elif pl.get("half"):
+                rnd = kr_tick if market == Market.KR else (lambda v: round(v, 2))
+                new_stop = rnd(max(float(pl["stop"]), high - 1.5 * R))
+                if new_stop - float(pl["stop"]) >= 0.25 * R:
+                    store.update_plan(ctx.broker.name, market.value, pl["symbol"], stop=new_stop)
+                    store.log("info", "exit", f"{pl['symbol']} 따라 올라가는 손절: {pl['stop']:,} → {new_stop:,} (최고가 {high:,})")
+                    pl["stop"] = new_stop
+        why = why or ("stop" if px <= pl["stop"] else "take" if px >= pl["take"] else None)
         from .principles import HOLDING
         days = pl.get("horizon") or HOLDING.get(ctx.cfg["ai"].get("holding", "auto"), {}).get("days")
+        if trail and pl.get("half"):
+            days = None  # 절반 익절 뒤에는 따라 올라가는 손절이 정리를 맡는다
         from . import guard as _guard
         from .corp import blocked_gap
         from .scheduler import is_open as _reg_open
@@ -348,17 +402,27 @@ def check_exits(ctx: Context, market: Market) -> list[dict]:
             price = 0  # 국내 정규장: 시장가
         else:  # 국내 시간외(NXT): 지정가만 되므로 현재가보다 1% 낮게 호가 단위로
             price = kr_tick(px * (0.99 - 0.01 * retry))
-        label = {"stop": "손절", "take": "익절", "time": "기간 만료"}[why]
+        label = {"stop": "손절", "take": "익절", "time": "기간 정리", "half": "절반 익절 (+1R)"}[why]
+        qty = pos.qty // 2 if why == "half" else pos.qty
+        if why == "half" and qty < 1:  # 1주뿐이면 팔지 않고 손절만 본전으로
+            store.update_plan(ctx.broker.name, market.value, pl["symbol"], half=1, stop=max(float(pl["stop"]), float(pl["entry"])))
+            store.log("info", "exit", f"{pl['symbol']} +1R 도달: 1주라 팔지 않고 손절을 본전({pl['entry']:,})으로 올렸어요")
+            continue
         _guard.release(ctx, market, pl["symbol"])  # QTrader 가 직접 팔기 전에 토스 보호를 푼다
-        req = OrderRequest(market, pl["symbol"], Side.SELL, pos.qty, price, "ai-exit",
+        req = OrderRequest(market, pl["symbol"], Side.SELL, qty, price, "ai-exit",
                            f"{label}: 현재가 {px:,} / 손절가 {pl['stop']:,} / 익절가 {pl['take']:,}")
         r = ctx.broker.order(req)
         status = ("filled" if r.filled_qty else "submitted") if r.ok else "rejected"
         store.add_order(trade_date=today, account=ctx.broker.name, market=market.value, symbol=req.symbol, side="sell",
                         qty=req.qty, price=req.price or px, status=status, broker_order_id=r.broker_order_id,
                         strategy="ai-exit", message=f"{req.reason} | {r.message}")
+        if why == "half":
+            if r.ok:  # 계획은 그대로 두고 절반 익절 표시 + 손절 본전 + 남은 절반은 크게 열어 둔다 (토스 보호는 다음 sync 에서 수량·가격을 맞춘다)
+                rnd = kr_tick if market == Market.KR else (lambda v: round(v, 2))
+                store.update_plan(ctx.broker.name, market.value, pl["symbol"], half=1,
+                                  stop=max(float(pl["stop"]), float(pl["entry"])), take=rnd(pl["entry"] + 6 * float(pl["risk"])))
         # 토스는 접수만 된 상태라 체결 확인(sync_orders) 때 계획을 닫는다. 그 전까지는 미체결 재주문 대상
-        if r.ok and (status == "filled" or ctx.broker.name != "toss"):
+        elif r.ok and (status == "filled" or ctx.broker.name != "toss"):
             store.close_plan(ctx.broker.name, market.value, pl["symbol"], why)
         store.log("warn" if why == "stop" else "info", "exit", f"{req.reason} -> {status} {r.message}")
         out.append({"symbol": req.symbol, "reason": why, "status": status, "price": px})
@@ -398,7 +462,7 @@ def execute_approval(ctx: Context, aid: int) -> dict:
                     strategy=req.strategy, message=f"승인 #{aid} | {req.reason} | {r.message}")
     store.decide_approval(aid, "approved", f"{status} {r.message}")
     if r.ok and req.strategy == "ai" and (status == "filled" or ctx.broker.name != "toss"):
-        remember_plan(store, ctx.broker.name, market.value, req, a["trade_date"])
+        remember_plan(store, ctx.broker.name, market.value, req, a["trade_date"], ctx.cfg["ai"].get("exit_style", "trail"))
     store.log("info" if r.ok else "error", "approval", f"승인 #{aid} {status} {req.side.value} {req.symbol} x{req.qty} {r.message}")
     return {"id": aid, "status": status, "message": r.message}
 
@@ -527,7 +591,7 @@ def run_market(ctx: Context, market: Market, dry_run: bool = False, force: bool 
                         side=o.side.value, qty=o.qty, price=o.price, status=status, broker_order_id=oid,
                         strategy=o.strategy, message=f"{o.reason} | {res_msg}")
         if use_ai and (status == "filled" or (status == "submitted" and ctx.broker.name != "toss")):
-            remember_plan(store, acct_id, market.value, o, today)
+            remember_plan(store, acct_id, market.value, o, today, cfg["ai"].get("exit_style", "trail"))
         store.log("info" if status != "rejected" else "error", src,
                   f"{status} {o.side.value} {o.symbol} x{o.qty} @ {o.price:,.2f} {res_msg}")
         results.append({"symbol": o.symbol, "side": o.side.value, "qty": o.qty, "price": o.price,
@@ -563,7 +627,7 @@ def intraday_allowed(ctx: Context, market: Market, today: str) -> set[str]:
 
 
 def buy_one(ctx: Context, market: Market, symbol: str) -> dict:
-    """장중 회의 결론으로 이 한 종목만 산다.
+    """사는 신호 + AI 거부권(또는 직접 연 회의) 결론으로 이 한 종목만 산다.
 
     run_market(목표 비중 전체를 맞추는 리밸런싱)과 달리 다른 보유 종목은 건드리지 않고, 절대 팔지 않는다.
     매수 체크리스트(ai_targets)와 같은 리스크 검사(check_orders: 허용 종목·킬 스위치·오늘 중복·현금)를 거치고,
@@ -618,8 +682,9 @@ def buy_one(ctx: Context, market: Market, symbol: str) -> dict:
         return skip(f"살 수량이 없음 (목표 {w:.1%}, 투자 비중·주문 금액 한도)")
     order_px = round(px * (1 + mc.get("limit_offset", 0.0)), 2) if market == Market.US else px
     d = store.latest_decision(symbol, today) or {}
+    how = f"사는 신호({(d.get('signal') or {}).get('name', '')}) + AI 거부권 통과" if d.get("origin") == "signal" else "장중 회의 매수"
     req = OrderRequest(market, symbol, Side.BUY, qty, order_px, "ai",
-                       order_reason(note, d.get("plan"), f"장중 회의 매수 · 목표 {w:.1%} 보유 {held} -> {held + qty}"))
+                       order_reason(note, d.get("plan"), f"{how} · 목표 {w:.1%} 보유 {held} -> {held + qty}"))
 
     kill = check_loss(ctx, market)  # 하루 손실 한도를 넘었으면 여기서 킬 스위치가 켜진다
     chk = check_orders([req], lim, allowed, kill, store.ordered_today(acct_id, market.value, today), acct.cash)
@@ -661,7 +726,7 @@ def buy_one(ctx: Context, market: Market, symbol: str) -> dict:
         except Exception as e:
             store.log("warn", "sync", f"체결 확인 실패: {e}")
     elif r.ok:
-        remember_plan(store, acct_id, market.value, req, today)
+        remember_plan(store, acct_id, market.value, req, today, cfg["ai"].get("exit_style", "trail"))
         try:
             from . import guard
             guard.sync(ctx)

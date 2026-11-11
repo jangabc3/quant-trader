@@ -32,15 +32,15 @@ TYPES = [  # (이름, 점수 하한, 설명)
 # 유형별 자동매매 기준
 PRESETS = {
     "안정형": {"max_weight": 0.10, "daily_loss_limit": 0.015, "rules": {"min_confidence": 0.75, "min_reward_risk": 2.5,
-             "max_vol": 0.30, "max_new_buys_per_day": 1, "max_rsi": 70, "require_trend": True, "require_momentum": True, "market_filter": "block"}},
+             "max_vol": 0.30, "max_new_buys_per_day": 1, "max_rsi": 70, "require_trend": True, "require_momentum": True, "market_filter": "block", "soft_miss_allowed": 0}},
     "안정추구형": {"max_weight": 0.12, "daily_loss_limit": 0.02, "rules": {"min_confidence": 0.70, "min_reward_risk": 2.2,
-               "max_vol": 0.40, "max_new_buys_per_day": 2, "max_rsi": 72, "require_trend": True, "require_momentum": True, "market_filter": "block"}},
+               "max_vol": 0.40, "max_new_buys_per_day": 2, "max_rsi": 72, "require_trend": True, "require_momentum": True, "market_filter": "block", "soft_miss_allowed": 1}},
     "위험중립형": {"max_weight": 0.15, "daily_loss_limit": 0.025, "rules": {"min_confidence": 0.65, "min_reward_risk": 2.0,
-               "max_vol": 0.50, "max_new_buys_per_day": 2, "max_rsi": 75, "require_trend": True, "require_momentum": True, "market_filter": "half"}},
+               "max_vol": 0.50, "max_new_buys_per_day": 2, "max_rsi": 75, "require_trend": True, "require_momentum": True, "market_filter": "half", "soft_miss_allowed": 1}},
     "적극투자형": {"max_weight": 0.20, "daily_loss_limit": 0.03, "rules": {"min_confidence": 0.60, "min_reward_risk": 1.8,
-               "max_vol": 0.60, "max_new_buys_per_day": 3, "max_rsi": 78, "require_trend": True, "require_momentum": True, "market_filter": "half"}},
+               "max_vol": 0.60, "max_new_buys_per_day": 3, "max_rsi": 78, "require_trend": True, "require_momentum": True, "market_filter": "half", "soft_miss_allowed": 1}},
     "공격투자형": {"max_weight": 0.25, "daily_loss_limit": 0.04, "rules": {"min_confidence": 0.55, "min_reward_risk": 1.6,
-               "max_vol": 0.75, "max_new_buys_per_day": 4, "max_rsi": 80, "require_trend": False, "require_momentum": True, "market_filter": "half"}},
+               "max_vol": 0.75, "max_new_buys_per_day": 4, "max_rsi": 80, "require_trend": False, "require_momentum": True, "market_filter": "half", "soft_miss_allowed": 2}},
 }
 LOSS_TEXT = {1: "-5%", 2: "-10%", 3: "-20%", 4: "-30%", 5: "-40% 이상"}
 
@@ -99,7 +99,7 @@ def criteria(cfg: dict) -> list[dict]:
          "why": "지수가 200일선 아래면 모멘텀이 잘 안 통함 (Cooper 외 2004)"},
         {"icon": "thermometer", "k": "과열", "v": f"RSI {r['max_rsi']:.0f} 미만", "why": "너무 급하게 오른 종목 추격 금지"},
         {"icon": "activity", "k": "변동성", "v": f"연 {r['max_vol']:.0%} 이하", "why": "지나치게 출렁이는 종목 제외"},
-        {"icon": "badge-check", "k": "팩트체크", "v": f"확인 {r['min_fact_ok']:.0%} 이상, 틀린 주장 0", "why": "AI 근거가 사실인지 원자료로 확인"},
+        {"icon": "badge-check", "k": "팩트체크", "v": f"점수 {r['min_fact_ok']:.0%} 이상, 틀린 주장 0", "why": "AI 근거가 사실인지 원자료로 확인 (확인 불가는 반만 셈)"},
         {"icon": "repeat", "k": "하루 신규 매수", "v": f"{r['max_new_buys_per_day']}종목까지", "why": "과잉 매매 방지 (Barber & Odean 2000)"},
         {"icon": "timer", "k": "손절 후 재매수", "v": f"{r['cooldown_days']}거래일 대기", "why": "손실 직후 감정적인 복수 매매 방지"},
         {"icon": "calendar-clock", "k": "매매 기간", "v": HOLDING.get(cfg["ai"].get("holding", "long"), {}).get("name", "장기"), "why": "단기일수록 손절·익절이 좁고, 기한이 지나면 팝니다"},

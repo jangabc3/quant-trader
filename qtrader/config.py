@@ -16,6 +16,7 @@ DATA_SOURCES = ("auto", "toss", "kis", "csv")
 
 DEFAULT = {
     "mode": "paper",
+    "migrated": ["all_sessions", "meetings_per_market"],  # 이미 적용한 기본값 바꾸기 (migrate)
     # 실전 주문은 mode=kis_real 이면서 이 값이 true 일 때만 나간다
     "live_confirmed": False,
     "markets": {
@@ -26,9 +27,12 @@ DEFAULT = {
             # 예시 종목: 삼성전자, SK하이닉스, NAVER, 현대차, LG에너지솔루션, 카카오, 셀트리온, KB금융
             "universe": ["005930", "000660", "035420", "005380", "373220", "035720", "068270", "105560"],
             "run_time": "15:10",  # KST. 장 마감(15:30) 전
-            # 넥스트레이드(NXT) 시간외 08:00~20:00 에도 손절·익절 감시·주문 (토스 Open API 지원 여부를 먼저 확인하세요)
-            "extended": False,
+            # 넥스트레이드(NXT) 08:00~20:00 에도 감시·사고팔기 (지정가만). 정규장(09:00~15:30)만 하려면 끈다
+            "extended": True,
             "budget": 10_000_000,  # 이 전략이 쓸 최대 금액(원)
+            # AI 회의를 국내·미국 따로: 켜기/끄기, 하루에 회의할 종목 수 (비용 상한. 회의 1번 = Claude 7번 + 웹 검색)
+            "ai_meetings": True,  # 사는 신호가 뜬 종목을 AI 거부권으로 한 번 확인 (끄면 이 시장은 자동으로 사지 않음)
+            "meetings_per_day": 6,  # 하루 AI 거부권 확인 수 (1번 약 10~30원)
         },
         "US": {
             "enabled": False,
@@ -38,11 +42,13 @@ DEFAULT = {
             "universe": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "AMEX:SPY", "NYSE:KO"],
             "run_time": "15:45",  # 뉴욕 시간. 장 마감(16:00) 전
             "budget": 10_000,  # 달러
+            "ai_meetings": True,  # 사는 신호가 뜬 종목을 AI 거부권으로 한 번 확인 (끄면 이 시장은 자동으로 사지 않음)
+            "meetings_per_day": 6,  # 하루 AI 거부권 확인 수 (1번 약 10~30원)
             "limit_offset": 0.003,  # 미국 지정가 주문을 현재가에서 얼마나 유리하게 걸지
             # 정기 실행: regular = 뉴욕 정규장 마감 전 (run_time 은 뉴욕 시각), day = 한국 낮 주간거래 (run_time 은 한국 시각)
             "run_session": "regular",
-            # 정규장 밖에서도 감시·주문할 세션: day(주간거래), pre(프리마켓), after(애프터마켓)
-            "extended_sessions": [],
+            # 정규장 밖에서도 감시·사고팔 세션: day(주간거래, 한국 낮), pre(프리마켓), after(애프터마켓). 모두 지정가만
+            "extended_sessions": ["day", "pre", "after"],
             "day_hours": "10:00-17:30",  # 주간거래 시간 (한국 시각). 토스 앱의 실제 시간에 맞게
         },
     },
@@ -71,8 +77,8 @@ DEFAULT = {
         "chat_effort": "medium",  # 큐비 답변 깊이 (low 는 빠르고 싸지만 분석이 얕아짐)
         "deep_model": "claude-opus-5-5",
         "effort": "medium",
-        # fast: Claude 호출 7번 (분석 묶음 + 대표가 팀장·트레이더·리스크 역할 통합), precise: 14번
-        "mode": "fast",
+        # 7명 회의 (Claude 호출 7번). 대표만 깊은 모델을 쓰려면 deep_final (비용이 약 2배)
+        "deep_final": False,
         # 매수 체크리스트 기준 (principles.DEFAULT_RULES 를 덮어쓴다)
         "rules": {},
         # AI 로 산 종목은 손절가·익절가에 닿으면 장중에 자동으로 판다
@@ -82,11 +88,9 @@ DEFAULT = {
         # AI 회의로 정한 주문은 화면에서 승인해야 나간다 (가이드 원칙: 최종 판단은 사람이)
         "require_approval": False,
         "debate_rounds": 1,
-        "risk_rounds": 1,
         "web_research": True,  # 뉴스·재무·여론 분석가가 웹 검색을 쓴다
         "run_before_minutes": 40,  # 실행 시각보다 이만큼 먼저 회의를 돌린다
-        "max_symbols_per_day": 8,  # 비용 상한: 하루 회의 종목 수
-        # 최종 등급 -> 목표 비중 배수 (종목당 1/N 기준). Hold 는 보유 유지
+        # 최종 등급 -> 목표 비중 배수 (종목당 1/N 기준). Hold(보류)는 새로 사지 않고 가진 종목은 그대로
         "rating_weights": {"Buy": 1.0, "Overweight": 0.7, "Hold": None, "Underweight": 0.3, "Sell": 0.0},
         "min_confidence": 0.5,  # 이보다 확신이 낮으면 Hold 로 본다
         "monthly_cost_cap_krw": 30000,  # 이번 달 AI 회의 비용이 이만큼 넘으면 새 회의를 열지 않는다 (0 = 제한 없음)
@@ -98,22 +102,26 @@ DEFAULT = {
         "live_recheck": True,
         "recheck_per_day": 5,  # 하루 재점검 횟수 상한 (0 = 재점검 안 함)
         "recheck_every_min": 2,  # 재점검이 필요한지 몇 분마다 볼지
-        # 장중 계속 사기: 장중 N분마다 새로 규칙을 통과한 후보로 회의를 열고, 결론이 매수이고 체크리스트를 통과하면 그때 바로 산다.
-        # 끄면 하루 한 번 정기 실행 때만 산다. 회의 수는 max_symbols_per_day·monthly_cost_cap_krw 에 함께 센다
+        # 장중 계속 사기: 2분마다 후보의 사는 신호(눌림목 반등·거래량 돌파)를 보고, 신호가 뜬 종목만 AI 거부권 한 번 →
+        # 통과하고 숫자 안전 점검을 넘으면 그 종목만 산다 (signals.py). 확인 수는 시장별 meetings_per_day·monthly_cost_cap_krw
         "intraday": True,
+        "auto_meetings": False,
+        # 팔기: trail = +1R 에서 절반 익절 → 손절 본전 → 최고가 따라 올라가는 손절 · 10거래일 안 움직이면 정리, fixed = 정한 손절·익절에서 전부
+        "exit_style": "trail",  # 정기 실행 전 7명 회의를 자동으로 열지 (기본 꺼짐: 회의는 직접 누를 때만)
+        # 가상매매 연습 기준: 가상매매일 때만 확신도·손익비·추가 기준 허용 수·하루 매수 수를 조금 낮춰 흐름을 시험해 본다 (실전에는 안 씀)
+        "practice": True,
         "intraday_every_min": 15,
     },
     # 알림: 화면(윈도우 알림)은 항상, 텔레그램은 봇 토큰(키 보관함)과 대화방 번호가 있을 때
     "notify": {"telegram_chat_id": "", "daily_report": True},
     "alerts": [],  # 가격 알림 [{symbol, name, op: above|below, price}]
     "max_sector_weight": 0.4,  # 한 업종 비중 경고 기준
-    "security": {"pin": True},
     # 자동 업데이트: GitHub 저장소 "아이디/저장소이름" (Releases 에 -win.zip 과 .sha256 을 올린다). 비우면 확인 안 함
     "update": {"repo": "", "check": True},
     # 미국 주식은 달러로만 산다. 달러가 모자라면 자동 환전하지 않고 알려서 환전 우대로 직접 바꾸게 한다
     "fx_policy": "preferential_only",
     # 전략 비교: 같은 회의 결과로 매매 기간만 다른 가상 계좌들을 함께 돌린다 (AI 비용 추가 없음)
-    "compare": {"enabled": False, "modes": ["auto", "long", "swing", "short"]},  # 실전 주문 PIN (끄면 실전 모드 전환·직접 주문에도 묻지 않는다)
+    "compare": {"enabled": False, "modes": ["auto", "long", "swing", "short"]},
     "watchlist": ["005930", "000660", "AAPL", "NVDA"],
     "investor": None,  # 투자 성향 검사 결과 (처음 실행 때 묻는다)
     "news": {"feeds": [
@@ -169,7 +177,8 @@ def load() -> dict:
     if not p.exists():
         save(DEFAULT)
         return copy.deepcopy(DEFAULT)
-    cfg = _merge(DEFAULT, json.loads(p.read_text(encoding="utf-8")))
+    saved = json.loads(p.read_text(encoding="utf-8"))
+    cfg = migrate(_merge(DEFAULT, saved), saved)
     # 예전 기본 뉴스 피드(인베스팅닷컴 2개)만 저장돼 있으면 새 기본 목록으로 바꾼다
     old = {"https://kr.investing.com/rss/news_25.rss", "https://kr.investing.com/rss/news.rss"}
     feeds = cfg.get("news", {}).get("feeds") or []
@@ -179,6 +188,31 @@ def load() -> dict:
     if feeds and ({f.get("url") for f in feeds} <= old or legacy or any(("cnbc.com" in (f.get("url") or "")) or ("dowjones" in (f.get("url") or "")) or f.get("url") in english for f in feeds)
                   or not all("cat" in f for f in feeds)):
         cfg["news"]["feeds"] = copy.deepcopy(DEFAULT["news"]["feeds"])
+    return cfg
+
+
+# 한 번만 적용하는 기본값 바꾸기. 예전에 저장한 설정에는 옛 기본값이 그대로 들어 있어서, 새 기본값을 한 번 덮어쓴다
+# (적용한 뒤 사용자가 끄고 저장하면 그 선택을 따른다)
+MIGRATIONS = ("all_sessions", "meetings_per_market", "signal_veto")
+
+
+def migrate(cfg: dict, saved: dict) -> dict:
+    """saved 는 파일에 저장돼 있던 그대로 (기본값과 합치기 전). 합친 뒤에는 새 기본값의 표시가 섞이기 때문."""
+    done = set(saved.get("migrated") or [])
+    if "all_sessions" not in done:  # 프리장·장중·애프터장 내내 사고팔기 (사용자 요청 2026-10)
+        cfg["markets"]["KR"]["extended"] = True
+        cfg["markets"]["US"]["extended_sessions"] = ["day", "pre", "after"]
+    if "meetings_per_market" not in done:  # 하루 회의 수를 국내·미국 따로 (예전 하나로 합친 값은 반씩 나눈다)
+        old = (saved.get("ai") or {}).get("max_symbols_per_day")
+        if isinstance(old, int) and not any("meetings_per_day" in (saved.get("markets") or {}).get(m, {}) for m in ("KR", "US")):
+            for m in ("KR", "US"):
+                cfg["markets"][m]["meetings_per_day"] = max(1, old // 2)
+    if "signal_veto" not in done:  # 하루 회의 수 → 하루 거부권 확인 수 (1번 비용이 회의의 1/30 쯤이라 최소 6번)
+        for m in ("KR", "US"):
+            mc = cfg["markets"][m]
+            mc["meetings_per_day"] = max(int(mc.get("meetings_per_day", 6) or 0), 6) if mc.get("ai_meetings", True) else mc.get("meetings_per_day", 6)
+    cfg.get("ai", {}).pop("max_symbols_per_day", None)
+    cfg["migrated"] = sorted(done | set(MIGRATIONS))
     return cfg
 
 
@@ -209,10 +243,10 @@ def validate(cfg: dict) -> list[str]:
     ai = cfg.get("ai", {})
     if ai.get("effort") not in ("low", "medium", "high", "xhigh", "max"):
         errs.append("ai.effort 는 low/medium/high/xhigh/max 중 하나여야 합니다")
-    if ai.get("mode", "fast") not in ("fast", "precise"):
-        errs.append("ai.mode 는 fast 또는 precise")
-    if not 0 <= int(ai.get("debate_rounds", 1)) <= 3 or not 0 <= int(ai.get("risk_rounds", 1)) <= 3:
+    if not 0 <= int(ai.get("debate_rounds", 1)) <= 3:
         errs.append("토론 라운드는 0~3 이어야 합니다")
+    if ai.get("exit_style", "trail") not in ("trail", "fixed"):
+        errs.append("ai.exit_style 는 trail 또는 fixed")
     if not isinstance(ai.get("intraday", True), bool):
         errs.append("ai.intraday 는 true 또는 false")
 
@@ -225,9 +259,27 @@ def validate(cfg: dict) -> list[str]:
         errs.append("재점검 간격(ai.recheck_every_min)은 2~240분이어야 합니다")
     if not _int_in("recheck_per_day", 0, 50, 5):
         errs.append("하루 재점검 횟수(ai.recheck_per_day)는 0~50 이어야 합니다")
-    if not _int_in("max_symbols_per_day", 0, 50, 8):
-        errs.append("하루 회의 종목 수(ai.max_symbols_per_day)는 0~50 이어야 합니다")
+    for m, mc in (cfg.get("markets") or {}).items():
+        v = mc.get("meetings_per_day", 4)
+        if not (isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 50):
+            errs.append(f"{m} 하루 AI 거부권 확인 수(meetings_per_day)는 0~50 이어야 합니다")
+        if not isinstance(mc.get("ai_meetings", True), bool):
+            errs.append(f"{m}.ai_meetings 는 true 또는 false")
     return errs
+
+
+def meetings_cap(cfg: dict, market) -> int:
+    """이 시장에서 하루에 AI 회의를 열 수 있는 종목 수. 이 시장 AI 회의를 끄면 0."""
+    mc = cfg["markets"][getattr(market, "value", market)]
+    return int(mc.get("meetings_per_day", 4)) if mc.get("ai_meetings", True) else 0
+
+
+def met_today(store, market, today: str, auto_only: bool = False) -> set[str]:
+    """오늘 이 시장에서 AI 회의를 한 종목 (정기·장중·직접 연 회의 모두).
+    auto_only: 자동매매가 연 회의만 (하루 회의 수 한도는 이것만 센다. 예전 기록은 origin 이 없어 자동으로 본다)."""
+    mv = getattr(market, "value", market)
+    return {r["symbol"] for r in store.ai_runs(300) if r["trade_date"] == today and r["market"] == mv
+            and (not auto_only or r.get("origin", "auto") == "auto")}
 
 
 def save(cfg: dict) -> None:

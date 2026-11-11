@@ -111,6 +111,69 @@ $("#calc-tab").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
   $$("#calc-tab button").forEach((x) => x.classList.toggle("on", x === b));
-  ["pos", "cp", "tax"].forEach((k) => $("#calc-" + k).classList.toggle("hidden", k !== b.dataset.v));
+  ["pos", "cp", "tax", "sig"].forEach((k) => $("#calc-" + k).classList.toggle("hidden", k !== b.dataset.v));
   if (b.dataset.v === "cp") compound();
+  if (b.dataset.v === "sig") sigTest(false);
 });
+
+// 사는 신호 검증: 자동매매 규칙(신호 + 절반 익절·따라 올라가는 손절·기간 정리)을 지난 일봉으로
+const sg = { market: "KR", chart: null, busy: false };
+$("#sg-mkt").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  sg.market = b.dataset.v;
+  $$("#sg-mkt button").forEach((x) => x.classList.toggle("on", x === b));
+  sigTest(false);
+});
+$("#sg-run").onclick = () => sigTest(true);
+async function sigTest(run) {
+  const out = $("#sg-out");
+  if (sg.busy) return;
+  sg.busy = true;
+  if (run) out.innerHTML = `<div class="skeleton" style="height:220px"></div><p class="note">지난 시세를 받아 돌려 보는 중이에요...</p>`;
+  try {
+    const d = await api("/api/signal-test", { method: "POST", body: { market: sg.market, refresh: run } });
+    sigRender(d);
+  } catch (e) {
+    if (run) out.innerHTML = `<p class="note">${esc(e.message)}</p>`;
+  } finally { sg.busy = false; }
+}
+function sigRender(d) {
+  const s = d.summary || {}, w = Math.round((d.weight || 0.2) * 100);
+  const pf = s.profit_factor == null ? "-" : s.profit_factor.toFixed(2);
+  const k = (label, v, sub, c = "") => `<div><span>${label}</span><b class="${c}">${v}</b><em>${sub}</em></div>`;
+  if (!s.trades) {
+    $("#sg-out").innerHTML = `<div class="empty"><i data-lucide="search-x"></i><p>신호가 한 번도 뜨지 않았어요</p><span class="note">종목 ${d.symbols}개 · 지난 3년 동안 규칙에 맞는 자리가 없었어요.</span></div>`;
+    icons(); return;
+  }
+  const names = d.names || {};
+  $("#sg-out").innerHTML = `<p class="note">${esc(d.date || "")} 기준 · 종목 ${d.symbols}개${d.skipped?.length ? ` (자료 부족 ${d.skipped.length}개 뺌)` : ""}${d.cached ? " · 오늘 돌린 결과 (다시 돌리려면 '돌려 보기')" : ""}</p>
+    <div class="calc-out sg-kpi">
+      ${k("거래 수", `${s.trades}번`, `평균 ${s.avg_days}거래일 들고 있음`)}
+      ${k("이긴 비율", `${Math.round(s.win_rate * 100)}%`, `절반 익절까지 간 거래 ${Math.round(s.half_rate * 100)}%`)}
+      ${k("거래 1번 평균", pct(s.avg), `이길 때 ${pct(s.avg_win)} · 질 때 ${pct(s.avg_loss)}`, cls(s.avg))}
+      ${k("손익비 (번 돈 ÷ 잃은 돈)", pf, s.profit_factor > 1.05 ? "번 돈이 잃은 돈보다 많았어요" : s.profit_factor < 0.95 ? "잃은 돈이 번 돈보다 많았어요" : "번 돈과 잃은 돈이 비슷했어요",
+        s.profit_factor > 1.05 ? "up" : s.profit_factor < 0.95 ? "down" : "")}
+      ${k(`계좌 수익 (거래마다 ${w}%씩)`, pct(s.total), `가장 많이 빠진 구간 ${pct(s.max_drawdown)}`, cls(s.total))}
+    </div>
+    <div id="sg-chart" class="chart small"></div>
+    <h4>신호별</h4>
+    <table><thead><tr><th>신호</th><th class="r">거래</th><th class="r">이긴 비율</th><th class="r">평균</th><th class="r">손익비</th><th class="r">평균 R</th></tr></thead><tbody>
+      ${Object.entries(d.by_kind || {}).map(([n, x]) => `<tr><td>${esc(n)}</td><td class="r">${x.trades}</td><td class="r">${Math.round(x.win_rate * 100)}%</td>
+        <td class="r ${cls(x.avg)}">${pct(x.avg)}</td><td class="r">${x.profit_factor == null ? "-" : x.profit_factor.toFixed(2)}</td><td class="r">${x.avg_r}</td></tr>`).join("")}</tbody></table>
+    <h4>최근 거래 <small class="note">줄을 누르면 종목 화면</small></h4>
+    <table><thead><tr><th>종목</th><th>신호</th><th>산 날</th><th>판 날</th><th>어떻게</th><th class="r">수익률</th></tr></thead><tbody>
+      ${(d.trades || []).map((t) => `<tr class="clickable" data-open="${esc(t.symbol)}"><td>${esc(names[t.symbol] || t.symbol)}</td><td>${esc(t.kind)}</td>
+        <td>${esc(t.entry_date.slice(2))}</td><td>${esc(t.exit_date.slice(2))}</td><td class="note">${esc(t.how)}</td><td class="r ${cls(t.ret)}">${pct(t.ret)}</td></tr>`).join("")}</tbody></table>`;
+  icons();
+  if (!window.LightweightCharts || !(d.curve || []).length) return;
+  const ch = LightweightCharts.createChart($("#sg-chart"), {
+    layout: { background: { color: "transparent" }, textColor: "#8b98a5" }, autoSize: true,
+    grid: { vertLines: { color: "#1e262f" }, horzLines: { color: "#1e262f" } },
+    rightPriceScale: { borderColor: "#26303b" }, timeScale: { borderColor: "#26303b" },
+    localization: { priceFormatter: (v) => (v * 100).toFixed(1) + "%" },
+  });
+  const up = (d.curve.at(-1)?.value || 0) >= 0;
+  ch.addAreaSeries({ lineColor: up ? "#f04452" : "#3182f6", topColor: up ? "rgba(240,68,82,.3)" : "rgba(49,130,246,.3)", bottomColor: "rgba(0,0,0,0)" }).setData(d.curve);
+  ch.timeScale().fitContent();
+}

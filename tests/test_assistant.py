@@ -95,3 +95,16 @@ def test_stream_sends_text_as_it_comes(bot):
     assert evs[-1]["answer"].startswith("**결론**")
     results = bot._client.sent[1]["messages"][2]["content"]
     assert [r["tool_use_id"] for r in results] == ["a", "b"]  # 두 결과를 한 메시지로
+
+
+def test_chat_cost_counts_toward_month_total(bot, isolated_home):
+    """큐비 대화 비용(토큰·웹 검색)도 이번 달 AI 비용과 월 상한에 들어간다."""
+    from qtrader import extras
+    from qtrader.storage import Store
+    usage = NS(input_tokens=10_000, output_tokens=1_000, cache_read_input_tokens=0, cache_creation_input_tokens=0,
+               server_tool_use=NS(web_search_requests=3))
+    bot._client = FakeClient([NS(content=[NS(type="text", text="답")], stop_reason="end_turn", usage=usage)])
+    st = Store(isolated_home / "qtrader.db")
+    before = extras.month_cost_krw(st)
+    bot.chat(None, "오늘 시장 어때?")
+    assert extras.month_cost_krw(st) - before == pytest.approx((10_000 * 2 + 1_000 * 10) / 1e6 * extras.KRW_PER_USD + 0.03 * extras.KRW_PER_USD)

@@ -151,10 +151,20 @@ class Store:
             pass
         self.db.executescript(SCHEMA)
         # 예전 DB 에 없는 열 추가 (보유 기한)
-        cols = {r[1] for r in self.db.execute("pragma table_info(plans)")}
-        if "horizon" not in cols:
-            self.db.execute("alter table plans add column horizon integer")
+        # 팔기 규칙 (style='trail'): 처음 위험 폭(risk = 진입가-손절가), 산 뒤 최고가(high), 절반 익절 했는지(half)
+        for col, typ in (("horizon", "integer"), ("style", "text"), ("risk", "real"), ("high", "real"), ("half", "integer")):
+            self._add_column("plans", col, typ)
         self.db.commit()
+
+    def _add_column(self, table: str, col: str, typ: str) -> None:
+        """없으면 열 추가. 화면·스케줄러가 예전 DB 를 동시에 열면 둘 다 '없다'고 보고 추가할 수 있어 이미 있다는 오류는 넘긴다."""
+        if col in {r[1] for r in self.db.execute(f"pragma table_info({table})")}:
+            return
+        try:
+            self.db.execute(f"alter table {table} add column {col} {typ}")
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e):
+                raise
 
     def exec(self, sql: str, args: tuple = ()) -> sqlite3.Cursor:
         with self._lock:
@@ -257,10 +267,21 @@ class Store:
         return {x["symbol"] for x in r}
 
     # 포지션 계획 (손절·익절)
-    def save_plan(self, account, market, symbol, run_id, entry, stop, take, horizon: int | None = None) -> None:
+    def save_plan(self, account, market, symbol, run_id, entry, stop, take, horizon: int | None = None,
+                  style: str | None = None, risk: float | None = None, high: float | None = None, half: int = 0,
+                  created_at: str | None = None) -> None:
+        """style: None = 정해 둔 손절·익절에서 전부 판다, 'trail' = +1R 에서 절반 익절 → 손절을 본전으로 → 나머지는 따라 올라가는 손절."""
         self.close_plan(account, market, symbol, "replaced")
-        self.exec("insert into plans (account, market, symbol, run_id, entry, stop, take, created_at, horizon) "
-                  "values (?,?,?,?,?,?,?,?,?)", (account, market, symbol, run_id, entry, stop, take, now(), horizon))
+        self.exec("insert into plans (account, market, symbol, run_id, entry, stop, take, created_at, horizon, style, risk, high, half) "
+                  "values (?,?,?,?,?,?,?,?,?,?,?,?,?)", (account, market, symbol, run_id, entry, stop, take, created_at or now(), horizon,
+                                                       style, risk, high, half))
+
+    def update_plan(self, account, market, symbol, **kw) -> None:
+        """열린 계획의 손절가·익절가·최고가·절반 익절 표시만 고친다 (만든 시각은 그대로: 기간 정리 기준)."""
+        keys = [k for k in kw if k in ("stop", "take", "high", "half")]
+        if keys:
+            self.exec(f"update plans set {', '.join(f'{k}=?' for k in keys)} where account=? and market=? and symbol=? "
+                      "and closed_at is null", tuple(kw[k] for k in keys) + (account, market, symbol))
 
     def close_plan(self, account, market, symbol, reason) -> None:
         self.exec("update plans set closed_at=?, close_reason=? where account=? and market=? and symbol=? "
@@ -310,7 +331,7 @@ class Store:
              run["status"], (run.get("final") or {}).get("rating"), (run.get("final") or {}).get("confidence"),
              json.dumps(run.get("final"), ensure_ascii=False),
              json.dumps({k: run.get(k) for k in ("agents", "check", "facts", "stages", "name", "debate", "risk_debate",
-                                                 "plan", "checklist", "mode", "cost_usd", "calls", "cache_read")},
+                                                 "plan", "checklist", "mode", "cost_usd", "calls", "cache_read", "origin", "signal")},
                         ensure_ascii=False),
              run.get("tokens_in", 0), run.get("tokens_out", 0), run.get("error")))
 
@@ -338,7 +359,7 @@ class Store:
         d["final"] = json.loads(d["final"]) if d.get("final") else None
         extra = json.loads(d.pop("reports")) if d.get("reports") else {}
         if isinstance(extra, dict) and "agents" in extra:
-            d.update({k: extra.get(k) for k in ("check", "plan", "checklist")})
+            d.update({k: extra.get(k) for k in ("check", "plan", "checklist", "origin", "signal")})
         return d
 
     # 일봉 캐시

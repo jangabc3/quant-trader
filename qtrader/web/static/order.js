@@ -1,5 +1,5 @@
 "use strict";
-// 종목 화면의 주문창: 구매·판매, 지정가·시장가, 호가 단위 ±, 수량 비율 버튼, 확인 시트. 실전 계좌면 PIN 을 묻는다.
+// 종목 화면의 주문창: 구매·판매, 지정가·시장가, 호가 단위 ±, 수량 비율 버튼, 확인 시트.
 
 const tk = { side: "buy", type: "limit", how: "now", info: null, price: 0, qty: 0, sym: null };
 
@@ -131,6 +131,16 @@ async function ticketLoad(sym) {
     const i = await api("/api/order/info/" + encodeURIComponent(sym));
     if (tk.sym !== sym) return;
     const first = !tk.info || tk.info.symbol !== sym;
+    if (!i.price) {  // 키가 없어 시세를 못 받으면 0원 주문창 대신 무엇을 하면 되는지 알려 준다
+      tk.info = null;
+      $("#ticket").innerHTML = `<div class="empty"><i data-lucide="key-round"></i><p>지금은 주문할 수 없어요</p>
+        <span class="note">${state.status?.keys?.toss ? "이 종목의 현재가를 받지 못했어요. 잠시 뒤 다시 열어 주세요."
+          : "체험용 화면이에요. 설정에서 토스증권 키를 등록하면 실제 시세로 가상매매 주문을 할 수 있어요."}</span>
+        ${state.status?.keys?.toss ? "" : `<button class="primary" id="tk-open-cfg">설정 열기</button>`}</div>`;
+      $("#tk-open-cfg")?.addEventListener("click", () => openTab("cfg"));
+      icons();
+      return;
+    }
     tk.info = i;
     if (first) { tk.price = i.price ? tkRound(i.price) : 0; tk.qty = 0; tk.type = "limit"; ticketShell(); }
     if (!i.market_order && tk.type === "market") tk.type = "limit";
@@ -174,7 +184,7 @@ async function confirmOrder() {
       <div class="tot"><dt>총 ${buy ? "주문" : "판매"} 금액</dt><dd>${tkMoney(gross)}</dd></div>
       <div><dt>계좌</dt><dd>${i.live ? "<b class='up'>실전</b> " : "가상 "}${esc(MODE_NAME[i.mode] || i.mode)}</dd></div>
       ${buy ? `<div><dt>손절 · 익절</dt><dd>${tk.stop ? `<span class="down">${tkMoney(tk.stop)}</span> · <span class="up">${tkMoney(tk.take)}</span>` : "정하지 않음 (자동으로 팔지 않아요)"}</dd></div>` : ""}</dl>
-    ${i.live ? `<p class="note">실제 돈이 움직입니다. 확인을 누르면 PIN 을 물을 수 있어요.</p>` : ""}
+    ${i.live ? `<p class="note">실제 돈이 움직입니다. 가격과 수량을 한 번 더 확인하세요.</p>` : ""}
     <div class="tk-c-btns"><button id="tk-cancel">취소</button><button class="tk-go ${buy ? "buy" : "sell"}" id="tk-ok">${buy ? "구매" : "판매"} 확인</button></div></div>`);
   $("#tk-cancel").onclick = () => $("#modal").classList.add("hidden");
   $("#tk-ok").onclick = async (e) => {

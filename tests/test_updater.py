@@ -66,6 +66,107 @@ def test_download_rejects_path_escape(tmp_path, monkeypatch):
         updater.download({"latest": "1", "zip": "u.zip", "sha256": "u.sha256"}, tmp_path)
 
 
+def _git(cwd, *a):
+    import subprocess
+    subprocess.run(["git", *a], cwd=cwd, check=True, capture_output=True,
+                   env={"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+                        "PATH": __import__("os").environ["PATH"], "HOME": str(cwd)})
+
+
+def test_git_mode_finds_new_commits_and_prepares_reinstall(tmp_path):
+    """A 방식: 설치한 커밋과 GitHub main 을 비교해 알리고, '지금 업데이트'는 'QTrader 설치.cmd --update' 를 준비한다."""
+    import json
+    import subprocess
+    origin, src, home = tmp_path / "origin", tmp_path / "src", tmp_path / "home"
+    home.mkdir()
+    _git(tmp_path, "init", "-q", "-b", "main", str(origin))
+    (origin / "a.txt").write_text("1")
+    _git(origin, "add", ".")
+    _git(origin, "commit", "-q", "-m", "처음")
+    _git(tmp_path, "clone", "-q", str(origin), str(src))
+    (src / updater.INSTALLER).write_text("@echo off")
+    assert updater.source_info(home) is None  # 설치 기록이 없으면 B 방식
+    updater.mark_installed(home, src)
+    info = updater.source_info(home)
+    run = subprocess.run
+    r = updater.check_git(info, force=True, run=run)
+    assert r["mode"] == "git" and r["available"] is False and r["current_rev"] == info["rev"][:7]
+    (origin / "a.txt").write_text("2")
+    _git(origin, "commit", "-q", "-am", "fix(stock): 호가 겹침 고치기")
+    r = updater.check_git(info, force=True, run=run)
+    assert r["available"] and r["behind"] == 1 and "호가 겹침" in r["notes"]
+    updater.write_git_pending(info, home)
+    p = json.loads((home / "updates" / "pending.json").read_text(encoding="utf-8"))
+    assert p["args"][-2:] == [str(src / updater.INSTALLER), "--update"] and p["cwd"] == str(src)
+
+
+def test_git_mode_reports_fetch_failure(tmp_path):
+    class Fail:
+        returncode, stdout, stderr = 128, "", "fatal: could not read Username for 'https://github.com'"
+    r = updater.check_git({"src": str(tmp_path), "rev": "abc"}, force=True, run=lambda *a, **k: Fail())
+    assert r["available"] is False and "확인 실패" in r["reason"] and "Username" in r["reason"]
+
+
+def test_finish_pending_runs_args(tmp_path, monkeypatch):
+    import json
+    import subprocess
+    (tmp_path / "updates").mkdir()
+    (tmp_path / "updates" / "pending.json").write_text(json.dumps({"args": ["cmd", "/c", "x.cmd", "--update"], "cwd": "D:/src"}))
+    seen = {}
+    monkeypatch.setattr(subprocess, "Popen", lambda args, **kw: seen.update(args=args, cwd=kw.get("cwd")))
+    assert updater.finish_pending(tmp_path) and seen == {"args": ["cmd", "/c", "x.cmd", "--update"], "cwd": "D:/src"}
+    assert not (tmp_path / "updates" / "pending.json").exists()
+
+
+def test_install_record_also_next_to_program(tmp_path):
+    """설치 기록은 데이터 폴더와 프로그램 폴더 두 곳에. 데이터 폴더 기록이 없어도 업데이트 버튼이 나온다."""
+    import subprocess
+    origin, src, home, app = tmp_path / "o", tmp_path / "src", tmp_path / "home", tmp_path / "app"
+    home.mkdir()
+    app.mkdir()
+    _git(tmp_path, "init", "-q", "-b", "main", str(origin))
+    (origin / "a.txt").write_text("1")
+    _git(origin, "add", ".")
+    _git(origin, "commit", "-q", "-m", "처음")
+    _git(tmp_path, "clone", "-q", str(origin), str(src))
+    updater.mark_installed(home, src, run=subprocess.run, app_dir=app)
+    (home / "source.json").unlink()  # 데이터 폴더 기록이 없어져도
+    info = updater.source_info(home, app_dir=app)
+    assert info and info["src"] == str(src.resolve()) and len(info["rev"]) == 40
+
+
+def test_patch_notes_group_commits_in_plain_words():
+    from qtrader import updater
+    log = ("- fix(principles): 팩트체크에서 '확인 불가'를 틀림처럼 세던 것 (#31)\n- feat(desktop): X 를 눌러도 계속 (#29)\n"
+           "- docs: README 손보기\n- Merge branch 'main'\n- perf(market): 순위 빨리")
+    rows = updater.patch_notes(log)
+    assert rows == [{"kind": "새 기능", "text": "X 를 눌러도 계속"},
+                    {"kind": "고친 것", "text": "팩트체크에서 '확인 불가'를 틀림처럼 세던 것"},
+                    {"kind": "빨라진 것", "text": "순위 빨리"}]
+    assert updater.patch_notes("- docs: README 손보기") == [{"kind": "손본 것", "text": "README 손보기"}]
+
+
+def test_just_updated_shows_changes_once(isolated_home, monkeypatch):
+    """업데이트로 설치 기록이 바뀌면 이전 커밋을 남기고, 다시 켰을 때 그 사이 바뀐 것을 한 번 보여 준다."""
+    import json
+    from qtrader import updater
+    from qtrader.storage import Store
+    home = isolated_home
+    (home / "source.json").write_text(json.dumps({"src": str(home), "rev": "aaa"}), encoding="utf-8")
+    calls = []
+
+    def run(args, **kw):
+        calls.append(args)
+        out = "bbb\n" if "rev-parse" in args else "- feat(x): 패치노트 (#32)\n"
+        return type("R", (), {"returncode": 0, "stdout": out, "stderr": ""})()
+    d = updater.mark_installed(home, home, run=run)
+    assert d["rev"] == "bbb" and d["prev_rev"] == "aaa"
+    store = Store(home / "t.db")
+    r = updater.just_updated(d, store, run=run)
+    assert r["changes"] == [{"kind": "새 기능", "text": "패치노트"}] and "aaa..bbb" in calls[-1]
+    store.set("update_seen", "bbb")
+    assert updater.just_updated(d, store, run=run) is None
+
 def test_publish_bumps_both_version_files(tmp_path, monkeypatch):
     import importlib.util
     from pathlib import Path
@@ -80,3 +181,27 @@ def test_publish_bumps_both_version_files(tmp_path, monkeypatch):
     monkeypatch.setattr(pub, "PYPROJECT", pp)
     pub.set_version("0.2.0")
     assert pub.current() == "0.2.0" and 'version = "0.2.0"' in pp.read_text() and 'version = "9.9.9"' in pp.read_text()
+
+
+def test_publish_uses_annotated_tag_for_follow_tags(tmp_path, monkeypatch):
+    import importlib.util
+    import subprocess
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location("publish", Path(__file__).resolve().parents[1] / "packaging" / "publish.py")
+    pub = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pub)
+    monkeypatch.setattr(pub, "ROOT", tmp_path)
+    monkeypatch.setattr(pub.shutil, "which", lambda name: "gh")
+    monkeypatch.setattr(pub, "current", lambda: "0.1.0")
+    versions, calls = [], []
+    monkeypatch.setattr(pub, "set_version", versions.append)
+
+    def run(*args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(pub, "run", run)
+    assert pub.main(["배포 시험", "--repo", "owner/releases"]) == 0
+    assert versions == ["0.1.1"]
+    assert ("git", "tag", "-a", "v0.1.1", "-m", "QTrader 0.1.1") in calls
+    assert ("git", "push", "--follow-tags") in calls

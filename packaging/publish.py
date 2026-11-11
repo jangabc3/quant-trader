@@ -87,7 +87,7 @@ def main(argv=None) -> int:
 
     run("git", "add", str(INIT), str(PYPROJECT))
     run("git", "commit", "-m", f"버전 {new} 배포: {a.notes}")
-    run("git", "tag", f"v{new}")
+    run("git", "tag", "-a", f"v{new}", "-m", f"QTrader {new}")
     if run("git", "push", "--follow-tags", check=False).returncode != 0:
         print("코드 저장소 올리기(git push)는 실패했어요. 나중에 'git push --follow-tags' 를 해 주세요.")
     print(f"\n끝났어요. QTrader {new} 이(가) {repo} 에 올라갔어요. 각 PC 의 QTrader 가 6시간 안에 알려 줘요 (설정에서 '지금 확인'은 바로).")

@@ -79,7 +79,9 @@ def check(ctx) -> list[dict]:
                     pl = plans.get(sym)
                     if pl:
                         ctx.store.save_plan(ctx.broker.name, m.value, sym, pl.get("run_id") or "corp", pl["entry"] / r,
-                                            pl["stop"] / r, pl["take"] / r, pl.get("horizon"))
+                                            pl["stop"] / r, pl["take"] / r, pl.get("horizon"), pl.get("style"),
+                                            (pl.get("risk") or 0) / r or None, (pl.get("high") or 0) / r or None,
+                                            pl.get("half") or 0, pl.get("created_at"))
                     hold = _j(ctx.store, HOLD)
                     hold.pop(k, None)
                     _put(ctx.store, HOLD, hold)

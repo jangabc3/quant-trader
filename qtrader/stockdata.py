@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import json
-import threading
 import time
 from pathlib import Path
 
@@ -23,19 +22,11 @@ INTERVALS = {  # 화면 주기 -> (원천, 묶을 단위, 기본 봉 수)
 INDEX_SYMBOLS = {"KOSPI", "KOSDAQ"}
 MARKETS = ["KOSPI", "KOSDAQ", "NASDAQ", "NYSE", "AMEX"]
 
-_lock = threading.Lock()
-_cache: dict[str, tuple[float, object]] = {}
-
 
 def cached(key, ttl, fn):
-    with _lock:
-        hit = _cache.get(key)
-        if hit and time.monotonic() - hit[0] < ttl:
-            return hit[1]
-    v = fn()
-    with _lock:
-        _cache[key] = (time.monotonic(), v)
-    return v
+    """market.cached 와 같은 규칙 (받아 둔 값을 바로 보여 주고 뒤에서 새로 받기). 짧은 차트는 오래 묵히지 않는다."""
+    from .market import cached as _cached
+    return _cached("sd:" + key, ttl, fn, stale=ttl * 3)
 
 
 # 종목 검색
@@ -54,7 +45,8 @@ def master(t: Toss | None, home: Path) -> list[dict]:
                 for x in t.stocks_all(m):
                     if x.get("securityType") in ("STOCK", "ETF", "FOREIGN_STOCK", "DEPOSITARY_RECEIPT", "REIT", "FOREIGN_ETF"):
                         rows.append({"symbol": x["symbol"], "name": x.get("name") or x["symbol"], "market": m,
-                                     "type": x.get("securityType")})
+                                     "type": x.get("securityType"),
+                                     "en": x.get("englishName") or x.get("nameEn") or x.get("engName") or ""})
             except Exception:
                 continue
         if rows:
@@ -64,21 +56,106 @@ def master(t: Toss | None, home: Path) -> list[dict]:
     return cached("master", 3600, build)
 
 
+# 종목 검색: 띄어쓰기·대소문자·기호 무시, 초성(ㅅㅎㄴㅇ), 줄임말·영어 이름, 낱말 여러 개("sk 하이")
+_CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
+_STRIP = str.maketrans("", "", " -_·.,&()/'\"")
+
+# 사람들이 흔히 쓰는 줄임말과 미국 종목 영어 이름 -> 종목 코드
+ALIASES = {
+    "삼전": "005930", "삼성": "005930", "하닉": "000660", "sk하닉": "000660", "하이닉스": "000660", "엘지엔솔": "373220",
+    "엘엔솔": "373220", "lg엔솔": "373220", "현차": "005380", "기아차": "000270", "네이버": "035420", "카뱅": "323410",
+    "셀트": "068270", "삼바": "207940", "삼성바이오": "207940", "포스코": "005490", "엘지전자": "066570", "엘지화학": "051910",
+    "한화에어로": "012450", "에코프로비엠": "247540", "두산에너빌": "034020", "카카오뱅크": "323410", "케이비": "105560",
+    "apple": "AAPL", "nvidia": "NVDA", "tesla": "TSLA", "microsoft": "MSFT", "amazon": "AMZN", "google": "GOOGL",
+    "alphabet": "GOOGL", "meta": "META", "facebook": "META", "netflix": "NFLX", "broadcom": "AVGO", "intel": "INTC",
+    "palantir": "PLTR", "cocacola": "KO", "coke": "KO", "tsmc": "TSM", "qualcomm": "QCOM", "micron": "MU",
+    "costco": "COST", "disney": "DIS", "nike": "NKE", "starbucks": "SBUX", "mcdonalds": "MCD", "jpmorgan": "JPM",
+    "visa": "V", "mastercard": "MA", "oracle": "ORCL", "salesforce": "CRM", "adobe": "ADBE", "uber": "UBER",
+    "coinbase": "COIN", "berkshire": "BRK.B", "walmart": "WMT", "pepsi": "PEP", "boeing": "BA", "exxon": "XOM",
+    "johnson": "JNJ", "pfizer": "PFE", "eli lilly": "LLY", "lilly": "LLY", "novo": "NVO", "arm": "ARM", "snowflake": "SNOW",
+    "엔비": "NVDA", "테슬": "TSLA", "마소": "MSFT", "구글": "GOOGL", "페이스북": "META", "넷플": "NFLX", "팔란": "PLTR",
+    "코카콜라": "KO", "티에스엠씨": "TSM", "애플": "AAPL",
+}
+
+
+def norm(text: str) -> str:
+    return (text or "").upper().translate(_STRIP)
+
+
+def chosung(text: str) -> str:
+    out = []
+    for ch in text or "":
+        c = ord(ch)
+        out.append(_CHO[(c - 0xAC00) // 588] if 0xAC00 <= c <= 0xD7A3 else ch)
+    return "".join(out)
+
+
+def _is_cho(q: str) -> bool:
+    return bool(q) and all(ch in _CHO for ch in q)
+
+
+_index: dict = {}
+
+
+def _build_index(rows: list[dict]) -> list[tuple]:
+    key = (id(rows), len(rows))
+    if _index.get("key") != key:
+        _index.update(key=key, rows=[(r, norm(r["symbol"].split(":")[-1]), norm(r["name"]), chosung(norm(r["name"])),
+                                       norm(r.get("en") or "")) for r in rows])
+    return _index["rows"]
+
+
 def search(rows: list[dict], q: str, limit: int = 20) -> list[dict]:
-    q = q.strip().upper()
-    if not q:
+    """좋은 순: 코드 일치 > 이름·줄임말 일치 > 앞부분 일치 > 초성 > 낱말 모두 포함 > 일부 포함. 같으면 주식 > ETF, 짧은 이름."""
+    raw = (q or "").strip()
+    nq = norm(raw)
+    if not nq:
         return []
-    exact, starts, contains = [], [], []
-    for r in rows:
-        s, n = r["symbol"].upper(), r["name"].upper()
-        if s == q or n == q:
-            exact.append(r)
-        elif s.startswith(q) or n.startswith(q):
-            starts.append(r)
-        elif q in n or q in s:
-            contains.append(r)
-    out = exact + sorted(starts, key=lambda r: len(r["name"])) + sorted(contains, key=lambda r: len(r["name"]))
-    return out[:limit]
+    words = [norm(w) for w in raw.split() if norm(w)]
+    alias_exact = {norm(ALIASES[k]) for k in ALIASES if norm(k) == nq}
+    alias_part = {norm(ALIASES[k]) for k in ALIASES if len(nq) >= 2 and norm(k).startswith(nq)}
+    cho = _is_cho(raw.replace(" ", ""))
+    scored = []
+    for r, sym, name, ch, en in _build_index(rows):
+        if sym == nq:
+            sc = 100
+        elif name == nq or sym in alias_exact or (en and en == nq):
+            sc = 95
+        elif sym in alias_part:
+            sc = 90
+        elif name.startswith(nq) or (en and en.startswith(nq)):
+            sc = 80
+        elif sym.startswith(nq):
+            sc = 75
+        elif cho and ch.startswith(nq):
+            sc = 70
+        elif len(words) > 1 and all(w in name or w in sym or w in en for w in words):
+            sc = 60
+        elif nq in name or (en and nq in en):
+            sc = 50
+        elif cho and nq in ch:
+            sc = 45
+        elif nq in sym and len(nq) >= 2:
+            sc = 40
+        else:
+            continue
+        kind = r.get("type") or ""
+        scored.append((-sc, kind not in ("STOCK", "FOREIGN_STOCK", ""), len(r["name"]), r["name"], r))
+    scored.sort(key=lambda x: x[:4])
+    return [x[4] for x in scored[:limit]]
+
+
+def resolve(rows: list[dict], text: str) -> str | None:
+    """이름·줄임말로 쓴 종목을 코드로 (예: 'SK하이닉' -> '000660'). 코드 모양이면 그대로."""
+    t = (text or "").strip()
+    if not t:
+        return None
+    up = t.upper()
+    if up.isdigit() and len(up) == 6 or (":" in up) or (up.replace(".", "").isalpha() and up.isascii() and len(up) <= 6
+                                                           and any(norm(r["symbol"].split(":")[-1]) == norm(up) for r in rows)):
+        return up
+    hit = search(rows, t, 1)
+    return hit[0]["symbol"] if hit else None
 
 
 # 캔들
@@ -93,20 +170,25 @@ def _resample(df: pd.DataFrame, rule: str) -> pd.DataFrame:
 
 
 def _demo_candles(symbol: str, src: str, n: int) -> pd.DataFrame:
+    """체험용 시세. 일봉은 길이와 상관없이 같은 줄(맨 끝 = 현재가)을 잘라 쓰고, 분봉은 그 현재가에서 끝나게 맞춘다.
+    (예전엔 받는 개수마다 다른 줄이 나와 머리말 85,417원·호가 82,000원처럼 화면마다 값이 달랐다)"""
     base = 72000.0 if symbol[:1].isdigit() else 180.0
     if symbol in INDEX_SYMBOLS:
         base = 3200.0 if symbol == "KOSPI" else 880.0
+    daily = synthetic(symbol, days=2600, start_price=base, seed=abs(hash(symbol)) % 1000)
     if src == "1d":
-        return synthetic(symbol, days=n, start_price=base, seed=abs(hash(symbol)) % 1000)
+        return daily.tail(n)
+    m = 2400
     rng = np.random.default_rng(abs(hash(symbol + "m")) % 2**32)
     end = pd.Timestamp.now().floor("min")
-    idx = pd.date_range(end=end, periods=n, freq="min")
-    close = base * np.exp(np.cumsum(rng.normal(0, 0.0012, n)))
+    idx = pd.date_range(end=end, periods=m, freq="min")
+    close = np.exp(np.cumsum(rng.normal(0, 0.0012, m)))
+    close = close / close[-1] * float(daily["close"].iloc[-1])
     op = np.r_[close[0], close[:-1]]
-    hi = np.maximum(op, close) * (1 + np.abs(rng.normal(0, 0.0006, n)))
-    lo = np.minimum(op, close) * (1 - np.abs(rng.normal(0, 0.0006, n)))
+    hi = np.maximum(op, close) * (1 + np.abs(rng.normal(0, 0.0006, m)))
+    lo = np.minimum(op, close) * (1 - np.abs(rng.normal(0, 0.0006, m)))
     return pd.DataFrame({"open": op, "high": hi, "low": lo, "close": close,
-                         "volume": rng.integers(100, 5000, n).astype(float)}, index=idx)
+                         "volume": rng.integers(100, 5000, m).astype(float)}, index=idx).tail(n)
 
 
 def candles(t: Toss | None, symbol: str, interval: str = "1d", count: int | None = None) -> dict:
@@ -166,6 +248,15 @@ def trades(t: Toss | None, symbol: str) -> dict:
                                      for x in t.trades(symbol, 30)]}
 
 
+def limit_base(limits: dict, last: float, rate: float | None) -> float | None:
+    """상·하한가 가운데 = 오늘 기준가 (국내 ±30%). 토스 등락률과 맞을 때만 쓴다 (호가 단위로 깎여 한 칸 안쪽 오차)."""
+    up, lo = num(limits.get("upperLimitPrice")), num(limits.get("lowerLimitPrice"))
+    if not (up and lo and last and rate is not None):
+        return None
+    mid = (up + lo) / 2
+    return mid if abs(last / mid - 1 - rate) < 0.003 else None
+
+
 def summary(t: Toss | None, symbol: str) -> dict:
     """종목 머리말: 이름, 현재가, 전일 대비, 52주 범위, 시가총액, 상·하한가, 유의사항."""
     sym = symbol.upper()
@@ -185,22 +276,28 @@ def summary(t: Toss | None, symbol: str) -> dict:
             limits = t.price_limits(sym)
         except Exception:
             limits = {}
+        base, rate = None, None
         try:
-            last = t.prices([sym]).get(toss_symbol(sym)) or daily[-1]["close"]
+            q = t.quotes([sym]).get(toss_symbol(sym)) or {}
+            last, base, rate = q.get("price") or daily[-1]["close"], q.get("base"), q.get("change_rate")
         except Exception:
             last = daily[-1]["close"]
+        base = limit_base(limits, last, rate) or base
     else:
+        base, rate = None, None
         demo = {s: n for s, n, _ in DEMO_KR + DEMO_US}
         info = {"symbol": sym, "name": demo.get(sym, sym), "market": "KOSPI" if sym[:1].isdigit() else "NASDAQ",
                 "currency": "KRW" if sym[:1].isdigit() else "USD"}
         last = daily[-1]["close"]
-    prev = daily[-2]["close"] if len(daily) > 1 else last
+    # 기준가(전일 정규장 종가)는 토스 값을 쓴다. 일봉 두 개로 계산하면 시간외가 섞인 날 순위표와 등락률이 어긋난다
+    prev = base if t is not None and base else (daily[-2]["close"] if len(daily) > 1 else last)
     closes = [d["close"] for d in daily]
     shares = num(info.get("sharesOutstanding")) or None
     return {
         "symbol": sym, "name": info.get("name") or sym, "market": info.get("market"), "currency": info.get("currency")
         or ("KRW" if sym[:1].isdigit() else "USD"), "type": info.get("securityType"), "demo": t is None,
-        "price": last, "prev_close": prev, "change": last - prev, "change_rate": (last / prev - 1) if prev else 0,
+        "price": last, "prev_close": prev, "change": last - prev,
+        "change_rate": rate if rate is not None else ((last / prev - 1) if prev else 0),
         "high52": max(closes) if closes else None, "low52": min(closes) if closes else None,
         "shares": shares, "market_cap": last * shares if shares else None,
         "upper_limit": num(limits.get("upperLimitPrice")) or None, "lower_limit": num(limits.get("lowerLimitPrice")) or None,

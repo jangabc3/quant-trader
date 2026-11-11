@@ -1,39 +1,11 @@
-"""실전 주문 PIN, 시장 국면 규칙, 투자 성향 검사 전 자동매매 막기."""
+"""실전 전환, 시장 국면 규칙, 투자 성향 검사 전 자동매매 막기, 직접·조건·분할 주문."""
 import numpy as np
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from qtrader import pinlock, principles
+from qtrader import principles
 from qtrader.web.app import create_app
-
-
-@pytest.fixture(autouse=True)
-def fresh():
-    pinlock.reset_state()
-    yield
-    pinlock.reset_state()
-
-
-def test_pin_format_and_lockout(tmp_path):
-    with pytest.raises(pinlock.PinError, match="4~8"):
-        pinlock.set_pin(tmp_path, "12")
-    with pytest.raises(pinlock.PinError, match="연속"):
-        pinlock.set_pin(tmp_path, "1234")
-    pinlock.set_pin(tmp_path, "482916")
-    assert "482916" not in (tmp_path / "pin.json").read_text()
-    pinlock.verify(tmp_path, "482916")
-    pinlock.verify(tmp_path, "")  # 5분 안에는 다시 묻지 않음
-    pinlock.lock_now()
-    for _ in range(4):
-        with pytest.raises(pinlock.PinError, match="틀렸"):
-            pinlock.verify(tmp_path, "000111")
-    with pytest.raises(pinlock.PinError, match="잠겼"):
-        pinlock.verify(tmp_path, "000111")
-    with pytest.raises(pinlock.PinError, match="잠겼"):
-        pinlock.verify(tmp_path, "482916")
-    with pytest.raises(pinlock.PinError):  # 바꿀 때는 지금 PIN 필요
-        pinlock.set_pin(tmp_path, "735102", "000000")
 
 
 @pytest.fixture
@@ -44,17 +16,14 @@ def client(isolated_home):
     return c
 
 
-def test_live_mode_needs_pin(client):
+def test_live_mode_switch_has_no_pin(client):
+    """PIN 은 없앴다. 실전 전환 확인은 화면의 '손실 책임' 체크 + '실전' 직접 입력으로 한다."""
     cfg = client.get("/api/config").json()
     cfg["mode"], cfg["live_confirmed"] = "toss_real", True
-    r = client.put("/api/config", json=cfg, headers=client.h)
-    assert r.status_code == 423 and "PIN 을 먼저" in r.json()["detail"]
-    assert client.post("/api/pin", json={"new": "482916"}, headers=client.h).json()["set"]
-    pinlock.lock_now()
-    assert client.put("/api/config", json=cfg, headers=client.h).status_code == 428
-    assert client.put("/api/config", json=cfg, headers=client.h | {"x-qtrader-pin": "999888"}).status_code == 428
-    ok = client.put("/api/config", json=cfg, headers=client.h | {"x-qtrader-pin": "482916"})
+    ok = client.put("/api/config", json=cfg, headers=client.h)
     assert ok.status_code == 200 and ok.json()["mode"] == "toss_real"
+    assert client.put("/api/config", json=cfg).status_code == 403  # 화면 토큰 없이는 못 바꾼다
+    assert all(not getattr(r, "path", "").startswith("/api/pin") for r in client.app.routes)
 
 
 def test_auto_needs_profile(client):
@@ -95,20 +64,6 @@ def test_manual_order_paper(client, isolated_home):
     assert client.get("/api/trades/why").json()[0]["summary"] == "직접 주문"
 
 
-def test_pin_switch_off_needs_pin_then_skips(client):
-    assert client.post("/api/pin", json={"new": "482916"}, headers=client.h).json()["set"]
-    pinlock.lock_now()
-    cfg = client.get("/api/config").json()
-    cfg["security"] = {"pin": False}
-    assert client.put("/api/config", json=cfg, headers=client.h).status_code == 428  # 끄려면 PIN 필요
-    assert client.put("/api/config", json=cfg, headers=client.h | {"x-qtrader-pin": "482916"}).status_code == 200
-    pinlock.lock_now()
-    cfg = client.get("/api/config").json()
-    cfg["mode"], cfg["live_confirmed"] = "toss_real", True
-    assert client.put("/api/config", json=cfg, headers=client.h).status_code == 200  # 꺼져 있으면 묻지 않는다
-    assert client.get("/api/pin").json()["enabled"] is False
-
-
 def test_plan_endpoint_and_manual_buy_with_stop(client, isolated_home):
     from qtrader import config
     from qtrader.data import write_demo_csv
@@ -147,3 +102,35 @@ def test_conditional_and_split_paper(client, isolated_home):
     assert client.delete(f"/api/conditional/{s['conditions'][0]['id']}", headers=client.h).json()["ok"]
     csv = client.get("/api/export/trades.csv?market=KR")
     assert csv.status_code == 200 and "종목명" in csv.text and "삼성전자" in csv.text
+
+
+def test_update_endpoint_uses_git_mode_after_install(client, isolated_home, tmp_path):
+    """'QTrader 설치.cmd' 로 설치해 source.json 이 있으면, 업데이트 확인은 A 방식(git)으로 한다."""
+    import json
+    src = tmp_path / "src"
+    (src / ".git").mkdir(parents=True)
+    (isolated_home / "source.json").write_text(json.dumps({"src": str(src), "rev": "a" * 40}), encoding="utf-8")
+    r = client.get("/api/update?force=1").json()
+    assert r["mode"] == "git" and r["current_rev"] == "aaaaaaa" and r["available"] is False  # 시험 중에는 밖으로 안 나감
+    bad = client.post("/api/update/apply", headers=client.h)
+    assert bad.status_code == 400 and "개발 버전" in bad.json()["detail"]
+
+
+def test_checklist_core_rules_and_one_soft_miss():
+    """필수 기준은 모두, 추가 기준(12개월·12-1 모멘텀·과열·팩트체크)은 1개까지 못 넘어도 비중 절반으로 산다."""
+    final = {"rating": "Buy", "confidence": 0.8, "stop_loss_pct": 5, "take_profit_pct": 15}
+    good = {"fact_checks": [{"status": "확인됨"}] * 3}
+    up = bars(0.002)
+    base = principles.checklist(final, good, up, rules={"max_rsi": 101})
+    assert base["passed"] and base["soft"]["missed"] == 0 and base["core"]["ok"] == base["core"]["total"]
+    one = principles.checklist(final, {"fact_checks": [{"status": "틀림"}]}, up, rules={"max_rsi": 101})  # 팩트체크만 못 넘음
+    assert one["passed"] and one["soft"]["missed"] == 1
+    assert one["size"]["weight_factor"] == pytest.approx(base["size"]["weight_factor"] / 2, abs=1e-3)
+    two = principles.checklist(final, {"fact_checks": []}, up, rules={"max_rsi": 10})  # 팩트체크 + 과열
+    assert not two["passed"] and two["soft"]["missed"] == 2
+    strict = principles.checklist(final, {"fact_checks": []}, up, rules={"max_rsi": 101, "soft_miss_allowed": 0})  # 안정형
+    assert not strict["passed"]
+    core_fail = principles.checklist(final | {"take_profit_pct": 5}, good, up, rules={"max_rsi": 101})  # 손익비 1:1 은 필수
+    assert not core_fail["passed"] and core_fail["soft"]["missed"] == 0
+    keys = {r["key"]: r["core"] for r in base["rules"]}
+    assert keys["facts"] is False and keys["reward_risk"] is True and keys["stop"] is True

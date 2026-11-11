@@ -14,6 +14,7 @@
 <link rel="stylesheet" href="/static/screens.css?v=__BUILD__">
 <script src="/static/vendor/lightweight-charts.js?v=__BUILD__"></script>
 <script src="/static/vendor/anime.min.js?v=__BUILD__"></script>
+<script src="/static/vendor/gsap.min.js?v=__BUILD__"></script>
 <script src="/static/vendor/countUp.umd.js?v=__BUILD__"></script>
 <script src="/static/vendor/lucide.min.js?v=__BUILD__"></script>
 </head>
@@ -115,6 +116,7 @@
         <div class="st-actions"><button id="st-watch">♥ 관심</button><button id="st-ai" class="primary">AI 투자 회의</button></div>
       </div>
       <div class="st-grid">
+        <div class="st-main">
         <div class="panel">
           <div class="chart-bar">
             <div class="seg" id="st-iv">
@@ -133,10 +135,14 @@
           <div id="st-chart" class="st-chart"></div>
           <div class="st-info" id="st-info"></div>
         </div>
+          <!-- 호가·체결은 차트 아래에 나란히 (오른쪽에 쌓으면 차트 칸이 같이 늘어나 빈 공간이 생긴다) -->
+          <div class="st-book">
+            <div class="panel"><h3>호가 <small id="ob-time"></small></h3><div id="st-ob" class="ob"></div></div>
+            <div class="panel"><h3>체결</h3><div id="st-trades" class="trades"></div></div>
+          </div>
+        </div>
         <div class="st-side">
           <div class="panel ticket" id="ticket"><p class="note">불러오는 중...</p></div>
-          <div class="panel"><h3>호가 <small id="ob-time"></small></h3><div id="st-ob" class="ob"></div></div>
-          <div class="panel"><h3>체결</h3><div id="st-trades" class="trades"></div></div>
         </div>
       </div>
       <div class="st-grid2">
@@ -171,14 +177,14 @@
   <!-- AI 사무실 -->
   <section id="tab-office" class="tab hidden">
     <div class="office-bar">
-      <input id="meet-symbol" placeholder="종목 코드 또는 티커 (예: 005930, NVDA)">
+      <input id="meet-symbol" placeholder="다른 종목을 검색해서 회의 (예: 하이닉, 삼전, apple)" autocomplete="off">
       <button id="meet-start" class="primary">AI 투자 회의 시작</button>
       <select id="meet-runs"></select>
       <span id="meet-stage" class="note"></span>
     </div>
     <div class="office-status"><div class="office-hud" id="office-hud"></div><div class="stage-line" id="stage-line"></div></div>
     <div class="panel picks" id="picks-panel">
-      <div class="pk-head"><h3><i data-lucide="sparkles"></i> 오늘 AI 회의 후보</h3>
+      <div class="pk-head"><h3><i data-lucide="sparkles"></i> 오늘 자동매매 <small class="note">장이 열린 동안 후보의 사는 신호를 2분마다 보고, 신호가 뜬 종목만 AI 가 위험 신호를 확인한 뒤 사요</small></h3>
         <div class="pk-tools"><button class="icon-btn" id="picks-how-btn" title="어떻게 고르나요?"><i data-lucide="help-circle"></i></button>
           <button class="icon-btn" id="picks-refresh" title="지금 다시 고르기"><i data-lucide="refresh-cw"></i></button>
           <div class="seg" id="picks-mkt"><button data-v="KR" class="on">국내</button><button data-v="US">미국</button></div></div>
@@ -187,8 +193,12 @@
             <li><b>숫자로 거르기</b> 200일선 위 · 모멘텀 양수 · 과열(RSI)·변동성 상한 안쪽만</li>
             <li><b>점수</b> 모멘텀 35 · 52주 고가 근접 25 · 저변동 20 · 거래량 10 · 단기 급등 감점 10</li>
             <li><b>공시·재무</b> 유상증자·전환사채·감자·횡령 공시는 제외, 적자+매출 감소는 감점</li></ol>
-          <p class="note">숫자로 먼저 걸러서 통과한 종목만 AI 회의를 열어요 (비용 절약). 자동매매가 켜져 있으면 실행 40분 전부터 차례로 회의합니다. 줄에 마우스를 올리면 점수 근거가 보여요.</p>
+          <ol start="5"><li><b>사는 신호</b> 2분마다 실시간 가격으로: 오르는 추세에서 20일선까지 눌렸다가 다시 오를 때(눌림목 반등), 20일 최고가를 거래량과 함께 넘을 때(거래량 돌파)</li>
+            <li><b>AI 거부권</b> 신호가 뜬 종목만 베어리가 공시·뉴스 제목으로 '사면 안 되는 이유'를 한 번 찾아요 (약 10~30원)</li>
+            <li><b>안전 점검 → 매수</b> 손절은 가격 변동폭의 2배 아래, 익절은 그 2배 위 (손익비 2 : 1)</li></ol>
+          <p class="note">AI 는 신호가 뜬 종목에만 써서 비용이 적어요. 7명 회의는 '7명 회의'를 누를 때만 열리고, 결과로 자동 매수하지는 않아요. 줄에 마우스를 올리면 점수 근거가 보여요.</p>
           <div id="picks-why-detail"></div></div></div>
+      <div id="today-head" class="td-head"></div>
       <div id="picks"></div>
       <div id="picks-why"></div>
     </div>
@@ -314,7 +324,7 @@
 
   <!-- 계산기 -->
   <section id="tab-calc" class="tab hidden">
-    <div class="seg big" id="calc-tab"><button data-v="pos" class="on"><i data-lucide="target"></i> 몇 주 살까 (포지션 크기)</button><button data-v="cp"><i data-lucide="sprout"></i> 목표 자산 (복리)</button><button data-v="tax"><i data-lucide="receipt"></i> 미국 주식 세금</button></div>
+    <div class="seg big" id="calc-tab"><button data-v="pos" class="on"><i data-lucide="target"></i> 몇 주 살까 (포지션 크기)</button><button data-v="cp"><i data-lucide="sprout"></i> 목표 자산 (복리)</button><button data-v="tax"><i data-lucide="receipt"></i> 미국 주식 세금</button><button data-v="sig"><i data-lucide="flask-conical"></i> 사는 신호 검증</button></div>
     <div class="calc-pane" id="calc-pos">
       <div class="calc-card panel">
         <div class="calc-in">
@@ -338,6 +348,16 @@
           <label>물가상승률 <b id="cp-inf-v"></b><input id="cp-inf" type="range" min="0" max="6" step="0.1" value="2.5"></label>
         </div>
         <div class="calc-res"><div class="calc-out" id="cp-out"></div><div id="cp-chart" class="chart small"></div></div>
+      </div>
+    </div>
+    <div class="calc-pane hidden" id="calc-sig">
+      <div class="panel">
+        <div class="rank-bar"><h3 style="margin:0">사는 신호 검증 <small>자동매매가 쓰는 사는 신호·팔기 규칙을 지난 3년 시세로 돌려 봐요 (AI 비용 없음)</small></h3>
+          <div class="seg" id="sg-mkt"><button data-v="KR" class="on">국내</button><button data-v="US">미국</button></div>
+          <button class="primary" id="sg-run"><i data-lucide="play"></i> 돌려 보기</button></div>
+        <p class="note">오늘 후보·관심 종목 최대 40개로 해요. 일봉이라 하루 안 순서를 모를 때는 손절이 먼저라고 보고, 수수료·세금·슬리피지를 뺐어요.
+          AI 거부권은 지난 뉴스를 다시 볼 수 없어 빼고 숫자 규칙만 봐요. 지난 결과일 뿐 앞으로를 약속하지 않아요.</p>
+        <div id="sg-out"><div class="empty"><i data-lucide="flask-conical"></i><p>'돌려 보기'를 누르면 결과가 나와요</p><span class="note">종목마다 3년 치 일봉을 받아서 10~30초쯤 걸려요.</span></div></div>
       </div>
     </div>
     <div class="calc-pane hidden" id="calc-tax">
@@ -365,17 +385,6 @@
         <details class="mini-adv"><summary>다른 증권사 (한국투자증권)</summary>
           <div class="form-row kis-modes"><button type="button" data-mode-go="kis_demo">한국투자증권 모의투자로</button><button type="button" class="danger" data-mode-go="kis_real">한국투자증권 실전으로</button></div>
         </details>
-        <div class="pin-panel" id="pin-panel">
-          <div><b><i data-lucide="lock-keyhole"></i> 실전 주문 PIN</b> <span class="badge" id="pin-badge">확인 중</span>
-            <p class="note">실전으로 바꾸기·실전 자동매매 켜기·직접 주문·주문 취소 전에 PIN 을 묻습니다. <b>자동매매가 스스로 내는 주문에는 묻지 않아요.</b> 숫자 4~8자리, 이 PC 에 암호화(해시)로만 저장돼요.</p>
-            <label class="check"><input type="checkbox" id="pin-enabled"> 실전 주문에 PIN 사용 <em class="hint">끄려면 지금 PIN 이 필요해요</em></label></div>
-          <form class="form-row" id="pin-form">
-            <label id="pin-old-wrap" class="hidden">지금 PIN <input id="pin-old" type="password" inputmode="numeric" maxlength="8" autocomplete="off"></label>
-            <label>새 PIN <input id="pin-new" type="password" inputmode="numeric" maxlength="8" autocomplete="off" required></label>
-            <label>한 번 더 <input id="pin-new2" type="password" inputmode="numeric" maxlength="8" autocomplete="off" required></label>
-            <button class="primary" id="pin-save">PIN 정하기</button>
-          </form>
-        </div>
       </div>
 
       <!-- 2. 연결 -->
@@ -412,12 +421,12 @@
       <div class="panel" id="cfg-how">
         <h3><i data-lucide="sliders-horizontal"></i> 3. 투자 방식</h3>
         <p class="note how-intro">두 가지만 정하면 돼요. <b>① 어느 시장에서 얼마로</b> 할지, <b>② 산 주식을 얼마 동안</b> 들고 있을지.
-          장이 열려 있는 동안 AI가 계속 후보를 살피고 회의해서 사고팔아요. 주문은 아래 '4. 안전장치' 안에서만 나가요.</p>
+          장이 열려 있는 동안 2분마다 후보의 사는 신호를 보고, 신호가 뜬 종목만 AI 가 위험 신호를 확인한 뒤 사요. 주문은 아래 '4. 안전장치' 안에서만 나가요.</p>
         <h4 class="step"><span>1</span> 어느 시장에서, 얼마로</h4>
         <div class="grid2" id="market-cfg"></div>
         <h4 class="step"><span>2</span> 산 주식을 얼마 동안 들고 있을까 <small class="note">국내·미국 모두 같은 방식이 적용돼요</small></h4>
         <div class="hold-cards" id="hold-cards">
-          <label class="mode-card rec"><input type="radio" name="holding" value="auto"><b>AI에게 맡기기 <small>추천</small></b><span>종목마다 회의가 기간을 정해요. 실적·이벤트 종목은 짧게, 추세가 긴 종목은 길게</span></label>
+          <label class="mode-card rec"><input type="radio" name="holding" value="auto"><b>AI에게 맡기기 <small>추천</small></b><span>손절은 종목마다 가격 변동폭으로, 이익이 나면 절반 익절 뒤 손절을 따라 올려 추세가 끝날 때 팔아요</span></label>
           <label class="mode-card"><input type="radio" name="holding" value="long"><b>장기</b><span>몇 주~몇 달. AI가 정한 손절·익절 그대로. 매매가 적어 수수료가 적어요</span></label>
           <label class="mode-card"><input type="radio" name="holding" value="swing"><b>스윙</b><span>며칠~2주. 손절 -5% · 익절 +10%, 10거래일이 지나면 팔아요</span></label>
           <label class="mode-card"><input type="radio" name="holding" value="short"><b>단기</b><span>1~3일. 손절 -2.5% · 익절 +5%, 3거래일이 지나면 팔아요. 하루에 2종목 더 살 수 있어요</span></label>
@@ -438,8 +447,10 @@
           <label>한 번 주문 최대 (미국) <em class="hint">달러</em><input id="r-ordus" type="number" step="100"></label>
         </div>
         <label class="check"><input type="checkbox" id="ai-exit"> 손절·익절 가격에 닿으면 자동으로 팔기 <em class="hint">끄면 알림만 받아요</em></label>
+        <label class="check"><input type="checkbox" id="ai-trail"> 이익이 나면 절반 먼저 팔고, 나머지는 손절을 따라 올리기 <em class="hint">처음 위험 폭(R)만큼 오르면 절반 익절 → 손절을 본전으로 → 최고가를 따라 올림. 10거래일 못 오르면 정리. 끄면 정한 익절가에서 전부 팔아요</em></label>
         <label class="check"><input type="checkbox" id="toss-guard"> 토스 서버에도 손절·익절 걸어 두기 (OCO) <em class="hint">PC 가 꺼져 있어도 토스가 팔아 줘요. 토스 실전에서만</em></label>
         <label class="check"><input type="checkbox" id="ai-approve"> AI 주문은 내가 승인한 뒤에만 내기 <em class="hint">끄면 바로 주문하고 이유는 나중에 알려 줘요</em></label>
+        <label class="check"><input type="checkbox" id="ai-practice"> 가상매매에서는 연습 기준 쓰기 <em class="hint">확신도 50%·손익비 1.5:1·추가 기준 2개까지·하루 5종목으로 낮춰 사고팔기를 미리 시험해요. 손절·추세·변동성 기준은 그대로, 실전에는 적용 안 돼요</em></label>
       </div>
 
       <!-- 5. 알림 · 비용 · 이 PC -->
@@ -463,7 +474,7 @@
         <label class="check"><input type="checkbox" id="sys-autostart"> 윈도우를 켜면 QTrader 자동 실행 <em class="hint">자동매매 중에는 PC 가 잠자기에 들어가지 않아요 (화면은 꺼져도 돼요)</em></label>
         <div class="upd-box" id="upd-panel"><h4><i data-lucide="download"></i> 프로그램 업데이트 <small id="upd-ver"></small></h4>
           <div id="upd-body" class="note">확인 중...</div>
-          <div class="form-row"><label>업데이트 저장소 <em class="hint">GitHub 아이디/저장소</em><input id="upd-repo" placeholder="예: myname/qtrader-releases"></label>
+          <div class="form-row"><label id="upd-repo-row">업데이트 저장소 <em class="hint">GitHub 아이디/저장소 (나눠 줄 때만)</em><input id="upd-repo" placeholder="예: myname/qtrader-releases"></label>
             <button type="button" id="upd-check"><i data-lucide="refresh-cw"></i> 지금 확인</button></div></div>
       </div>
 
@@ -472,17 +483,17 @@
         <summary><i data-lucide="settings-2"></i> 고급 설정 <small>대부분은 그대로 두셔도 됩니다. 칸마다 무엇인지 적어 두었어요</small></summary>
         <details class="adv-group" open><summary><i data-lucide="building-2"></i> AI 회의 <span>AI가 종목을 어떻게, 얼마나 깊게 검토할지</span></summary>
           <div class="adv-grid">
-            <label>회의 방식 <em class="hint">정밀은 더 정확하지만 비용 2배</em><select id="ai-mode"><option value="fast">빠른 회의 (Claude 7번 호출)</option><option value="precise">정밀 회의 (14번 호출)</option></select></label>
             <label>생각 깊이 <em class="hint">깊을수록 정확하지만 느리고 비싸요</em><select id="ai-effort"><option value="low">얕게 (빠름·저렴)</option><option value="medium">보통 (추천)</option><option value="high">깊게</option><option value="xhigh">아주 깊게</option><option value="max">최대</option></select></label>
-            <label>빠른 모델 <em class="hint">자료 정리·의견 담당</em><select id="ai-quick"></select></label>
-            <label>깊은 모델 <em class="hint">최종 결론 담당</em><select id="ai-deep"></select></label>
+            <label>회의 모델 <em class="hint">7명 모두 이 모델을 써요</em><select id="ai-quick"></select></label>
+            <label>깊은 모델 <em class="hint">아래 칸을 켜면 대표만 이 모델</em><select id="ai-deep"></select></label>
             <label>찬반 토론 횟수 <em class="hint">0~3. 많을수록 반대 의견을 더 따져요</em><input id="ai-debate" type="number" min="0" max="3"></label>
             <label>정기 실행 몇 분 전에 회의 <em class="hint">분</em><input id="ai-before" type="number" min="10" max="180"></label>
-            <label>하루 회의 종목 수 <em class="hint">많을수록 비용이 늘어요</em><input id="ai-max" type="number" min="1" max="50"></label>
             <label>큐비 답변 깊이 <em class="hint">채팅 답변</em><select id="ai-chat-effort"><option value="low">짧고 빠르게</option><option value="medium">보통 (추천)</option><option value="high">깊게</option></select></label>
           </div>
-          <label class="check"><input type="checkbox" id="ai-web"> 회의 때 웹 검색으로 뉴스·재무·여론 찾아보기</label>
-          <label class="check"><input type="checkbox" id="ai-autopick"> 회의할 종목을 AI가 매일 고르기 <em class="hint">거래대금·급등·산업 상위 종목 중 점수 규칙을 통과한 것</em></label>
+          <label class="check"><input type="checkbox" id="ai-deep-final"> 대표의 최종 결정만 깊은 모델로 <em class="hint">조금 더 꼼꼼하지만 회의 비용이 약 1.5~2배</em></label>
+          <label class="check"><input type="checkbox" id="ai-web"> 회의 때 웹 검색으로 뉴스·재무·공시 찾아보기 <em class="hint">밸류·헤드라인 2번, 검증관 1번까지</em></label>
+          <label class="check"><input type="checkbox" id="ai-automeet"> 정기 실행 전에 7명 회의를 자동으로 열기 <em class="hint">기본 꺼짐. 켜면 하루 거부권 확인 수만큼 회의해서 비용이 크게 늘어요</em></label>
+          <label class="check"><input type="checkbox" id="ai-autopick"> 후보 종목을 매일 고르기 <em class="hint">거래대금·급등·산업 상위 종목 중 점수 규칙을 통과한 것</em></label>
           <label class="wide">AI에게 전할 메모 <em class="hint">투자 성향 검사로 채워져요. 고쳐 써도 돼요 (예: 빚투·공매도 안 함)</em><textarea id="ai-profile" rows="4"></textarea></label>
         </details>
         <details class="adv-group"><summary><i data-lucide="list-checks"></i> 사기 전 확인 규칙 <span>하나라도 어기면 사지 않아요</span></summary>

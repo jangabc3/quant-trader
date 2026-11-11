@@ -15,8 +15,8 @@
 .kpi span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
 .kpi b { display: block; font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -.5px; }
 .kpi em { display: block; font-style: normal; color: var(--muted); font-size: 12px; margin-top: 4px; }
-.kpi.hero { background: linear-gradient(135deg, rgba(49,130,246,.16), rgba(19,25,34,1) 60%); }
-.kpi.hero b { font-size: 30px; }
+.kpi.hero { display: block; margin: 0; background: linear-gradient(135deg, rgba(49,130,246,.16), rgba(19,25,34,1) 60%); }
+.kpi.hero b { font-size: clamp(22px, 2.1vw, 30px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .kpi.up b { color: var(--red); } .kpi.down b { color: var(--blue); }
 .kpi.wide { grid-column: 1 / -1; }
 .acct-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 12px; margin-bottom: 12px; }
@@ -191,18 +191,6 @@ table.cmp td.note { max-width: 360px; overflow: hidden; text-overflow: ellipsis;
 .ob-step.done { border-color: rgba(47,191,113,.35); }
 .chip-ok { font-size: 12px; font-weight: 700; color: #2fbf71; background: rgba(47,191,113,.12); padding: 4px 10px; border-radius: 99px; }
 .ob-step button { display: flex; align-items: center; gap: 2px; white-space: nowrap; } .ob-step button svg { width: 14px; height: 14px; }
-
-/* 실전 주문 PIN */
-.pin-panel { margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #0f141b; }
-.pin-panel b { display: inline-flex; gap: 6px; align-items: center; } .pin-panel b svg { width: 16px; height: 16px; color: var(--blue); }
-.pin-panel input { width: 120px; letter-spacing: 4px; }
-#pin-ask { position: fixed; inset: 0; z-index: 90; background: rgba(5,8,12,.72); backdrop-filter: blur(4px); display: grid; place-items: center; }
-#pin-ask.hidden { display: none; }
-.pin-box { width: min(360px, 92vw); background: var(--panel); border: 1px solid #2c3a4d; border-radius: 18px; padding: 24px; text-align: center;
-  box-shadow: 0 30px 80px rgba(0,0,0,.6); animation: toastIn .3s cubic-bezier(.2,.8,.2,1); }
-.pin-box > svg { width: 34px; height: 34px; color: var(--blue); }
-.pin-box h3 { margin: 6px 0; } .pin-box input { width: 100%; text-align: center; font-size: 24px; letter-spacing: 10px; padding: 10px; margin: 8px 0 12px; }
-.pin-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
 /* 오늘 자동매매 흐름: 지금 상태 한 줄 + 단계 막대 */
 .flow { display: flex; flex-direction: column; gap: 14px; }
@@ -530,3 +518,17 @@ nav { scrollbar-width: none; } nav::-webkit-scrollbar { display: none; }
 .paper-bar > span:first-child { display: inline-flex; gap: 6px; align-items: center; } .paper-bar svg { width: 15px; height: 15px; }
 .paper-acts { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .paper-acts button { display: inline-flex; gap: 6px; align-items: center; }
+
+/* 설정 '어느 시장에서, 얼마로': 시장별 AI 회의 켜기 · 하루 회의 수 (한 줄) */
+.mkt-ai { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: #0f141b; border: 1px solid var(--line); }
+.mkt-ai .check { margin: 0; font-weight: 700; }
+.mkt-ai-n { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.mkt-ai-n input { width: 64px; text-align: center; padding: 6px; }
+.mkt-ai .hint { flex-basis: 100%; margin: 0; }
+
+/* 사는 신호 검증 */
+.sg-kpi { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 8px 0 12px; }
+@media (max-width: 900px) { .sg-kpi { grid-template-columns: 1fr 1fr; } }
+#calc-sig h4 { margin: 14px 0 6px; }
+#calc-sig .rank-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+#calc-sig .rank-bar h3 { flex: 1; }

@@ -12,7 +12,7 @@ from datetime import datetime
 import numpy as np
 
 from .models import Market
-from .toss import INDICATORS, KST, Toss, num
+from .toss import INDICATORS, KST, Toss, num, toss_symbol
 
 RANK_TYPES = {
     "amount": "MARKET_TRADING_AMOUNT", "volume": "MARKET_TRADING_VOLUME",
@@ -25,19 +25,56 @@ NAMES = {"KOSPI": "코스피", "KOSDAQ": "코스닥", "KR_BOND_2Y": "국고채 2
          "SPY": "S&P500 (SPY)", "QQQ": "나스닥100 (QQQ)", "DIA": "다우 (DIA)"}
 
 _cache: dict[str, tuple[float, object]] = {}
+_inflight: dict[str, threading.Event] = {}
 _names: dict[str, str] = {}
 _lock = threading.Lock()
 
 
-def cached(key: str, ttl: float, fn):
+def _store(key: str, fn) -> object:
+    try:
+        val = fn()
+        with _lock:
+            _cache[key] = (time.monotonic(), val)
+        return val
+    finally:
+        with _lock:
+            ev = _inflight.pop(key, None)
+        if ev:
+            ev.set()
+
+
+def cached(key: str, ttl: float, fn, stale: float | None = None):
+    """받아 둔 값을 ttl 초 동안 그대로 쓴다. 그 뒤 stale 초(기본 ttl 의 10배)까지는 받아 둔 값을 바로 돌려주고
+    새 값은 뒤에서 받는다 (토스 앱처럼 화면이 기다리지 않게). 같은 값을 여러 곳에서 동시에 찾으면 한 번만 받는다."""
+    stale = ttl * 10 if stale is None else stale
     with _lock:
         hit = _cache.get(key)
-        if hit and time.monotonic() - hit[0] < ttl:
+        age = time.monotonic() - hit[0] if hit else None
+        if hit and age < ttl:
             return hit[1]
-    val = fn()
-    with _lock:
-        _cache[key] = (time.monotonic(), val)
-    return val
+        busy = _inflight.get(key)
+        if busy is None:
+            _inflight[key] = threading.Event()
+        if hit and age < ttl + stale:
+            if busy is None:  # 뒤에서 새로 받기 (실패하면 다음에 다시)
+                threading.Thread(target=lambda: _quiet(_store, key, fn), name=f"refresh-{key[:30]}", daemon=True).start()
+            return hit[1]
+    if busy is not None:  # 다른 요청이 받는 중: 그 결과를 기다린다
+        busy.wait(30)
+        with _lock:
+            hit = _cache.get(key)
+        if hit:
+            return hit[1]
+        with _lock:
+            _inflight.setdefault(key, threading.Event())
+    return _store(key, fn)
+
+
+def _quiet(f, *a):
+    try:
+        f(*a)
+    except Exception:
+        pass
 
 
 def names(t: Toss, symbols: list[str]) -> dict[str, str]:
@@ -54,9 +91,21 @@ def names(t: Toss, symbols: list[str]) -> dict[str, str]:
 def _change(t: Toss, symbol: str, indicator: bool) -> dict:
     df = t.candles(symbol, "1d", 2, indicator=indicator)
     last, prev = float(df["close"].iloc[-1]), float(df["close"].iloc[-2]) if len(df) > 1 else float(df["close"].iloc[-1])
+    rate = None
+    if not indicator:  # 종목은 토스가 준 현재가·기준가로 (순위표·종목 화면과 같은 숫자)
+        try:
+            from .toss import toss_symbol
+            q = t.quotes([symbol]).get(toss_symbol(symbol)) or {}
+            if q.get("price"):
+                last = q["price"]
+                if q.get("base"):
+                    prev = q["base"]
+                rate = q.get("change_rate")
+        except Exception:
+            pass
     row = df.iloc[-1]
     return {"symbol": symbol, "name": NAMES.get(symbol, symbol), "price": last,
-            "change": last - prev, "change_rate": (last / prev - 1) if prev else 0.0,
+            "change": last - prev, "change_rate": rate if rate is not None else ((last / prev - 1) if prev else 0.0),
             "prev": prev, "high": float(row.get("high", last)), "low": float(row.get("low", last)),
             "volume": float(row.get("volume", 0) or 0)}
 
@@ -133,6 +182,44 @@ def overview(t: Toss | None) -> dict:
     return cached("overview", 20, build)
 
 
+def _rate(v) -> float | None:
+    return None if v in (None, "") else num(v)
+
+
+def live_snapshot(t: Toss | None, symbols: list[str]) -> dict:
+    """실시간 스트림(2초) 한 번 분량: 종목 현재가·토스 등락률 + 지수(IDX:KOSPI) + 환율(FX).
+    토스 키가 없으면(체험용) 아무것도 보내지 않는다 (화면마다 합성 시세가 달라 섞이면 헷갈림)."""
+    out: dict = {"prices": {}, "rates": {}, "idx": {}, "fx": None}
+    if t is None:
+        return out
+    stocks = [s for s in symbols if not s.startswith(("IDX:", "FX"))]
+    idx = [s[4:] for s in symbols if s.startswith("IDX:")]
+    try:
+        got = t.quotes(stocks) if stocks else {}
+        for s in stocks:
+            q = got.get(s) or got.get(s.split(":")[-1]) or {}
+            if q.get("price"):
+                out["prices"][s] = q["price"]
+                if q.get("change_rate") is not None:
+                    out["rates"][s] = round(q["change_rate"], 5)
+    except Exception:
+        pass
+    if idx:
+        try:
+            for x in t.indicator_prices(idx):
+                if num(x.get("lastPrice")):
+                    out["idx"][x["symbol"]] = num(x["lastPrice"])
+        except Exception:
+            pass
+    if "FX" in symbols:
+        try:
+            f = cached("fx_live", 5, t.exchange_rate) or {}
+            out["fx"] = {"rate": num(f.get("rate")) or None, "change": num(f.get("basisPoint"))}
+        except Exception:
+            pass
+    return out
+
+
 def rankings(t: Toss | None, kind: str = "amount", market: str = "KR", duration: str = "realtime",
              count: int = 30, exclude_caution: bool = False) -> dict:
     if kind not in RANK_TYPES:
@@ -146,11 +233,23 @@ def rankings(t: Toss | None, kind: str = "amount", market: str = "KR", duration:
         r = t.rankings(RANK_TYPES[kind], market, duration, count, exclude_caution)
         items = r.get("rankings", [])
         nm = names(t, [x["symbol"] for x in items])
-        return {"demo": False, "rankedAt": r.get("rankedAt"), "kind": kind, "market": market, "duration": duration,
-                "items": [{"rank": x["rank"], "symbol": x["symbol"], "name": nm.get(x["symbol"], x["symbol"]),
-                           "price": num(x["price"].get("lastPrice")), "change_rate": num(x["price"].get("changeRate")),
-                           "volume": num(x.get("tradingVolume")), "amount": num(x.get("tradingAmount")),
-                           "currency": x.get("currency")} for x in items]}
+        out = [{"rank": x["rank"], "symbol": x["symbol"], "name": nm.get(x["symbol"], x["symbol"]),
+                "price": num((x.get("price") or {}).get("lastPrice")), "change_rate": _rate((x.get("price") or {}).get("changeRate")),
+                "volume": num(x.get("tradingVolume")), "amount": num(x.get("tradingAmount")),
+                "currency": x.get("currency")} for x in items]
+        gaps = [o["symbol"] for o in out if o["change_rate"] is None or not o["price"]]
+        if gaps:  # 순위 응답에 등락률·현재가가 빠진 줄은 현재가 API 로 채운다 (예전엔 0.00% 로 보였다)
+            try:
+                q = t.quotes(gaps)
+                for o in out:
+                    got = q.get(toss_symbol(o["symbol"])) or q.get(o["symbol"]) or {}
+                    if not o["price"] and got.get("price"):
+                        o["price"] = got["price"]
+                    if o["change_rate"] is None:
+                        o["change_rate"] = got.get("change_rate")
+            except Exception:
+                pass
+        return {"demo": False, "rankedAt": r.get("rankedAt"), "kind": kind, "market": market, "duration": duration, "items": out}
 
     return cached(f"rank:{kind}:{market}:{duration}:{count}:{int(exclude_caution)}", 3, build)
 
@@ -304,7 +403,7 @@ def industries(t: Toss | None, market: str = "KR", kind: str = "TOP_GAINERS", du
                                           "marketCap": num(x.get("marketCapitalization")) or None, "leader": ld[0], "leader_symbol": ld[1],
                                           "count": ld[2]} for x, ld in zip(rows, leads)]}
 
-    return cached(f"industries:{market}:{kind}:{duration}", 300, build)
+    return cached(f"industries:{market}:{kind}:{duration}", 60, build)
 
 
 def industry_chart(t: Toss | None, sector_id: str, market: str = "KR") -> dict:
@@ -392,10 +491,29 @@ def industry_detail(t: Toss | None, sector_id: str, market: str = "KR") -> dict:
     return cached(f"industry:{sector_id}:{market}", 300, build)
 
 
+FLOW_KEYS = {"individual": ("individual", "individuals", "personal", "retail"),
+             "foreigner": ("foreigner", "foreigners", "foreign"), "institution": ("institution", "institutions")}
+
+
+def _net_volume(rec: dict, kind: str) -> float | None:
+    """투자자별 순매수 수량. 순매수 칸이 없으면 매수-매도로, 그것도 없으면 None (0 으로 두면 '0원' 1위가 생긴다)."""
+    for k in FLOW_KEYS[kind]:
+        d = rec.get(k)
+        if not isinstance(d, dict):
+            continue
+        if d.get("netBuyVolume") not in (None, ""):
+            return num(d["netBuyVolume"])
+        if d.get("buyVolume") not in (None, "") and d.get("sellVolume") not in (None, ""):
+            return num(d["buyVolume"]) - num(d["sellVolume"])
+    return None
+
+
 # 외국인·기관·개인 순매수 상위 (토스는 종목별 투자자 동향만 줘서, 거래대금 상위 종목을 모아 금액으로 줄 세운다)
 def investor_flows(t: Toss | None, side: str = "buy") -> dict:
     sgn = 1 if side == "buy" else -1
-    pick = lambda rows: {k: sorted(rows, key=lambda r: -sgn * r[k])[:8] for k in ("foreigner", "institution", "individual")}
+    # 사는 쪽엔 순매수(+)만, 파는 쪽엔 순매도(-)만. 자료가 없는(None) 종목은 빼서 '0원' 줄이 생기지 않게
+    pick = lambda rows: {k: sorted([r for r in rows if r.get(k) is not None and sgn * r[k] > 0], key=lambda r: -sgn * r[k])[:8]
+                         for k in ("foreigner", "institution", "individual")}
     if t is None:
         rng = _rng("flows")
         rows = [{"symbol": s, "name": n, "price": p, "change_rate": float(rng.normal(0.01, 0.03)),
@@ -414,7 +532,7 @@ def investor_flows(t: Toss | None, side: str = "buy") -> dict:
                 rec = None
             if not rec:
                 return None
-            net = lambda k: num((rec.get(k) or {}).get("netBuyVolume")) * (x["price"] or 0)
+            net = lambda k: (lambda v: None if v is None else v * (x["price"] or 0))(_net_volume(rec, k))
             return {"symbol": x["symbol"], "name": x["name"], "price": x["price"], "change_rate": x["change_rate"],
                     "foreigner": net("foreigner"), "institution": net("institution"), "individual": net("individual"),
                     "updated": rec.get("updatedAt") or rec.get("date")}
@@ -422,7 +540,7 @@ def investor_flows(t: Toss | None, side: str = "buy") -> dict:
             rows = [r for r in ex.map(one, base) if r]
         return {"updated": max((r["updated"] or "" for r in rows), default=None), "rows": rows}
 
-    data = cached("investor_flows", 600, build)
+    data = cached("investor_flows", 120, build)  # 토스 투자자 동향은 장중 몇 분 간격으로 바뀐다
     return {"demo": False, "updated": data["updated"], **pick(data["rows"])}
 
 

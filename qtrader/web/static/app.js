@@ -23,36 +23,8 @@ async function api(path, opts = {}) {
   });
   const data = await res.json().catch(() => ({}));
   const detail = typeof data.detail === "string" ? data.detail : "";
-  if (res.status === 428 && detail.startsWith("PIN:")) {
-    // 실전 주문 PIN: 입력받아 같은 요청을 다시 보낸다
-    const msg = detail.split(":").slice(2).join(":");
-    const pin = await askPin(msg);
-    if (!pin) throw new Error("PIN 입력을 취소했습니다");
-    return api(path, { ...opts, headers: { ...(opts.headers || {}), "x-qtrader-pin": pin } });
-  }
-  if (!res.ok) throw new Error(detail.startsWith("PIN:") ? detail.split(":").slice(2).join(":") : detail || `HTTP ${res.status}`);
+  if (!res.ok) throw new Error(detail || `HTTP ${res.status}`);
   return data;
-}
-
-// PIN 입력 창 (숫자 4~8자리)
-function askPin(msg) {
-  return new Promise((resolve) => {
-    let box = document.getElementById("pin-ask");
-    if (!box) { box = document.createElement("div"); box.id = "pin-ask"; document.body.appendChild(box); }
-    box.innerHTML = `<form class="pin-box"><i data-lucide="lock-keyhole"></i><h3>실전 주문 PIN</h3>
-      <p class="${msg.includes("틀렸") ? "down" : "note"}">${esc(msg)}</p>
-      <input type="password" inputmode="numeric" autocomplete="off" maxlength="8" pattern="[0-9]*" placeholder="••••••" required>
-      <div class="pin-btns"><button type="button" data-x>취소</button><button class="primary">확인</button></div>
-      <p class="note">실제 돈이 움직이는 작업이라 한 번 더 확인합니다. 맞히면 5분 동안은 다시 묻지 않아요.</p></form>`;
-    box.classList.remove("hidden");
-    window.lucide && lucide.createIcons();
-    const input = box.querySelector("input");
-    setTimeout(() => input.focus(), 30);
-    const done = (v) => { box.classList.add("hidden"); resolve(v); };
-    box.querySelector("[data-x]").onclick = () => done(null);
-    box.querySelector("form").onsubmit = (e) => { e.preventDefault(); done(input.value.trim()); };
-    box.onkeydown = (e) => { if (e.key === "Escape") done(null); };
-  });
 }
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -262,50 +234,87 @@ function openTab(name) {
 }
 $$("nav button").forEach((b) => b.addEventListener("click", () => openTab(b.dataset.tab)));
 
-// 전체 종목 검색 (위쪽 검색창)
-let searchTimer;
-$("#gsearch").addEventListener("input", () => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(async () => {
-    const q = $("#gsearch").value.trim();
-    const box = $("#gsearch-list");
-    if (!q) { box.classList.add("hidden"); return; }
+// 종목 검색 상자 (위쪽 검색창·AI 회의 입력칸이 함께 쓴다)
+// 띄어쓰기·대소문자·초성(ㅅㅅㅈㅈ)·줄임말(하닉)·영어 이름(apple)은 서버가 알아듣는다. 여기서는 고르기 편하게:
+// ↑↓ 로 고르고 Enter, 맞는 글자 강조, 국내·미국·ETF 표시, 비어 있으면 최근 본 종목
+const SEARCH_RECENT = "qtrader.recent";
+function recentStocks() { try { return JSON.parse(localStorage.getItem(SEARCH_RECENT) || "[]"); } catch { return []; } }
+function rememberStock(r) {
+  try { localStorage.setItem(SEARCH_RECENT, JSON.stringify([r, ...recentStocks().filter((x) => x.symbol !== r.symbol)].slice(0, 8))); } catch {}
+}
+function attachSearch(input, list, onPick) {
+  let timer, seq = 0, rows = [], active = -1;
+  const mark = (name, q) => {
+    const i = q ? name.toUpperCase().indexOf(q.toUpperCase().trim()) : -1;
+    return i < 0 ? esc(name) : esc(name.slice(0, i)) + "<mark>" + esc(name.slice(i, i + q.trim().length)) + "</mark>" + esc(name.slice(i + q.trim().length));
+  };
+  const badge = (r) => {
+    const kr = /^\d{6}$/.test(r.symbol) || ["KOSPI", "KOSDAQ"].includes(r.market);
+    return `<span class="gs-tag ${kr ? "kr" : "us"}">${kr ? "국내" : "미국"}</span>${/ETF/.test(r.type || "") ? `<span class="gs-tag etf">ETF</span>` : ""}`;
+  };
+  const draw = (title, q) => {
+    active = rows.length ? 0 : -1;
+    list.innerHTML = (title ? `<div class="gs-head">${title}</div>` : "") + (rows.map((r, i) => `<div class="gs-item ${i === active ? "on" : ""}" data-i="${i}">
+        ${logo(r.symbol, r.name, 26)}<div class="gs-txt"><b>${mark(r.name, q)}</b><span>${esc(r.symbol)}${r.market ? " · " + esc(r.market) : ""}</span></div>${badge(r)}</div>`).join("")
+      || `<div class="gs-item note">'${esc(q)}' 와 맞는 종목이 없어요. 이름 일부·종목 코드·영어 이름으로 찾아보세요</div>`);
+    list.classList.remove("hidden");
+  };
+  const move = (d) => {
+    if (!rows.length) return;
+    active = (active + d + rows.length) % rows.length;
+    list.querySelectorAll(".gs-item[data-i]").forEach((el) => el.classList.toggle("on", +el.dataset.i === active));
+    list.querySelector(".gs-item.on")?.scrollIntoView({ block: "nearest" });
+  };
+  const pick = (r) => { if (!r) return; rememberStock(r); list.classList.add("hidden"); onPick(r); input.dataset.picked = input.value.trim(); };
+  const find = async (q) => {
+    const my = ++seq;
     try {
-      const rows = await api("/api/stocks/search?q=" + encodeURIComponent(q));
-      box.innerHTML = rows.map((r) => `<div class="gs-item" data-open="${esc(r.symbol)}">${logo(r.symbol, r.name, 24)}<b>${esc(r.name)}</b><span class="note">${esc(r.symbol)} · ${esc(r.market || "")}</span></div>`).join("")
-        || `<div class="gs-item note">검색 결과가 없습니다</div>`;
-      box.classList.remove("hidden");
-    } catch (e) { box.innerHTML = `<div class="gs-item note">${esc(e.message)}</div>`; box.classList.remove("hidden"); }
-  }, 180);
+      const r = await api("/api/stocks/search?limit=12&q=" + encodeURIComponent(q));
+      if (my !== seq || input.value.trim() !== q) return;  // 늦게 온 예전 결과는 버린다
+      rows = r; draw("", q);
+    } catch (e) { list.innerHTML = `<div class="gs-item note">${esc(e.message)}</div>`; list.classList.remove("hidden"); }
+  };
+  const showRecent = () => { rows = recentStocks(); if (rows.length) draw("최근 본 종목", ""); else list.classList.add("hidden"); };
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (!q) return showRecent();
+    timer = setTimeout(() => find(q), 120);
+  });
+  input.addEventListener("focus", () => { if (!input.value.trim()) showRecent(); });
+  input.addEventListener("keydown", async (e) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); move(e.key === "ArrowDown" ? 1 : -1); return; }
+    if (e.key === "Escape") { list.classList.add("hidden"); return; }
+    if (e.key !== "Enter" || e.isComposing) return;
+    const q = input.value.trim();
+    if (!q || (list.classList.contains("hidden") && input.dataset.picked === q)) return;  // 이미 고른 종목: 다음 동작(회의 시작 등)에 맡긴다
+    e.preventDefault();
+    clearTimeout(timer);
+    if (list.classList.contains("hidden") || !rows.length || input.value.trim() !== q) await find(q);  // 아직 안 찾았으면 지금 찾는다
+    pick(rows[Math.max(active, 0)]);
+  });
+  list.addEventListener("mousedown", (e) => {  // 입력칸이 포커스를 잃기 전에 고른다
+    const it = e.target.closest(".gs-item[data-i]");
+    if (it) { e.preventDefault(); pick(rows[+it.dataset.i]); }
+  });
+  document.addEventListener("click", (e) => { if (e.target !== input && !list.contains(e.target)) list.classList.add("hidden"); });
+}
+window.attachSearch = attachSearch;
+attachSearch($("#gsearch"), $("#gsearch-list"), (r) => {
+  $("#gsearch").value = "";
+  $("#gsearch").blur();
+  openTab("stock");
+  window.openStock(r.symbol);
 });
-$("#gsearch").addEventListener("keydown", async (e) => {
-  if (e.key === "Enter") {
-    // 검색 결과가 아직 바뀌기 전에 Enter 를 누르면 이전 결과가 열리지 않도록 지금 입력으로 다시 찾는다
-    clearTimeout(searchTimer);
-    const q = $("#gsearch").value.trim();
-    if (!q) return;
-    try {
-      const rows = await api("/api/stocks/search?q=" + encodeURIComponent(q));
-      if (rows.length) {
-        $("#gsearch-list").classList.add("hidden");
-        $("#gsearch").value = "";
-        openTab("stock");
-        window.openStock(rows[0].symbol);
-      }
-    } catch {}
-  }
-  if (e.key === "Escape") $("#gsearch-list").classList.add("hidden");
-});
+
 document.addEventListener("click", (e) => {
   const o = e.target.closest("[data-open]");
   if (o) {
     $("#gsearch-list").classList.add("hidden");
-    $("#gsearch").value = "";
     openTab("stock");
     window.openStock && window.openStock(o.dataset.open);
     return;
   }
-  if (!e.target.closest(".gsearch")) $("#gsearch-list").classList.add("hidden");
 });
 
 // 상태 · 내 계좌
@@ -330,6 +339,7 @@ document.addEventListener("click", (e) => {
   fxView.krw = !fxView.krw;
   try { localStorage.setItem("qtrader.fxview", fxView.krw ? "krw" : "usd"); } catch {}
   drawFxToggle();
+  window.drawFxCard && drawFxCard();
   toast(fxView.krw ? "미국 주식 가격을 지금 환율로 바꾼 원화로 보여 줘요" : "미국 주식 가격을 달러로 보여 줘요", "repeat");
   document.dispatchEvent(new CustomEvent("tab", { detail: state.tab }));  // 지금 화면을 다시 그린다
 });
@@ -479,12 +489,17 @@ $("#auto-btn").onclick = async () => {
   const on = !s.auto_trading;
   if (on) {
     const c = state.config || await api("/api/config");
+    // AI 전략은 켜 둔 세션 내내 수시로 회의하고 사고판다. 단순 규칙 전략은 정기 실행 시각에 하루 한 번
+    const sessions = (m, mc) => m === "KR" ? (mc.extended ? "넥스트레이드 08:00~20:00" : "정규장 09:00~15:30")
+      : ["주간거래", "프리마켓", "정규장", "애프터마켓"].filter((n, i) => i === 2 || (mc.extended_sessions || []).includes(["day", "pre", "", "after"][i])).join("·");
     const lines = Object.entries(c.markets).filter(([, mc]) => mc.enabled).map(([m, mc]) =>
-      `· ${MARKET_NAME[m]}: ${STRAT_NAME[mc.strategy]} 전략, 매 거래일 ${mc.run_time}(${m === "KR" ? "한국" : "뉴욕"} 시간), 한도 ${m === "US" ? usdWithKrw(mc.budget) : money(mc.budget, m)}`);
+      `· ${MARKET_NAME[m]}: ${STRAT_NAME[mc.strategy]} 전략, ` + (mc.strategy === "ai" && c.ai.intraday !== false
+        ? `${sessions(m, mc)} 동안 2분마다 사는 신호를 보고, 신호가 뜬 종목만 AI 가 위험 신호를 확인한 뒤 사요` : `매 거래일 ${mc.run_time}(${m === "KR" ? "한국" : "뉴욕"} 시간)`)
+      + `, 한도 ${m === "US" ? usdWithKrw(mc.budget) : money(mc.budget, m)}`);
     const rules = c.markets.KR.strategy === "ai" || c.markets.US.strategy === "ai"
-      ? "\n· AI 회의 결과가 매수여도 체크리스트(추세·모멘텀·과열·변동성·손익비·팩트체크)를 모두 넘어야 삽니다.\n· 산 종목은 손절가·익절가에 닿으면 자동으로 팝니다." + (c.ai.require_approval ? "\n· 주문은 승인 대기에 먼저 올라오고, 근거를 보고 승인해야 나갑니다." : "")
+      ? "\n· AI 가 거부하지 않아도 안전 점검을 넘어야 삽니다. 필수(추세·손익비·확신도 등)는 모두, 추가(모멘텀·과열 등)는 조금 덜 맞으면 적게 사요.\n· 산 종목은 손절가·익절가에 닿으면 자동으로 팝니다." + (c.ai.require_approval ? "\n· 주문은 승인 대기에 먼저 올라오고, 근거를 보고 승인해야 나갑니다." : "")
       : "";
-    if (!(await ask(`${MODE_NAME[s.mode]} 계좌로 자동매매를 시작합니다.\n\n${lines.join("\n")}${rules}\n\n종목당 최대 ${Math.round(c.risk.max_weight * 100)}%, 하루 손실 ${Math.round(c.risk.daily_loss_limit * 100)}% 에 닿으면 긴급 정지(새로 사지 않음)가 켜집니다. 계속할까요?`))) return;
+    if (!(await ask(`${MODE_NAME[s.mode]} 계좌로 자동매매를 시작합니다.\n\n${lines.join("\n")}${rules}\n\n종목당 최대 ${+(c.risk.max_weight * 100).toFixed(1)}%, 하루 손실 ${+(c.risk.daily_loss_limit * 100).toFixed(1)}% 에 닿으면 긴급 정지(새로 사지 않음)가 켜집니다. 계속할까요?`))) return;
     if (LIVE.has(s.mode) && (await ask("실전 자동매매입니다. 진행하려면 아래 칸에 '실전주문' 이라고 입력하세요.", { input: "확인 문구", danger: true, ok: "실전 자동매매 시작" })) !== "실전주문") return;
   }
   await api("/api/auto", { method: "POST", body: { on } }).catch((e) => toast(e.message));
@@ -539,14 +554,17 @@ async function loadConfig() {
   $("#ntf-report").checked = c.notify?.daily_report !== false;
   $("#ai-cap").value = c.ai.monthly_cost_cap_krw ?? 30000;
   setPct("sec-max", c.max_sector_weight ?? 0.4);
-  $("#ai-mode").value = c.ai.mode || "fast";
+  $("#ai-deep-final").checked = !!c.ai.deep_final;
+  $("#ai-automeet").checked = !!c.ai.auto_meetings;
   modelSelect("ai-quick", c.ai.quick_model); modelSelect("ai-deep", c.ai.deep_model || c.ai.model);
   $("#ai-effort").value = c.ai.effort; $("#ai-chat-effort").value = c.ai.chat_effort || "medium";
   $("#ai-profile").value = c.ai.profile || "";
   $("#ai-approve").checked = !!c.ai.require_approval;
+  $("#ai-practice").checked = c.ai.practice !== false;
   $("#ai-exit").checked = c.ai.auto_exit !== false;
+  $("#ai-trail").checked = (c.ai.exit_style || "trail") === "trail";
   $("#ai-debate").value = c.ai.debate_rounds;
-  $("#ai-before").value = c.ai.run_before_minutes; $("#ai-max").value = c.ai.max_symbols_per_day;
+  $("#ai-before").value = c.ai.run_before_minutes;
   $("#ai-web").checked = !!c.ai.web_research;
   $("#ai-autopick").checked = c.ai.auto_pick !== false;
   const R = pr.rules;
@@ -554,9 +572,7 @@ async function loadConfig() {
   setPct("rl-vol", R.max_vol); setPct("rl-fact", R.min_fact_ok); $("#rl-buys").value = R.max_new_buys_per_day;
   $("#rl-cool").value = R.cooldown_days; $("#rl-trend").checked = R.require_trend; $("#rl-mom").checked = R.require_momentum;
   $("#rl-market").value = R.market_filter || "half";
-  $("#pin-enabled").checked = c.security?.pin !== false;
   $$("input[name=holding]").forEach((i) => (i.checked = i.value === (c.ai.holding || "auto")));
-  loadPin();
   const ruleKeys = Object.keys(state.strategies);
   const stratSelect = (cur) => `<option value="ai" ${cur === "ai" ? "selected" : ""}>${STRAT_NAME.ai} (추천)</option>
     <optgroup label="단순 규칙 (AI 회의 없이, 고급 사용자용)">${ruleKeys.map((k) => `<option value="${k}" ${k === cur ? "selected" : ""}>${STRAT_NAME[k] || k}</option>`).join("")}</optgroup>`;
@@ -565,6 +581,9 @@ async function loadConfig() {
       <label class="mkt-head"><span class="flag">${m === "KR" ? "🇰🇷" : "🇺🇸"}</span><b>${MARKET_NAME[m]} 주식</b>
         <span class="sw"><input type="checkbox" data-f="enabled" ${mc.enabled ? "checked" : ""}><i></i></span><em class="sw-txt">${mc.enabled ? "자동매매 켬" : "자동매매 끔"}</em></label>
       <label>이 시장에 쓸 돈 <em class="hint">${m === "KR" ? "원" : "달러"} · 계좌 돈 중 이만큼만 자동매매에 써요</em><input data-f="budget" type="number" value="${mc.budget}"></label>
+      <div class="mkt-ai"><label class="check"><input type="checkbox" data-f="ai_meetings" ${mc.ai_meetings !== false ? "checked" : ""}> ${MARKET_NAME[m]} AI 거부권 확인</label>
+        <span class="mkt-ai-n">하루 <input data-f="meetings_per_day" type="number" min="0" max="50" value="${mc.meetings_per_day ?? 6}"> 번까지</span>
+        <em class="hint">사는 신호가 뜬 종목만 AI 가 위험 신호를 한 번 확인해요 (1번 약 10~30원). 끄면 이 시장은 새로 사지 않아요</em></div>
       <details class="mini-adv"><summary>시간 · 종목 · 고르는 방법 (고급)</summary>
         <label>무엇을 살지 고르는 방법 <select data-f="strategy">${stratSelect(mc.strategy)}</select></label>
         ${m === "KR" ? `<div class="form-row"><label>정기 실행 시각 <em class="hint">한국 시각</em><input data-f="run_time" value="${esc(mc.run_time)}"></label></div>
@@ -601,11 +620,11 @@ async function loadConfig() {
   icons();
 }
 
-// 저장하지 않은 변경 표시 (키·PIN·업데이트 칸은 따로 저장되니 제외)
+// 저장하지 않은 변경 표시 (키·업데이트 칸은 따로 저장되니 제외)
 let cfgDirty = false;
 function setDirty(v) { cfgDirty = v; $("#cfg-dirty")?.classList.toggle("hidden", !v); }
-$("#tab-cfg").addEventListener("input", (e) => { if (!e.target.closest("#cfg-keys, #pin-panel, #upd-panel")) setDirty(true); });
-$("#tab-cfg").addEventListener("change", (e) => { if (!e.target.closest("#cfg-keys, #pin-panel, #upd-panel")) setDirty(true); });
+$("#tab-cfg").addEventListener("input", (e) => { if (!e.target.closest("#cfg-keys, #upd-panel")) setDirty(true); });
+$("#tab-cfg").addEventListener("change", (e) => { if (!e.target.closest("#cfg-keys, #upd-panel")) setDirty(true); });
 document.addEventListener("tab", (e) => { if (e.detail !== "cfg" && cfgDirty) toast("설정에 저장하지 않은 변경이 있어요. 설정 탭 아래 '설정 저장'을 눌러 주세요", "circle-dot"); });
 
 // 운용 모드: 지금 상태를 크게. 실전으로 갈 때만 따로 확인 (설정 저장 버튼과 별개로 바로 적용)
@@ -702,17 +721,16 @@ $("#cfg-save").onclick = async () => {
     .map(([n, u, k]) => ({ name: n.trim(), url: u.trim(), cat: (k || "").trim() === "global" ? "global" : "kr" })) };
   c.notify = { ...(c.notify || {}), telegram_chat_id: $("#tg-chat").value.trim(), daily_report: $("#ntf-report").checked };
   c.max_sector_weight = getPct("sec-max") || 0.4;
-  c.security = { ...(c.security || {}), pin: $("#pin-enabled").checked };
   const conf = getPct("rl-conf");
   Object.assign(c.ai, {
-    mode: $("#ai-mode").value, quick_model: $("#ai-quick").value, deep_model: $("#ai-deep").value,
+    deep_final: $("#ai-deep-final").checked, auto_meetings: $("#ai-automeet").checked, quick_model: $("#ai-quick").value, deep_model: $("#ai-deep").value,
     effort: $("#ai-effort").value, chat_effort: $("#ai-chat-effort").value, profile: $("#ai-profile").value.trim(),
-    require_approval: $("#ai-approve").checked, auto_exit: $("#ai-exit").checked, debate_rounds: Number($("#ai-debate").value),
-    run_before_minutes: Number($("#ai-before").value), max_symbols_per_day: Number($("#ai-max").value),
+    require_approval: $("#ai-approve").checked, practice: $("#ai-practice").checked, auto_exit: $("#ai-exit").checked, exit_style: $("#ai-trail").checked ? "trail" : "fixed", debate_rounds: Number($("#ai-debate").value),
+    run_before_minutes: Number($("#ai-before").value),
     min_confidence: conf, web_research: $("#ai-web").checked,  // 확신도 기준은 하나로 (회의 비중·체크리스트 같이)
     monthly_cost_cap_krw: Number($("#ai-cap").value) || 0, auto_pick: $("#ai-autopick").checked,
     holding: ($$("input[name=holding]").find((i) => i.checked) || {}).value || "auto",
-    rules: { min_confidence: conf, min_reward_risk: Number($("#rl-rr").value),
+    rules: { ...(c.ai.rules || {}), min_confidence: conf, min_reward_risk: Number($("#rl-rr").value),  // 화면에 없는 값(추가 기준 허용 개수 등)은 그대로
       max_rsi: Number($("#rl-rsi").value), max_vol: getPct("rl-vol"), min_fact_ok: getPct("rl-fact"),
       max_new_buys_per_day: Number($("#rl-buys").value), cooldown_days: Number($("#rl-cool").value),
       require_trend: $("#rl-trend").checked, require_momentum: $("#rl-mom").checked, market_filter: $("#rl-market").value },
@@ -729,6 +747,8 @@ $("#cfg-save").onclick = async () => {
       mc.extended_sessions = [...el.querySelectorAll("[data-ext]")].filter((x) => x.checked).map((x) => x.dataset.ext);
     }
     mc.budget = Number(el.querySelector("[data-f=budget]").value);
+    mc.ai_meetings = el.querySelector("[data-f=ai_meetings]").checked;
+    mc.meetings_per_day = Math.max(0, Math.round(Number(el.querySelector("[data-f=meetings_per_day]").value) || 0));
     mc.universe = el.querySelector("[data-f=universe]").value.split(",").map((x) => x.trim()).filter(Boolean);
     if (mc.strategy !== "ai") mc.params = readParams(el.querySelector("[data-params]"));
   });
@@ -738,24 +758,6 @@ $("#cfg-save").onclick = async () => {
     setDirty(false);
     refresh();
   } catch (e) { $("#cfg-msg").textContent = "저장 실패: " + e.message; }
-};
-
-async function loadPin() {
-  const p = await api("/api/pin").catch(() => ({ set: false }));
-  $("#pin-badge").textContent = p.set ? "설정됨" : "아직 없음";
-  $("#pin-badge").className = "badge " + (p.set ? "green" : "amber");
-  $("#pin-old-wrap").classList.toggle("hidden", !p.set);
-  $("#pin-save").textContent = p.set ? "PIN 바꾸기" : "PIN 정하기";
-}
-$("#pin-form").onsubmit = async (e) => {
-  e.preventDefault();
-  if ($("#pin-new").value !== $("#pin-new2").value) return toast("새 PIN 두 번이 서로 다릅니다", "alert-triangle");
-  try {
-    await api("/api/pin", { method: "POST", body: { new: $("#pin-new").value, old: $("#pin-old").value } });
-    ["#pin-old", "#pin-new", "#pin-new2"].forEach((s) => ($(s).value = ""));
-    toast("실전 주문 PIN 을 저장했어요", "lock-keyhole");
-    loadPin();
-  } catch (err) { toast(err.message, "alert-triangle"); }
 };
 
 $("#key-save").onclick = async () => {

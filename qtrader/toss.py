@@ -51,6 +51,18 @@ def num(v, default: float = 0.0) -> float:
         return default
 
 
+# 호출 간격은 프로그램 전체가 함께 지킨다. 화면 요청마다 Toss 를 새로 만들어도 같은 Client ID 면 같은 기록을 쓴다
+# (따로 세면 여러 칸을 한꺼번에 부를 때 한도를 넘어 429 를 받고 최대 5초씩 쉬게 된다). 그룹마다 따로 잠가
+# 한 그룹이 기다리는 동안 다른 그룹(예: 주문)은 막히지 않는다.
+_PACE: dict[tuple[str, str], list] = {}
+_PACE_LOCK = threading.Lock()
+
+
+def _pace_slot(client_id: str, group: str) -> list:
+    with _PACE_LOCK:
+        return _PACE.setdefault((client_id, group), [threading.Lock(), 0.0])
+
+
 class Toss:
     def __init__(self, client_id: str, client_secret: str, token_dir: Path, account_seq: int | None = None,
                  session: requests.Session | None = None, base: str = BASE):
@@ -60,8 +72,6 @@ class Toss:
         self._token: str | None = None
         self._expires = datetime.min
         self._account_seq = account_seq
-        self._last: dict[str, float] = {}
-        self._lock = threading.Lock()
 
     # 인증
     def token(self, force: bool = False) -> str:
@@ -92,11 +102,12 @@ class Toss:
 
     def _pace(self, group: str) -> None:
         gap = GROUP_INTERVAL.get(group, 0.2)
-        with self._lock:
-            wait = gap - (time.monotonic() - self._last.get(group, 0.0))
+        slot = _pace_slot(self.client_id, group)
+        with slot[0]:
+            wait = gap - (time.monotonic() - slot[1])
             if wait > 0:
                 time.sleep(wait)
-            self._last[group] = time.monotonic()
+            slot[1] = time.monotonic()
 
     def _call(self, method: str, path: str, group: str, params: dict | None = None, body: dict | None = None,
               account: bool = False, _retry: int = 0):
@@ -158,13 +169,30 @@ class Toss:
         return Account(market, cash, pos)
 
     # 시세
-    def prices(self, symbols: list[str]) -> dict[str, float]:
+    def quotes(self, symbols: list[str]) -> dict[str, dict]:
+        """현재가와 토스가 계산한 등락률·기준가. 화면 어디서나 이 값을 써야 숫자가 같다.
+        등락률은 토스 changeRate 를 그대로 쓴다 (순위표·토스 앱과 같은 값, 상·하한가의 기준이 되는 기준가 대비).
+        응답의 전일 종가 칸은 시간외(NXT) 종가가 들어올 때가 있어, 등락률과 맞을 때만 기준가로 쓰고
+        아니면 등락률로 기준가를 되짚는다 (예전엔 이 칸을 그대로 써서 순위표 +8.35% · 종목 화면 +5.68% 로 어긋났다)."""
         out = {}
         syms = [toss_symbol(s) for s in symbols]
         for i in range(0, len(syms), 200):
             for x in self._call("GET", "/api/v1/prices", "MARKET_DATA", {"symbols": ",".join(syms[i:i + 200])}) or []:
-                out[x["symbol"]] = num(x.get("lastPrice"))
+                last = num(x.get("lastPrice"))
+                raw = x.get("changeRate")
+                rate = num(raw) if raw not in (None, "") else None
+                cands = [num(x.get(k)) for k in ("basePrice", "previousClosePrice", "prevClosePrice") if num(x.get(k))]
+                if rate is None:
+                    base = cands[0] if cands else None
+                    rate = (last / base - 1) if base and last else None
+                else:
+                    ok = [c for c in cands if last and abs(last / c - 1 - rate) < 0.0006]
+                    base = ok[0] if ok else (last / (1 + rate) if last and rate > -1 else None)
+                out[x["symbol"]] = {"price": last, "change_rate": rate, "base": base or None}
         return out
+
+    def prices(self, symbols: list[str]) -> dict[str, float]:
+        return {k: v["price"] for k, v in self.quotes(symbols).items()}
 
     def price(self, market: Market, symbol: str) -> float:
         p = self.prices([symbol]).get(toss_symbol(symbol), 0.0)

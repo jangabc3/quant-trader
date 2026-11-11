@@ -34,7 +34,8 @@ def evaluate(runs: list[dict], bars_for) -> dict:
         before = df[df.index <= d0]
         if before.empty:
             continue
-        p0 = float(before["close"].iloc[-1])
+        plan = r.get("plan") if isinstance(r.get("plan"), dict) else {}
+        p0 = float(plan.get("price") or before["close"].iloc[-1])  # 회의하던 때 가격 (장중 회의는 그날 종가가 아니다)
         after = df[df.index > d0]
         last = float(df["close"].iloc[-1])
         horizon = int(f.get("horizon_days") or 20)
@@ -53,7 +54,7 @@ def evaluate(runs: list[dict], bars_for) -> dict:
         else:
             ok = None  # Hold 은 맞고 틀림을 세지 않는다
         rows.append({"id": r["id"], "symbol": s, "name": r.get("name", s), "market": market_of(s).value,
-                     "date": r["trade_date"], "rating": rating, "confidence": f.get("confidence"),
+                     "date": r["trade_date"], "rating": rating, "confidence": f.get("confidence"), "headline": f.get("headline", ""),
                      "price": p0, "last": last, "return": round(ret, 4),
                      "return_h": round(ret_h, 4) if ret_h is not None else None, "days": days,
                      "hit_stop": hit_sl, "hit_take": hit_tp, "correct": ok, "matured": days >= horizon})
